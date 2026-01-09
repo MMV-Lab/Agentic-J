@@ -35,6 +35,30 @@ THREAD_ID = "imagej_supervisor_thread"   # keep constant to preserve context
 
 thinking = True
 
+def extract_tool_names(event):
+    names = []
+
+    # Case 1: explicit tool calls
+    if "tool" in event and isinstance(event["tool"], dict):
+        names.append(event["tool"].get("name"))
+
+    if "tool_calls" in event and isinstance(event["tool_calls"], list):
+        for tc in event["tool_calls"]:
+            if "name" in tc:
+                names.append(tc["name"])
+            elif "function" in tc:
+                names.append(tc["function"].get("name"))
+
+    # Case 2: nested inside model messages (OpenAI streaming)
+    model = event.get("model")
+    if isinstance(model, dict):
+        for msg in model.get("messages", []):
+            for tc in msg.get("tool_calls", []):
+                fn = tc.get("function", {})
+                names.append(fn.get("name"))
+
+    return [n for n in names if n]
+
 def handle_event(event):
     global thinking
 
@@ -56,31 +80,22 @@ def handle_event(event):
                 print(content, end="", flush=True)
         return
 
-    # --- Tool invocation ---
-    if "tools" in event:
-        tools = event["tools"]
-
-        # Handle single or multiple tool calls robustly
-        if isinstance(tools, list):
-            for t in tools:
-                name = t.get("name", "unknown_tool")
-                print(f"\n[Calling tool: {name}]")
-        elif isinstance(tools, dict):
-            name = tools.get("name", "unknown_tool")
-            print(f"\n[Calling tool: {name}]")
-
+   # --- Tool invocation ---
+    tool_names = extract_tool_names(event)
+    for name in tool_names:
+        print(f"\n[Calling tool: {name}]")
+    if tool_names:
         return
 
     # --- Final output ---
     if "output" in event:
-        thinking = True
+        thinking = False
         out = event["output"]
         final_text = out.get("output") or out.get("result") or out
 
         print("\n\n=== AI ===")
         print(final_text if isinstance(final_text, str) else str(final_text))
         print("==========\n")
-        return
 
 
 
