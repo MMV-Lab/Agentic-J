@@ -9,6 +9,56 @@ from langchain.agents.middleware import TodoListMiddleware
 from imagej_context import get_ij
 from jpype import JClass
 
+from langchain_qdrant import QdrantVectorStore
+from langchain_openai import OpenAIEmbeddings
+from qdrant_client import QdrantClient
+from keys import gpt_key
+
+def build_retriever(
+    collection_name: str,
+    path: str,
+):
+    client = QdrantClient(path=path)
+
+    vectorstore = QdrantVectorStore(
+        client=client,
+        collection_name=collection_name,
+        embedding=OpenAIEmbeddings(api_key=gpt_key, model="text-embedding-3-large"),
+    )
+
+    # Hybrid search
+    return vectorstore.as_retriever(
+        search_type="mmr",  # or "similarity"
+        search_kwargs={
+            "k": 8,
+            "fetch_k": 30,
+        },
+    )
+
+retriever = build_retriever(
+    collection_name="BioimageAnalysisDocs",
+    path="./qdrant_data",
+)
+
+@tool("rag_retrieve")
+def rag_retrieve(query: str) -> str:
+    """
+    Retrieve relevant context from the document RAG.
+    Input should be a precise information-seeking query.
+    """
+    docs = retriever.invoke(query)
+
+    results = []
+    for d in docs:
+        results.append(
+            {
+                "content": d.page_content,
+                "source": d.metadata.get("source"),
+                "page": d.metadata.get("page"),
+            }
+        )
+
+    return results
 
 def run_groovy_script(script: str, ij) -> str:
     """Execute Groovy scripts in ImageJ/Fiji."""

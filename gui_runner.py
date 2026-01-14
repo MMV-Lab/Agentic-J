@@ -1,8 +1,9 @@
 # gui_runner.py
 import sys
 from PySide6.QtWidgets import (
-    QApplication, QWidget, QVBoxLayout, QTextEdit, QLineEdit, QPushButton, QLabel
+    QApplication, QWidget, QVBoxLayout, QTextEdit, QLineEdit, QPushButton, QLabel,
 )
+from PySide6.QtCore import QObject, Signal, Slot, QThread
 import os
 from agents import init_agent
 from imagej_context import get_ij
@@ -30,6 +31,31 @@ To get started, please share:
 
 If you’re unsure, tell me the biological question and show one representative image—I’ll propose a clear plan and a script you can run.
 """
+
+class AgentWorker(QObject):
+    event_received = Signal(dict)
+    finished = Signal()
+    error = Signal(str)
+
+    def __init__(self, supervisor, thread_id):
+        super().__init__()
+        self.supervisor = supervisor
+        self.thread_id = thread_id
+
+    @Slot(str)
+    def run(self, user_input: str):
+        try:
+            config = {"configurable": {"thread_id": self.thread_id}}
+            for event in self.supervisor.stream(
+                {"messages": [{"role": "user", "content": user_input}]},
+                config=config,
+                stream_mode="updates",
+            ):
+                self.event_received.emit(event)
+        except Exception as e:
+            self.error.emit(str(e))
+        finally:
+            self.finished.emit()
 
 class ImageJAgentGUI(QWidget):
     def __init__(self):
@@ -66,24 +92,41 @@ class ImageJAgentGUI(QWidget):
     def append_output(self, text):
         self.output_area.append(text)
 
+    def on_agent_finished(self):
+        self.status_label.setText("Ready")
+
+    def on_agent_error(self, msg):
+        self.append_output(f"[Agent error]\n{msg}")
+        self.status_label.setText("Error")
+
     def on_send(self):
         user_input = self.input_line.text().strip()
         if not user_input:
             return
+
         self.input_line.clear()
         self.append_output(f"You: {user_input}")
-        self.append_output("AI: ...")  # placeholder while streaming
-        QApplication.processEvents()
+        self.append_output("AI: ...")
+        self.status_label.setText("Thinking...")
 
-        # ----- Call your agent with thread_id config -----
-        config = {"configurable": {"thread_id": THREAD_ID}}
+        # --- Create thread + worker ---
+        self.thread = QThread()
+        self.worker = AgentWorker(self.supervisor, THREAD_ID)
 
-        for event in self.supervisor.stream(
-            {"messages": [{"role": "user", "content": user_input}]},
-            config=config,
-            stream_mode="updates"
-        ):
-            self.handle_event(event)
+        self.worker.moveToThread(self.thread)
+
+        # --- Connect signals ---
+        self.thread.started.connect(lambda: self.worker.run(user_input))
+        self.worker.event_received.connect(self.handle_event)
+        self.worker.error.connect(self.on_agent_error)
+        self.worker.finished.connect(self.on_agent_finished)
+
+        self.worker.finished.connect(self.thread.quit)
+        self.worker.finished.connect(self.worker.deleteLater)
+        self.thread.finished.connect(self.thread.deleteLater)
+
+        self.thread.start()
+
 
     def handle_event(self, event):
         """
@@ -129,6 +172,5 @@ class ImageJAgentGUI(QWidget):
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = ImageJAgentGUI()
-    tools.GUI_PARENT = window
     window.show()
     sys.exit(app.exec())

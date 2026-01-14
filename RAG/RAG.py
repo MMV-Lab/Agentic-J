@@ -6,6 +6,7 @@ import os
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from loaders import load_pdfs_into_RAG, load_txt_into_RAG, load_ipynb_into_RAG
 
+import keys
 
 path_to_folder = r"C:\Users\lukas.johanns\Downloads\knowledge_database\knowledge_database"
 

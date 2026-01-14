@@ -32,7 +32,6 @@ def load_txt_into_RAG(path_to_folder: str):
                                "**/*.cpp",
                                "**/*.java",
                                ],
-                         separators=["\nclass ", "\ndef ", "\n\n", "\n"]
                          loader_cls=TextLoader,
                          loader_kwargs={
                         "encoding": "utf-8",

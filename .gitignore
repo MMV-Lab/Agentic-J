@@ -17,3 +17,5 @@ dist/
 
 settings.json
 keys.py
+
+qdrant_data/

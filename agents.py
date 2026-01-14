@@ -2,7 +2,7 @@ from deepagents import create_deep_agent
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import MemorySaver
 from prompts import imagej_coder_prompt, imagej_debugger_prompt, supervisor_prompt
-from tools import internet_search, ask_user, inspect_active_image, run_script_safe
+from tools import internet_search, ask_user, inspect_active_image, run_script_safe, rag_retrieve
 from keys import gpt_key
 
 
@@ -62,7 +62,7 @@ def init_agent():
 
     supervisor = create_deep_agent(
     name="ImageJ_Supervisor",
-    tools = [internet_search, inspect_active_image, run_script_safe],
+    tools = [internet_search, inspect_active_image, run_script_safe, rag_retrieve, ask_user],
     system_prompt=supervisor_prompt,
     subagents=[imagej_coder, imagej_debugger],
     middleware=[],
