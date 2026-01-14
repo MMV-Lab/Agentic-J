@@ -234,7 +234,7 @@ def run_script_safe(language: str, code: str, max_retries: int = 3) -> str:
     Supported languages (determined automatically from the `language` argument):
       - "groovy"  : Groovy scripts
       - "java"    : Java scripts
-      - "macro"   : ImageJ Macro scripts
+     
 
     Usage notes for the supervisor:
       - The coder and debugger agents only generate or repair code; they
@@ -246,7 +246,7 @@ def run_script_safe(language: str, code: str, max_retries: int = 3) -> str:
       - Only successful execution leaves windows visible for the user.
 
     Parameters:
-      language (str) : "groovy", "java", or "macro"
+      language (str) : "groovy", "java"
       code (str)     : The script code to execute
       max_retries (int, optional) : Number of times to retry on failure
 
@@ -261,7 +261,6 @@ def run_script_safe(language: str, code: str, max_retries: int = 3) -> str:
     tool_map = {
         "groovy": run_groovy_script,
         "java": run_java_script,
-        "macro": run_imagej_macro,
     }
     
     if language.lower() not in tool_map:
@@ -297,7 +296,7 @@ def run_script_safe(language: str, code: str, max_retries: int = 3) -> str:
                 imp.changes = False
                 imp.close()
        
-            print("Exeution failed")
+            print("Execution failed")
             return output
     else:
         # Success: leave windows visible
