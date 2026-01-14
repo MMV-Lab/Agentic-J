@@ -71,6 +71,7 @@ imagej_coder_prompt ="""
 
     [GROOVY]
     - Use ImageJ and SciJava APIs.
+    - ALAWAYS prefer WaitForUserDialog instead of a GenericDialog.
     - Retrieve image via:
     - #@ ImagePlus imp
     - or IJ.openImage(absolutePath)
