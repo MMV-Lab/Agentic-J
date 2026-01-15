@@ -70,13 +70,23 @@ imagej_coder_prompt ="""
     ────────────────────────────────────────
 
     [GROOVY]
+    - PREFER `IJ.run(imp, "Command Name", "options")` over direct API calls.
+    -> Example: Use `IJ.run(imp, "Gaussian Blur...", "sigma=2")` 
+    -> Instead of: `new GaussianBlur().blurGaussian(imp.getProcessor(), 2)`
+    -> Why? It handles Undo, ROI clipping, and API changes automatically.
+
+    - API VALIDATION:
+    If you need to call a specific method on `ImagePlus`, `ImageProcessor`, or `Roi` 
+    and you are not absolutely sure of the signature:
+    -> USE the `inspect_java_class` tool FIRST to verify it exists.
+
     - Use ImageJ and SciJava APIs.
-    - ALAWAYS prefer WaitForUserDialog instead of a GenericDialog.
+    - ALAWAYS prefer WaitForUserDialog("Window Title", "Text inside the window") instead of a GenericDialog.
     - Retrieve image via:
     - #@ ImagePlus imp
     - or IJ.openImage(absolutePath)
     - Always check:
-    if (imp == null) { println("ERROR: No image loaded"); return }
+      if (imp == null) { println("ERROR: No image loaded"); return }
 
     [JAVA]
     - Assume execution via ImageJ ScriptService.
@@ -156,6 +166,12 @@ imagej_debugger_prompt ="""You are an ImageJ/Fiji debugging agent.
                     if (imp == null) { println("ERROR: No image loaded"); return }
                     - Fix SciJava annotation misuse.
                     - Correct API method signatures.
+                    - Look for `groovy.lang.MissingMethodException` or `No signature of method`.
+                    - If found:
+                    1. USE `inspect_java_class` on the object's class to see what IS available.
+                    2. If the method name is slightly wrong (e.g., `getDims()` vs `getDimensions()`), fix it.
+                    3. If the method does not exist at all, replace the complex API call with `IJ.run(imp, "Command", "")`.
+                    4. Ensure imports are correct (e.g., `import ij.IJ`, `import ij.ImagePlus`).
 
                     [JAVA]
                     - Ensure System.out / System.err logging.
