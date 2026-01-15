@@ -12,7 +12,7 @@ path_to_folder = r"C:\Users\lukas.johanns\Downloads\knowledge_database\knowledge
 
 path_to_RAG = "./qdrant_data"
 
-colection_name = "BioimageAnalysisDocs"
+collection_name = "codingerrors_and_solutions"
 
 chunk_size = 1000
 overlap_size = 200
@@ -93,6 +93,8 @@ def load_into_RAG(path_to_folder: str, vector_store: QdrantVectorStore):
 
 if __name__ == "__main__":
 
-    vector_store = init_vector_store(path_to_RAG, colection_name)
+    vector_store = init_vector_store(path_to_RAG, collection_name)
+
+    vector_store = init_vector_store(path_to_RAG, "BioimageAnalysisDocs")
 
     load_into_RAG(path_to_folder, vector_store)
