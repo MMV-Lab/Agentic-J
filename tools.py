@@ -17,6 +17,55 @@ from keys import gpt_key
 import difflib
 import RAG.loaders
 from qdrant_client_singleton import get_qdrant_client
+import re
+import os 
+import json
+
+SCRIPTS_DIR = "saved_scripts"
+
+def sanitize_filename(name: str) -> str:
+    """Converts a script name into a valid filename."""
+    # Remove invalid characters, replace spaces with underscores
+    clean = re.sub(r'[<>:"/\\|?*]', '', name)
+    return clean.replace(' ', '_')
+
+@tool("save_reusable_script")
+def save_reusable_script(name: str, code: str, description: str, inputs_required: str) -> str:
+    """
+    Saves a working script to the permanent user library folder.
+    Creates two files: a .groovy file for the code and a .json file for metadata.
+    
+    Args:
+        name: A short, descriptive title (e.g., "Nuclei Segmentation via StarDist").
+        code: The complete, executable Groovy or Java code.
+        description: A summary of what the script does.
+        inputs_required: Instructions for the user (e.g., "Open a 2D Tiff image").
+    """
+    
+    if not os.path.exists(SCRIPTS_DIR):
+        os.makedirs(SCRIPTS_DIR)
+        
+    safe_name = sanitize_filename(name)
+    
+    # 1. Save the code file
+    code_path = os.path.join(SCRIPTS_DIR, f"{safe_name}.groovy")
+    with open(code_path, "w", encoding="utf-8") as f:
+        f.write(code)
+        
+    # 2. Save the metadata file
+    meta_path = os.path.join(SCRIPTS_DIR, f"{safe_name}.json")
+    metadata = {
+        "name": name,
+        "description": description,
+        "inputs": inputs_required,
+        "language": "groovy",
+        "script_file": f"{safe_name}.groovy"
+    }
+    
+    with open(meta_path, "w", encoding="utf-8") as f:
+        json.dump(metadata, f, indent=4)
+        
+    return f"Script saved successfully as '{safe_name}.groovy' in the '{SCRIPTS_DIR}' folder."
 
 
 def init_vec_store(
