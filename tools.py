@@ -23,6 +23,79 @@ import json
 
 SCRIPTS_DIR = "saved_scripts"
 
+def walk(dir_path: str, depth: int, max_depth: int = 5, recursive: bool = True) -> dict:
+        node = {
+            "name": os.path.basename(dir_path) or dir_path,
+            "type": "directory",
+            "children": []
+        }
+
+        if depth >= max_depth:
+            return node
+
+        try:
+            entries = sorted(os.listdir(dir_path))
+        except PermissionError:
+            node["children"].append({
+                "name": "<permission denied>",
+                "type": "error"
+            })
+            return node
+
+        for entry in entries:
+            full_path = os.path.join(dir_path, entry)
+
+            if os.path.isdir(full_path):
+                if recursive:
+                    node["children"].append(walk(full_path, depth + 1))
+                else:
+                    node["children"].append({
+                        "name": entry,
+                        "type": "directory"
+                    })
+
+            elif os.path.isfile(full_path):
+                node["children"].append({
+                    "name": entry,
+                    "type": "file"
+                })
+
+        return node
+
+@tool("inspect_folder_tree")
+def inspect_folder_tree(
+    path: str,
+    recursive: bool = True,
+    max_depth: int = 5
+) -> str:
+    """
+    Inspects a folder and returns its subfolder structure and file names.
+    Does NOT read file contents.
+    
+    Args:
+        path: Absolute or relative path to the root folder.
+        recursive: Whether to recurse into subfolders.
+        max_depth: Maximum depth to traverse (root = depth 0).
+        
+    Returns:
+        A JSON-like string describing the folder tree.
+    """
+
+    root = os.path.abspath(os.path.expanduser(path))
+
+    if not os.path.exists(root):
+        return f"ERROR: Path does not exist: {root}"
+
+    if not os.path.isdir(root):
+        return f"ERROR: Path is not a directory: {root}"
+
+    tree = walk(root, depth=0, max_depth=max_depth, recursive=recursive)
+
+    # Return as a string so it fits the same pattern as your other tools
+    import json
+    return json.dumps(tree, indent=2)
+
+
 def sanitize_filename(name: str) -> str:
     """Converts a script name into a valid filename."""
     # Remove invalid characters, replace spaces with underscores
