@@ -27,6 +27,10 @@ An AI-powered agent for ImageJ/Fiji scripting and bioimage analysis.
    - Copy `src/config/keys_template.py` to `src/config/keys.py`
    - Fill in your API keys (OpenAI, LangSmith, etc.)
 
+5. **Initialize the RAG databases**:
+   - Run the RAG initialization script to set up the vector databases: `python src/imagentj/rag/RAG.py`
+   - Note: This script has hardcoded paths; you may need to adjust `path_to_folder` in the script to point to your knowledge database directory.
+
 ## Running
 
 - CLI version: `python run.py`

@@ -19,6 +19,7 @@ dist/
 settings.json
 keys.py
 
-qdrant_data/
+qdrant_data/*
+!qdrant_data/.gitkeep
 
 scripts/saved_scripts/
