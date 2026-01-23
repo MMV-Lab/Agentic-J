@@ -28,7 +28,7 @@ An AI-powered agent for ImageJ/Fiji scripting and bioimage analysis.
    - Fill in your API keys (OpenAI, LangSmith, etc.)
 
 5. **Configure RAG system**:
-   - Edit `src/config/rag_config.py` to configure document ingestion folders
+   - Rename `src/config/rag_config_template.py` to  `src/config/rag_config.py` configure document ingestion folders
    - Add paths to folders containing documentation, manuals, or knowledge base files
    - Supported formats: PDF, DOCX, TXT, MD, HTML, and more
 
