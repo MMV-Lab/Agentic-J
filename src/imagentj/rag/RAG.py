@@ -4,13 +4,13 @@ from langchain_qdrant import QdrantVectorStore
 from langchain_openai import OpenAIEmbeddings
 import os
 from langchain_community.document_loaders import TextLoader
-from loaders import get_smart_splitter, get_docling_converter, load_and_split_ipynb
+from .loaders import get_smart_splitter, get_docling_converter, load_and_split_ipynb
 from pathlib import Path
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from langchain_docling import DoclingLoader
 from langchain_docling.loader import ExportType
-import keys
+from ...config.keys import keys 
 
 path_to_folder = r"C:\Users\lukas.johanns\Downloads\knowledge_database"
 
@@ -117,3 +117,5 @@ if __name__ == "__main__":
     vector_store = init_vector_store(path_to_RAG, collection_name)
 
     load_folder_recursively(path_to_folder, vector_store)
+
+    client.close()

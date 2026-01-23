@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "imagentj"
+version = "0.1.0"
+description = "ImageJ AI Agent"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    # List dependencies from environment.yml, but since it's conda, perhaps keep environment.yml
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[project.scripts]
+imagentj-cli = "run:main"
+imagentj-gui = "gui_runner:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

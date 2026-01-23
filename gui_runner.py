@@ -1,4 +1,5 @@
 import sys
+sys.path.insert(0, 'src')
 import os
 import json
 import jpype
@@ -10,15 +11,16 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import QObject, Signal, Slot, QThread, Qt
 
 # --- Import your existing backend ---
-from agents import init_agent
-from imagej_context import get_ij
+from imagentj.agents import init_agent
+from imagentj.imagej_context import get_ij
 # Import the specific execution tool directly for the "Run" button
-from tools import run_script_safe
+from imagentj.tools import run_script_safe
+from config.imagej_config import FIJI_JAVA_HOME
 
-SCRIPTS_DIR = "./saved_scripts"
+SCRIPTS_DIR = os.path.join(os.path.dirname(__file__), "scripts/saved_scripts")
 
 
-os.environ["JAVA_HOME"] = r"C:\Users\lukas.johanns\Downloads\fiji-latest-win64-jdk(1)\Fiji\java\win64"
+os.environ["JAVA_HOME"] = FIJI_JAVA_HOME
 
 # ----- CONFIG -----
 THREAD_ID = "imagej_supervisor_thread"   # keep constant to preserve context

@@ -2,15 +2,17 @@
 # Run this from the same environment where `supervisor` is defined.
 
 import sys
+sys.path.insert(0, 'src')
 import time
 from langsmith import traceable
 import os
-from agents import init_agent
+from imagentj.agents import init_agent
 from langchain_openai import ChatOpenAI
-from imagej_context import get_ij
+from imagentj.imagej_context import get_ij
+from config.imagej_config import FIJI_JAVA_HOME
 
 
-os.environ["JAVA_HOME"] = r"C:\Users\lukas.johanns\Downloads\fiji-latest-win64-jdk(1)\Fiji\java\win64"
+os.environ["JAVA_HOME"] = FIJI_JAVA_HOME
 
 # from langgraph.checkpoint.memory import MemorySaver  # alternative (in-memory)
 

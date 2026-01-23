@@ -6,16 +6,16 @@ from langchain.agents.middleware.types import ToolCallRequest
 from langchain_core.messages import ToolMessage
 from langgraph.types import Command
 from langchain.agents.middleware import TodoListMiddleware
-from imagej_context import get_ij
+from .imagej_context import get_ij
 from jpype import JClass
 from langchain_core.documents import Document
-from RAG.loaders import get_smart_splitter, load_and_split_ipynb
+from .rag.loaders import get_smart_splitter, load_and_split_ipynb
 from langchain_qdrant import QdrantVectorStore
 from langchain_openai import OpenAIEmbeddings
 from qdrant_client import QdrantClient
-from keys import gpt_key
+from config.keys import gpt_key
 import difflib
-from qdrant_client_singleton import get_qdrant_client
+from .qdrant_client_singleton import get_qdrant_client
 import re
 import os 
 import json
@@ -29,7 +29,7 @@ from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend
 from pathlib import Path
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-SCRIPTS_DIR = "saved_scripts"
+SCRIPTS_DIR = os.path.join(os.path.dirname(__file__), "../../scripts/saved_scripts")
 
 
 def walk(dir_path: str, depth: int, max_depth: int = 5, recursive: bool = True) -> dict:
