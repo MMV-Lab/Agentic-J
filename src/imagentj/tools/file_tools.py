@@ -87,7 +87,7 @@ def save_reusable_script(name: str, code: str, description: str, inputs_required
     return f"Script saved successfully as '{safe_name}.groovy' in the '{SCRIPTS_DIR}' folder."
 
 
-@tool("runtime_file_manager")
+@tool("smart_file_reader")
 def smart_file_reader(file_path: str):
     """
     Analyzes and ingests an uploaded file to expand the agent's knowledge base at runtime.

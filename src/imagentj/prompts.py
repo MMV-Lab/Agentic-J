@@ -238,6 +238,7 @@ supervisor_prompt = """
                                 agents never execute scripts themselves.
                         - inspect_all_ui_windows
                         - rag_retrieve (fast document lookup; use only when knowledge is uncertain)
+                        - smart_file_reader (safe file reading for user uploads), ALWAYS use this for user files
 
                         IMPORTANT:
                         Do NOT use the built-in read_file or ls tools for analyzing user uploads.
