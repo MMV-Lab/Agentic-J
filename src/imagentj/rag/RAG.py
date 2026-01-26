@@ -1,38 +1,26 @@
 """
 RAG (Retrieval-Augmented Generation) System for ImageJ Agent
-
-This module provides functionality to:
-1. Initialize Qdrant vector databases for document storage
-2. Ingest documents from configured folders
-3. Process different file types (PDFs, notebooks, code files, etc.)
-4. Create searchable embeddings for AI-powered document retrieval
-
-The RAG system enables the agent to search through documentation,
-research papers, code examples, and other knowledge sources to provide
-contextually relevant information for ImageJ/Fiji scripting tasks.
+Refactored for Hybrid Search (Dense + Sparse) and Reciprocal Rank Fusion (RRF).
 """
 
-# Add src directory to Python path when running script directly
 import sys
 from pathlib import Path
+import os
 
 script_dir = Path(__file__).resolve()
-# Check if we're running from the rag directory or from project root
 if script_dir.parent.name == 'rag':
-    # Running from rag directory, go up to src
     src_dir = script_dir.parent.parent.parent
 else:
-    # Running from project root with full path
     src_dir = script_dir.parent.parent.parent.parent
 
 if str(src_dir) not in sys.path:
     sys.path.insert(0, str(src_dir))
 
+from ..qdrant_client_singleton import get_qdrant_client
 from qdrant_client import QdrantClient
-from qdrant_client.http.models import VectorParams, Distance
-from langchain_qdrant import QdrantVectorStore
+from qdrant_client.http import models
+from langchain_qdrant import QdrantVectorStore, FastEmbedSparse, RetrievalMode
 from langchain_openai import OpenAIEmbeddings
-import os
 from langchain_community.document_loaders import TextLoader
 from imagentj.rag.loaders import get_smart_splitter, get_docling_converter, load_and_split_ipynb
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -40,56 +28,147 @@ from langchain_docling import DoclingLoader
 from langchain_docling.loader import ExportType
 from config.rag_config import (
     QDRANT_DATA_PATH, DOCS_COLLECTION_NAME, MISTAKES_COLLECTION_NAME,
-    INGESTION_FOLDERS, EMBEDDING_MODEL, CHUNK_SIZE, CHUNK_OVERLAP,
-    BATCH_SIZE, SKIP_PATTERNS, SUPPORTED_EXTENSIONS
+    INGESTION_FOLDERS, EMBEDDING_MODEL, BATCH_SIZE, SKIP_PATTERNS, SUPPORTED_EXTENSIONS
 )
 from config.keys import gpt_key
 
-def init_vector_store(collection_name: str, client: QdrantClient = None, embedding_model: str = EMBEDDING_MODEL):
+# --- Configuration for Hybrid Search ---
+
+SPARSE_MODEL_NAME = "Qdrant/bm25"
+DENSE_VECTOR_NAME = "dense"
+SPARSE_VECTOR_NAME = "sparse"
+
+def get_embeddings_models():
     """
-    Initialize a Qdrant vector store for document storage.
-
-    Args:
-        collection_name: Name of the Qdrant collection
-        client: QdrantClient instance (optional, will create if None)
-        embedding_model: OpenAI embedding model to use
-
-    Returns:
-        QdrantVectorStore: Initialized vector store
+    Returns the initialized dense and sparse embedding models.
     """
-    if client is None:
-        client = QdrantClient(path=QDRANT_DATA_PATH)
+    dense_embeddings = OpenAIEmbeddings(model=EMBEDDING_MODEL, api_key=gpt_key)
+    sparse_embeddings = FastEmbedSparse(model_name=SPARSE_MODEL_NAME)
+    return dense_embeddings, sparse_embeddings
 
+def init_vector_store(collection_name: str, client: QdrantClient = None):
+    """
+    Initialize a Qdrant vector store with HYBRID configuration (Dense + Sparse).
+    """
+    client= get_qdrant_client(path=QDRANT_DATA_PATH)
+
+    dense_embeddings, sparse_embeddings = get_embeddings_models()
+
+    # check if collection exists
     if not client.collection_exists(collection_name=collection_name):
-        print(f"Creating new Qdrant collection: {collection_name}")
-
+        print(f"Creating new Hybrid Qdrant collection: {collection_name}")
+        
         client.create_collection(
             collection_name=collection_name,
-            vectors_config=VectorParams(size=3072, distance=Distance.COSINE),
+            vectors_config={
+                DENSE_VECTOR_NAME: models.VectorParams(
+                    size=3072,  # Size for text-embedding-3-large
+                    distance=models.Distance.COSINE
+                )
+            },
+            sparse_vectors_config={
+                SPARSE_VECTOR_NAME: models.SparseVectorParams(
+                    index=models.SparseIndexParams(
+                        on_disk=True, # Keep sparse index on disk to save RAM
+                    )
+                )
+            },
         )
     else:
-        print(f"Qdrant collection '{collection_name}' already exists. Adding to existing collection.")
+        print(f"Collection '{collection_name}' exists. Using existing configuration.")
 
-    embeddings = OpenAIEmbeddings(model=embedding_model, api_key=gpt_key)
-
+    # Initialize VectorStore with both embedding models
     vector_store = QdrantVectorStore(
         client=client,
         collection_name=collection_name,
-        embedding=embeddings,
+        embedding=dense_embeddings,
+        sparse_embedding=sparse_embeddings,
+        vector_name=DENSE_VECTOR_NAME,
+        sparse_vector_name=SPARSE_VECTOR_NAME,
+        retrieval_mode=RetrievalMode.HYBRID, # Default to hybrid score fusion
     )
 
     return vector_store
-        
 
+def apply_rrf(results_list, k=60):
+    """
+    Simple Python implementation of RRF to fuse results from multiple query variations
+    """
+    scores = {}
+    doc_payloads = {}
+    
+    for rank, point in enumerate(results_list):
+        doc_id = point.id
+        if doc_id not in scores:
+            scores[doc_id] = 0
+            doc_payloads[doc_id] = point
+            
+        # RRF formula: 1 / (k + rank)
+        scores[doc_id] += 1 / (k + rank)
+    
+    # Sort by score descending
+    sorted_ids = sorted(scores.keys(), key=lambda x: scores[x], reverse=True)
+    return [doc_payloads[did] for did in sorted_ids]
+
+def hybrid_search_with_rrf(query_text: str, collection_name: str = DOCS_COLLECTION_NAME, limit: int = 5, k: int = 60):
+    """
+    Perform a Hybrid Search using Reciprocal Rank Fusion (RRF).
+    
+    This method bypasses the standard LangChain retriever to use Qdrant's 
+    native RRF fusion, which is often superior to simple score merging.
+    
+    Args:
+        query_text: The user's search query
+        collection_name: Target collection
+        limit: Number of final results to return
+        k: RRF constant (usually 60)
+        
+    Returns:
+        List of results with combined RRF scores
+    """
+    client = get_qdrant_client(path=QDRANT_DATA_PATH)
+    dense_emb, sparse_emb = get_embeddings_models()
+
+    # 1. Generate vectors for the query
+    dense_vector = dense_emb.embed_query(query_text)
+    # FastEmbedSparse returns a generic format, we ensure it fits Qdrant's expectation
+    sparse_vector = sparse_emb.embed_query(query_text) 
+    
+    # 2. Convert LangChain sparse format to Qdrant Native format if necessary
+    # (FastEmbedSparse usually returns a SparseVector object, but we ensure it's compatible)
+    qdrant_sparse_vector = models.SparseVector(
+        indices=sparse_vector.indices,
+        values=sparse_vector.values
+    )
+
+    # 3. Execute Server-Side RRF
+    # We prefetch results from both indices and fuse them
+    print(f"Executing RRF Hybrid Search for: '{query_text}'")
+    
+    results = client.query_points(
+        collection_name=collection_name,
+        prefetch=[
+            models.Prefetch(
+                query=dense_vector,
+                using=DENSE_VECTOR_NAME,
+                limit=limit * 2, # Fetch more candidates for fusion
+            ),
+            models.Prefetch(
+                query=qdrant_sparse_vector,
+                using=SPARSE_VECTOR_NAME,
+                limit=limit * 2,
+            ),
+        ],
+        query=models.FusionQuery(fusion=models.Fusion.RRF), # Native RRF
+        limit=limit,
+    )
+    
+    return results.points
 
 def load_folder_recursively(folders: list = None, vector_store=None, collection_name: str = DOCS_COLLECTION_NAME):
     """
     Recursively load and process documents from configured folders.
-
-    Args:
-        folders: List of folder paths to scan (uses config if None)
-        vector_store: Vector store to add documents to
-        collection_name: Name of the collection to use
+    Now supports automatic sparse vector generation via the configured vector_store.
     """
     if folders is None:
         folders = INGESTION_FOLDERS
@@ -98,140 +177,93 @@ def load_folder_recursively(folders: list = None, vector_store=None, collection_
         vector_store = init_vector_store(collection_name)
 
     if not folders:
-        print("No ingestion folders configured. Please add folders to INGESTION_FOLDERS in rag_config.py")
+        print("No ingestion folders configured.")
         return
 
-    # 1. Warm up the engine once
     converter = get_docling_converter()
-
-    # 2. Safety splitter for chunks that exceed embedding limits
     safety_splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=200)
 
     all_chunks = []
 
     for folder_path in folders:
         print(f"Processing folder: {folder_path}")
-
-        if not os.path.exists(folder_path):
-            print(f"Warning: Folder does not exist: {folder_path}")
+        if not os.path.exists(folder_path): 
             continue
 
         for root, _, files in os.walk(folder_path):
-            # Skip unwanted directories
-            if any(skip_pattern in root for skip_pattern in SKIP_PATTERNS):
-                continue
+            if any(skip_pattern in root for skip_pattern in SKIP_PATTERNS): continue
 
             for file in files:
                 file_path = os.path.join(root, file)
                 ext = Path(file).suffix.lower()
-
-                # Check if file type is supported
+                
+                # Check supported extensions
                 supported = any(ext in SUPPORTED_EXTENSIONS[category] for category in SUPPORTED_EXTENSIONS)
-                if not supported:
-                    continue
+                if not supported: continue
 
                 try:
                     print(f"Processing: {file_path}")
+                    final_splits = []
 
-                    # --- PDF Logic (Docling) ---
                     if ext == ".pdf":
                         loader = DoclingLoader(file_path=file_path, converter=converter, export_type=ExportType.DOC_CHUNKS)
                         raw_chunks = loader.load()
                         final_splits = safety_splitter.split_documents(raw_chunks)
-
-                    # --- Notebook Logic ---
                     elif ext == ".ipynb":
                         final_splits = load_and_split_ipynb(file_path)
-
-                    # --- Code/Text Logic ---
                     elif ext in SUPPORTED_EXTENSIONS['code'] + SUPPORTED_EXTENSIONS['documents']:
                         loader = TextLoader(file_path, encoding="utf-8")
                         splitter = get_smart_splitter(ext)
                         final_splits = splitter.split_documents(loader.load())
 
-                    else:
-                        continue
+                    if final_splits:
+                        all_chunks.extend(final_splits)
 
-                    all_chunks.extend(final_splits)
-
-                    # 3. Batch Upload to Vector Store
+                    # Batch Upload
                     if len(all_chunks) >= BATCH_SIZE:
-                        print(f"Uploading batch of {len(all_chunks)} chunks to Qdrant...")
+                        print(f"Uploading batch of {len(all_chunks)} chunks (Dense + Sparse)...")
                         vector_store.add_documents(all_chunks)
-                        all_chunks = []  # Clear memory
+                        all_chunks = [] 
 
                 except Exception as e:
                     print(f"Error processing {file_path}: {e}")
 
-    # Upload remaining chunks
     if all_chunks:
-        print(f"Uploading final batch of {len(all_chunks)} chunks to Qdrant...")
+        print(f"Uploading final batch of {len(all_chunks)} chunks...")
         vector_store.add_documents(all_chunks)
 
     print("Document ingestion completed!")
 
-
 def initialize_rag_system():
-    """
-    Initialize the complete RAG system with both document collections.
-    This function creates the necessary vector stores and can be called
-    to set up the RAG system for the first time.
-    """
-    print("Initializing RAG system...")
-
-    # Create a single Qdrant client for all collections
+    print("Initializing Hybrid RAG system...")
     client = QdrantClient(path=QDRANT_DATA_PATH)
-
-    # Initialize document collection
+    
     docs_store = init_vector_store(DOCS_COLLECTION_NAME, client=client)
-    print(f"✓ Initialized document collection: {DOCS_COLLECTION_NAME}")
-
-    # Initialize mistakes/coding experience collection
+    print(f"✓ Initialized Hybrid docs collection: {DOCS_COLLECTION_NAME}")
+    
     mistakes_store = init_vector_store(MISTAKES_COLLECTION_NAME, client=client)
-    print(f"✓ Initialized coding experience collection: {MISTAKES_COLLECTION_NAME}")
-
-    print("RAG system initialized successfully!")
-    print(f"Vector database location: {QDRANT_DATA_PATH}")
+    print(f"✓ Initialized Hybrid experience collection: {MISTAKES_COLLECTION_NAME}")
+    
     return docs_store, mistakes_store
 
-
 def ingest_documents():
-    """
-    Ingest documents from configured folders into the RAG system.
-    Call this function after setting up your INGESTION_FOLDERS in rag_config.py.
-    """
-    print("Starting document ingestion...")
-
+    print("Starting Hybrid document ingestion...")
     if not INGESTION_FOLDERS:
         print("❌ No ingestion folders configured!")
-        print("Please add folder paths to INGESTION_FOLDERS in src/config/rag_config.py")
         return
 
-    # Initialize the document store
     docs_store = init_vector_store(DOCS_COLLECTION_NAME)
-
-    # Load documents from all configured folders
     load_folder_recursively(INGESTION_FOLDERS, docs_store, DOCS_COLLECTION_NAME)
-
     print("✅ Document ingestion completed!")
 
-
 if __name__ == "__main__":
-    print("RAG System Setup")
-    print("================")
-
-    # Initialize the RAG system
+    print("RAG System Setup (Hybrid + RRF)")
+    print("===============================")
+    
+    # 1. Initialize
     initialize_rag_system()
 
-    # Ingest documents if folders are configured
-    if INGESTION_FOLDERS:
-        print("\nStarting document ingestion...")
-        ingest_documents()
-    else:
-        print("\n⚠️  No ingestion folders configured.")
-        print("To add documents to the RAG system:")
-        print("1. Edit src/config/rag_config.py")
-        print("2. Add folder paths to INGESTION_FOLDERS")
-        print("3. Run this script again or call ingest_documents()")
-
-    print("\nRAG system setup complete!")
+    # 2. Ingest (uncomment to run ingestion)
+    ingest_documents()
+    
+    

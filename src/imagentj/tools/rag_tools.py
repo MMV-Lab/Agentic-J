@@ -1,66 +1,85 @@
 from langchain.tools import tool
 from langchain_core.documents import Document
-from .utils import init_vec_store
-from .vector_stores import vec_store_docs, vec_store_mistakes
+from .vector_stores import vec_store_mistakes
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from config.keys import gpt_key
+from ..rag.RAG import hybrid_search_with_rrf, apply_rrf, DOCS_COLLECTION_NAME, MISTAKES_COLLECTION_NAME
 
 __all__ = ['rag_retrieve_docs', 'rag_retrieve_mistakes', 'save_coding_experience']
 
 
-@tool("rag_retrieve")
-def rag_retrieve_docs(query: str) -> str:
-    """
-    Retrieve relevant context from the document RAG.
-    Input should be a precise information-seeking query.
-    """
 
-    retriever = vec_store_docs.as_retriever(
-        search_type="mmr",  # or "similarity"
-        search_kwargs={
-            "k": 8,
-            "fetch_k": 30,
-        },
+
+# Initialize a fast model for expansion
+llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, api_key=gpt_key)
+
+def get_expanded_queries(query: str) -> list[str]:
+    """Generates 3-4 variations of the query to improve retrieval."""
+    prompt = ChatPromptTemplate.from_template(
+        "You are an ImageJ/Fiji expert. Generate 3 search query variations for: {question}\n"
+        "Focus on technical API terms, alternative function names, and common library methods.\n"
+        "Output only the queries, one per line."
     )
-    docs = retriever.invoke(query)
+    chain = prompt | llm | StrOutputParser()
+    variants = chain.invoke({"question": query}).strip().split("\n")
+    # Clean and return unique queries including the original
+    return list(set([query] + [v.strip("- ").strip() for v in variants]))
 
-    results = []
-    for d in docs:
-        results.append(
-            {
-                "content": d.page_content,
-                "source": d.metadata.get("source"),
-                "page": d.metadata.get("page"),
-            }
-        )
 
-    return results
 
+@tool("rag_retrieve")
+def rag_retrieve_docs(query: str) -> list:
+    """
+    Retrieve relevant context from the document RAG using Hybrid Search + Query Expansion.
+    """
+    # 1. Expand the query
+    queries = get_expanded_queries(query)
+    
+    all_points = []
+    # 2. Search for each variant (In production, use asyncio.gather for speed)
+    for q in queries:
+        # Use our custom RRF search function defined in the previous step
+        points = hybrid_search_with_rrf(q, collection_name=DOCS_COLLECTION_NAME, limit=5)
+        all_points.extend(points)
+
+    # 3. Final RRF re-ranking of all combined results
+    # (Using the apply_rrf helper from the previous response)
+    final_results = apply_rrf(all_points, k=60)[:8]
+
+    return [
+        {
+            "content": p.payload.get("page_content"),
+            "source": p.payload.get("metadata", {}).get("source"),
+            "page": p.payload.get("metadata", {}).get("page"),
+            "score": p.score # Useful for debugging
+        }
+        for p in final_results
+    ]
 
 @tool("rag_retrieve_mistakes")
-def rag_retrieve_mistakes(query: str) -> str:
+def rag_retrieve_mistakes(query: str) -> list:
     """
-    Retrieve relevant context from the coding errors and solutions RAG.
-    Input should be a precise information-seeking query.
+    Retrieve relevant context from coding errors and solutions RAG using Query Expansion.
     """
-    retriever = vec_store_mistakes.as_retriever(
-        search_type="mmr",  # or "similarity"
-        search_kwargs={
-            "k": 8,
-            "fetch_k": 30,
-        },
-    )
-    docs = retriever.invoke(query)
+    queries = get_expanded_queries(query)
+    all_points = []
+    
+    for q in queries:
+        points = hybrid_search_with_rrf(q, collection_name=MISTAKES_COLLECTION_NAME, limit=5)
+        all_points.extend(points)
 
-    results = []
-    for d in docs:
-        results.append(
-            {
-                "content": d.page_content,
-                "source": d.metadata.get("source"),
-                "page": d.metadata.get("page"),
-            }
-        )
+    final_results = apply_rrf(all_points, k=60)[:5] # Fewer results for mistakes usually suffices
 
-    return results
+    return [
+        {
+            "content": p.payload.get("page_content"),
+            "source": p.payload.get("metadata", {}).get("source"),
+            "score": p.score
+        }
+        for p in final_results
+    ]
 
 
 @tool("save_coding_experience")
