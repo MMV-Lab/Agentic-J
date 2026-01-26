@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 from langchain.tools import tool
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from .utils import walk, sanitize_filename, init_vec_store
+from .utils import walk, sanitize_filename
 from imagentj.rag.loaders import get_smart_splitter, load_and_split_ipynb
 from .vector_stores import vec_store_docs
 
