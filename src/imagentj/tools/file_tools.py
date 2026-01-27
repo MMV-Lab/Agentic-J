@@ -1,17 +1,80 @@
 import os
 import json
 from pathlib import Path
+import pymupdf4llm
+import pymupdf
 from langchain.tools import tool
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from .utils import walk, sanitize_filename
 from imagentj.rag.loaders import get_smart_splitter, load_and_split_ipynb
 from .vector_stores import vec_store_docs
+import threading
+from pathlib import Path
+from qdrant_client import models
+from ..qdrant_client_singleton import get_qdrant_client
+from config.rag_config import QDRANT_DATA_PATH, DOCS_COLLECTION_NAME
 
 SCRIPTS_DIR = os.path.join(os.path.dirname(__file__), "../../scripts/saved_scripts")
 
 # Limits for CPU-optimized performance
 MAX_CONTEXT_CHARS = 15000  # ~3,000 to 4,000 tokens
 MAX_CONTEXT_PDF_PAGES = 3  # Small enough for immediate reading
+
+def shadow_ingest_upgrade(file_path: str, vector_store):
+    """
+    Background worker that replaces fast chunks with high-quality Docling chunks.
+    """
+    try:
+        print(f"🚀 [Shadow] Starting high-quality re-index: {file_path}")
+        
+        # 1. High-Quality Parsing (The slow part)
+        from imagentj.rag.loaders import get_docling_converter
+        from langchain_docling import DoclingLoader
+        from langchain_docling.loader import ExportType
+        from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+        converter = get_docling_converter()
+        loader = DoclingLoader(
+            file_path=file_path, 
+            converter=converter, 
+            export_type=ExportType.DOC_CHUNKS
+        )
+        
+        # Docling does its own smart chunking, but we use safety splitter
+        safety_splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=200)
+        raw_chunks = loader.load()
+        high_quality_splits = safety_splitter.split_documents(raw_chunks)
+        
+        # Ensure metadata includes the source so we can swap them
+        for chunk in high_quality_splits:
+            chunk.metadata["source"] = file_path
+            chunk.metadata["ingestion_quality"] = "high"
+
+        # 2. Delete the old "fast" chunks
+        # We use the Qdrant client directly to wipe points matching this source
+        client = get_qdrant_client(path=QDRANT_DATA_PATH)
+        client.delete(
+            collection_name=DOCS_COLLECTION_NAME,
+            points_selector=models.Filter(
+                must=[
+                    models.FieldCondition(
+                        key="metadata.source",
+                        match=models.MatchValue(value=file_path),
+                    ),
+                    models.FieldCondition(
+                        key="metadata.ingestion_quality",
+                        match=models.MatchValue(value="fast"),
+                    ),
+                ]
+            ),
+        )
+
+        # 3. Insert the "high" quality chunks
+        vector_store.add_documents(high_quality_splits)
+        print(f"✅ [Shadow] Upgrade complete for: {file_path}")
+
+    except Exception as e:
+        print(f"❌ [Shadow] Upgrade failed for {file_path}: {e}")
 
 
 @tool("inspect_folder_tree")
@@ -90,7 +153,7 @@ def save_reusable_script(name: str, code: str, description: str, inputs_required
 @tool("smart_file_reader")
 def smart_file_reader(file_path: str):
     """
-    Analyzes and ingests an uploaded file to expand the agent's knowledge base at runtime.
+    Analyzes and ingests a file through the provided path to expand the agent's knowledge base at runtime.
 
     Use this tool when a user provides a new file (PDF, TXT, PY, IPYNB) and asks
     questions that require information contained within that specific file.
@@ -135,27 +198,45 @@ def smart_file_reader(file_path: str):
     # --- CATEGORY 2: PDFs (The slow part) ---
     elif ext == ".pdf":
         # Use PyMuPDF4LLM for runtime speed (NOT Docling)
-        import pymupdf4llm
-
+        
         # Check page count first
-        import pymupdf
         doc = pymupdf.open(file_path)
         page_count = len(doc)
         doc.close()
 
         if page_count <= MAX_CONTEXT_PDF_PAGES:
-            print("Action: Small PDF. Converting to Markdown for Context.")
             md_text = pymupdf4llm.to_markdown(file_path)
             return {"type": "context", "content": md_text}
+        
         else:
-            print(f"Action: {page_count} page PDF. Indexing via Fast-RAG...")
+            # --- PHASE 1: FAST INGESTION ---
+            print(f"Action: Fast-indexing {page_count} pages for immediate use...")
             md_text = pymupdf4llm.to_markdown(file_path)
+            
             splitter = RecursiveCharacterTextSplitter.from_language(
-                language="markdown", chunk_size=1200, chunk_overlap=200
+                language="markdown", chunk_size=1000, chunk_overlap=150
             )
-            splits = splitter.create_documents([md_text], metadatas=[{"source": file_path}])
-            vec_store_docs.add_documents(splits)
-            return {"type": "rag", "message": "Paper indexed in RAG."}
+            # Mark these as 'fast' so the shadow process can find them
+            fast_splits = splitter.create_documents(
+                [md_text], 
+                metadatas=[{"source": file_path, "ingestion_quality": "fast"}]
+            )
+            vec_store_docs.add_documents(fast_splits)
+
+            # --- PHASE 2: TRIGGER SHADOW UPGRADE ---
+            # We don't 'await' or wait for this; it runs on another thread.
+            thread = threading.Thread(
+                target=shadow_ingest_upgrade, 
+                args=(file_path, vec_store_docs)
+            )
+            thread.daemon = True # Thread dies if main process exits
+            thread.start()
+
+            return {
+                "type": "rag", 
+                "message": f"Document '{Path(file_path).name}' is ready for questions. "
+                           f"I'm optimizing the search quality in the background."
+            }
 
     # --- CATEGORY 3: Notebooks ---
     elif ext == ".ipynb":

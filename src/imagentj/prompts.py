@@ -238,7 +238,7 @@ supervisor_prompt = """
                                 agents never execute scripts themselves.
                         - inspect_all_ui_windows
                         - rag_retrieve (fast document lookup; use only when knowledge is uncertain)
-                        - smart_file_reader (safe file reading for user uploads), ALWAYS use this for user files
+                        - smart_file_reader (safe file reading for user uploads), ALWAYS use this for user files and provided file paths
 
                         IMPORTANT:
                         Do NOT use the built-in read_file or ls tools for analyzing user uploads.
@@ -256,8 +256,8 @@ supervisor_prompt = """
                         - Image analysis logic
                         - GUI automation
                         - Performance-critical processing
-                        5. Use rag_retrieve ONLY if ImageJ/Fiji knowledge, syntax, or workflow details
-                           are uncertain or ambiguous.
+                        5. ALWAYS use rag_retrieve to gather relevant context from the document RAG
+                           before delegating any coding task to imagej_coder.
                         6. If you set thresholds or other parameters, ALWAYS let the user input.
                         7. Break the task into concrete, executable subtasks.
                         8. CHECK MEMORY FIRST: Before delegating a task to the imagej_coder, always call rag_retrieve_mistakes with a query 
