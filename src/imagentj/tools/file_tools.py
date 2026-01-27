@@ -174,7 +174,19 @@ def smart_file_reader(file_path: str):
             - 'content': The text if type is 'context'
             - 'message': A status update if type is 'rag'
     """
+    file_path = os.path.abspath(os.path.expanduser(file_path))
 
+    if not os.path.exists(file_path):
+        return {
+            "type": "error",
+            "message": f"File does not exist: {file_path}"
+        }
+
+    if not os.path.isfile(file_path):
+        return {
+            "type": "error",
+            "message": f"Path is not a file: {file_path}"
+        }
     ext = Path(file_path).suffix.lower()
     file_size = os.path.getsize(file_path) # in bytes
 

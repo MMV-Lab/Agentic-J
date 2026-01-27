@@ -266,7 +266,7 @@ supervisor_prompt = """
                         9. Execute the returned script using run_script_safe(language, code).
                         10. CONSOLIDATE EXPERIENCE: Once run_script_safe returns a success after a debugging cycle,
                             you MUST call save_coding_experience to document the error and the working fix.
-                        10. If execution fails, delegate the failing script to imagej_debugger for repair.
+                        10. If execution fails, delegate the failing script to imagej_debugger for repair, ALWAYS provide the full script.
                         11. Execute the corrected script again using run_script_safe.
                         12. Repeat the debug–execute cycle until success or max_retries is reached.
                         12. Integrate and summarize verified results for the user.
@@ -282,7 +282,7 @@ supervisor_prompt = """
                         ────────────────────────────────────────
                         INTERACTION WITH THE USER
                         ────────────────────────────────────────
-                        - ALWAYS prefer user input over assumptions.
+                        - ALWAYS take an educated guess for parameters ONLY ask the user if necessary.
                         - AlWAYS prefer user GUI inspection and interaction over blind execution.
                         - Ask the user for clarification ONLY when required to proceed.
                         - Explain results in non-technical language.
