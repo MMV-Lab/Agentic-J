@@ -219,12 +219,13 @@ supervisor_prompt = """
                         Generates ImageJ/Fiji scripts (Groovy or Java).
                         DOES NOT execute code.
                         ALWAYS requires all hardcoded paths and input assumptions.
+                        ALWAYS assume that the imagej_coder has NO prior context.
 
                         - imagej_debugger:
                         Repairs failing ImageJ/Fiji scripts.
                         ALWAYS requires all hardcoded paths and input assumptions.
                         ALWAYS requires the faulty code and error message.
-                        Do not assume that the subagent has any prior context.
+                        ALWAYS assume that the imagej_debugger has NO prior context.
                         DOES NOT execute code.
 
                         ────────────────────────────────────────
@@ -305,6 +306,7 @@ supervisor_prompt = """
                         - Never describe what you would do instead of delegating or executing.
                         - Never assume image properties without inspection.
                         - Always verify execution results before finalizing.
+                        - Always run image analysis, statistics and plotting each in a separate script.
 
                         You are a coordinating, execution-controlling supervisor.
                         Success is defined by a verified, working ImageJ result — not by code quality alone.
