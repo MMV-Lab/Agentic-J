@@ -3,7 +3,6 @@ import os
 SCRIPTS_DIR = os.path.join(os.path.dirname(__file__), "../../scripts/saved_scripts")
 
 # Tools package - re-export all tools for backward compatibility
-from .utils import walk, sanitize_filename, init_vec_store, load_and_chunk_with_docling
 from .file_tools import inspect_folder_tree, save_reusable_script, smart_file_reader
 from .rag_tools import rag_retrieve_docs, rag_retrieve_mistakes, save_coding_experience
 from .script_tools import run_script_safe

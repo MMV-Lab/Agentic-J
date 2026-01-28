@@ -217,7 +217,11 @@ class ImageJAgentGUI(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("ImagentJ - AI Supervisor & Script Library")
-        self.resize(1200, 700) # Made wider for the library
+        self.resize(1200, 700) 
+        
+        # --- 1. Enable Drag and Drop ---
+        self.setAcceptDrops(True)
+        self.attached_files = [] # Store full paths here
 
         # --- Main Layout (Splitter) ---
         main_layout = QHBoxLayout()
@@ -229,11 +233,17 @@ class ImageJAgentGUI(QWidget):
         
         self.output_area = QTextEdit()
         self.output_area.setReadOnly(True)
+        
+        # --- 2. Attachment Status Label ---
+        self.attachment_status = QLabel("No files attached")
+        self.attachment_status.setStyleSheet("color: #7f8c8d; font-style: italic; padding-left: 5px;")
+        
         self.input_line = QLineEdit()
         self.send_button = QPushButton("Send")
         self.status_label = QLabel("Ready")
 
         chat_layout.addWidget(self.output_area)
+        chat_layout.addWidget(self.attachment_status) # Add label above input
         chat_layout.addWidget(self.input_line)
         chat_layout.addWidget(self.send_button)
         chat_layout.addWidget(self.status_label)
@@ -241,13 +251,11 @@ class ImageJAgentGUI(QWidget):
 
         # --- RIGHT: Script Library ---
         self.library_widget = ScriptLibraryWidget()
-        # Connect library run signal to execution handler
         self.library_widget.script_run_requested.connect(self.run_saved_script)
 
-        # Add to Splitter
         splitter.addWidget(chat_widget)
         splitter.addWidget(self.library_widget)
-        splitter.setStretchFactor(0, 3) # Chat is wider
+        splitter.setStretchFactor(0, 3) 
         splitter.setStretchFactor(1, 1)
 
         main_layout.addWidget(splitter)
@@ -262,9 +270,30 @@ class ImageJAgentGUI(QWidget):
         self.ij.ui().showUI()
         self.supervisor, self.checkpointer = init_agent()
         
-        # Introduction
         self.output_area.append(intro_message) 
-        self.output_area.append("Use the panel on the right to recall saved scripts.")
+        self.output_area.append("Use the panel on the right to recall saved scripts or drag files here.")
+
+    # --- 3. Drag and Drop Overrides ---
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dropEvent(self, event):
+        urls = event.mimeData().urls()
+        for url in urls:
+            file_path = url.toLocalFile()
+            if file_path not in self.attached_files:
+                self.attached_files.append(file_path)
+        
+        self._update_attachment_ui()
+
+    def _update_attachment_ui(self):
+        if not self.attached_files:
+            self.attachment_status.setText("No files attached")
+        else:
+            names = [os.path.basename(p) for p in self.attached_files]
+            self.attachment_status.setText(f"📎 Attached ({len(names)}): {', '.join(names)}")
+            self.attachment_status.setStyleSheet("color: #2980b9; font-weight: bold;")
 
     def append_output(self, text):
         self.output_area.append(text)
@@ -279,31 +308,16 @@ class ImageJAgentGUI(QWidget):
         self.status_label.setText("Error")
         self.status_label.setStyleSheet("color: red;")
 
-    def on_send(self):
-        user_input = self.input_line.text().strip()
-        if not user_input:
-            return
-
-        self.input_line.clear()
-        self.append_output(f"\n<b>You:</b> {user_input}")
-        self.append_output("AI: ...")
+    def _execute_agent_query(self, prompt):
+        """Helper to handle the threading boilerplate for any agent interaction."""
         self.status_label.setText("Thinking...")
         self.status_label.setStyleSheet("color: blue;")
 
-        # --- Threading Setup ---
-        # 1. Create Thread and Worker
         self.thread = QThread()
         self.worker = AgentWorker(self.supervisor, THREAD_ID)
-        
-        # 2. Move Worker to Thread
         self.worker.moveToThread(self.thread)
 
-        # 3. Connect Signals
-        
-        # FIX: Connect our custom Signal to the Worker's run Slot
         self.start_agent_work.connect(self.worker.run)
-        
-        # Standard cleanup connections
         self.worker.event_received.connect(self.handle_event)
         self.worker.error.connect(self.on_agent_error)
         self.worker.finished.connect(self.on_agent_finished)
@@ -311,12 +325,37 @@ class ImageJAgentGUI(QWidget):
         self.worker.finished.connect(self.worker.deleteLater)
         self.thread.finished.connect(self.thread.deleteLater)
 
-        # 4. Start the thread
         self.thread.start()
+        self.start_agent_work.emit(prompt)
 
-        # 5. Emit the signal to trigger the work
-        # This effectively pushes 'user_input' into the background thread's queue
-        self.start_agent_work.emit(user_input)
+    def on_send(self):
+        user_input = self.input_line.text().strip()
+        
+        # Don't send if both are empty
+        if not user_input and not self.attached_files:
+            return
+
+        # Prepare prompt
+        full_prompt = user_input
+        if self.attached_files:
+            file_list_str = "\n".join([f"- {p}" for p in self.attached_files])
+            full_prompt += f"\n\n[SYSTEM: The user has attached the following files/folders]:\n{file_list_str}"
+
+        # Update UI
+        self.append_output(f"\n<b>You:</b> {user_input if user_input else '[Attached Files]'}")
+        if self.attached_files:
+            display_names = ", ".join([os.path.basename(p) for p in self.attached_files])
+            self.append_output(f"<i style='color: #2980b9;'>📎 Sent with: {display_names}</i>")
+        
+        self.append_output("AI: ...")
+        self.input_line.clear()
+
+        # Run Agent
+        self._execute_agent_query(full_prompt)
+
+        # Clear attachments for next turn
+        self.attached_files = []
+        self._update_attachment_ui()
 
 
     def run_saved_script(self, language, code):

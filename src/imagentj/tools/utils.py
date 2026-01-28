@@ -62,17 +62,6 @@ def sanitize_filename(name: str) -> str:
     return clean.replace(' ', '_')
 
 
-def init_vec_store(collection_name: str, path: str):
-    client = get_qdrant_client(path=path)
-
-    vectorstore = QdrantVectorStore(
-        client=client,
-        collection_name=collection_name,
-        embedding=OpenAIEmbeddings(api_key=gpt_key, model="text-embedding-3-large"),
-    )
-
-    # Hybrid search
-    return vectorstore
 
 
 def load_and_chunk_with_docling(file_path: str):
