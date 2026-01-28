@@ -31,12 +31,43 @@ from config.rag_config import (
     INGESTION_FOLDERS, EMBEDDING_MODEL, BATCH_SIZE, SKIP_PATTERNS, SUPPORTED_EXTENSIONS
 )
 from config.keys import gpt_key
+import hashlib
 
 # --- Configuration for Hybrid Search ---
 
 SPARSE_MODEL_NAME = "Qdrant/bm25"
 DENSE_VECTOR_NAME = "dense"
 SPARSE_VECTOR_NAME = "sparse"
+
+
+
+def get_file_hash(file_path: str) -> str:
+    """Generate a SHA-256 hash for a file's content."""
+    sha256_hash = hashlib.sha256()
+    with open(file_path, "rb") as f:
+        # Read in chunks to handle large files without eating RAM
+        for byte_block in iter(lambda: f.read(4096), b""):
+            sha256_hash.update(byte_block)
+    return sha256_hash.hexdigest()
+
+
+
+def is_document_ingested(file_hash: str, client, collection_name: str) -> bool:
+    """Check if any points in the collection share this file_hash."""
+    result = client.count(
+        collection_name=collection_name,
+        count_filter=models.Filter(
+            must=[
+                models.FieldCondition(
+                    key="metadata.file_hash",
+                    match=models.MatchValue(value=file_hash),
+                ),
+            ]
+        ),
+    )
+    return result.count > 0
+
+
 
 def get_embeddings_models():
     """
@@ -195,6 +226,13 @@ def load_folder_recursively(folders: list = None, vector_store=None, collection_
 
             for file in files:
                 file_path = os.path.join(root, file)
+                file_hash = get_file_hash(file_path)
+
+                # Check if already in DB
+                if is_document_ingested(file_hash, vector_store.client, collection_name):
+                    print(f"Skipping {file_path}: Already exists in RAG.")
+                    continue
+
                 ext = Path(file).suffix.lower()
                 
                 # Check supported extensions
@@ -217,6 +255,8 @@ def load_folder_recursively(folders: list = None, vector_store=None, collection_
                         final_splits = splitter.split_documents(loader.load())
 
                     if final_splits:
+                        for chunk in final_splits:
+                            chunk.metadata["file_hash"] = file_hash
                         all_chunks.extend(final_splits)
 
                     # Batch Upload

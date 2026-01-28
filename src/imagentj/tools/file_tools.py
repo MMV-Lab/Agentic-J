@@ -13,6 +13,7 @@ from pathlib import Path
 from qdrant_client import models
 from ..qdrant_client_singleton import get_qdrant_client
 from config.rag_config import QDRANT_DATA_PATH, DOCS_COLLECTION_NAME
+from ..rag.RAG import get_file_hash, is_document_ingested
 
 SCRIPTS_DIR = os.path.join(os.path.dirname(__file__), "../../scripts/saved_scripts")
 
@@ -20,7 +21,7 @@ SCRIPTS_DIR = os.path.join(os.path.dirname(__file__), "../../scripts/saved_scrip
 MAX_CONTEXT_CHARS = 15000  # ~3,000 to 4,000 tokens
 MAX_CONTEXT_PDF_PAGES = 3  # Small enough for immediate reading
 
-def shadow_ingest_upgrade(file_path: str, vector_store):
+def shadow_ingest_upgrade(file_path: str, vector_store, file_hash: str):
     """
     Background worker that replaces fast chunks with high-quality Docling chunks.
     """
@@ -49,6 +50,7 @@ def shadow_ingest_upgrade(file_path: str, vector_store):
         for chunk in high_quality_splits:
             chunk.metadata["source"] = file_path
             chunk.metadata["ingestion_quality"] = "high"
+            chunk.metadata["file_hash"] = file_hash
 
         # 2. Delete the old "fast" chunks
         # We use the Qdrant client directly to wipe points matching this source
@@ -222,6 +224,11 @@ def smart_file_reader(file_path: str):
         
         else:
             # --- PHASE 1: FAST INGESTION ---
+            file_hash = get_file_hash(file_path)
+    
+            # 1. Check if HIGH QUALITY already exists
+            if is_document_ingested(file_hash, vec_store_docs.client, DOCS_COLLECTION_NAME):
+                return {"type": "rag", "message": "Document is already fully indexed and optimized."}
             print(f"Action: Fast-indexing {page_count} pages for immediate use...")
             md_text = pymupdf4llm.to_markdown(file_path)
             
@@ -231,7 +238,7 @@ def smart_file_reader(file_path: str):
             # Mark these as 'fast' so the shadow process can find them
             fast_splits = splitter.create_documents(
                 [md_text], 
-                metadatas=[{"source": file_path, "ingestion_quality": "fast"}]
+                metadatas=[{"source": file_path, "file_hash": file_hash, "ingestion_quality": "fast"}]
             )
             vec_store_docs.add_documents(fast_splits)
 
@@ -239,7 +246,7 @@ def smart_file_reader(file_path: str):
             # We don't 'await' or wait for this; it runs on another thread.
             thread = threading.Thread(
                 target=shadow_ingest_upgrade, 
-                args=(file_path, vec_store_docs)
+                args=(file_path, vec_store_docs, file_hash)
             )
             thread.daemon = True # Thread dies if main process exits
             thread.start()
