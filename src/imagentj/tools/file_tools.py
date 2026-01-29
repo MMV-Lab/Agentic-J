@@ -7,13 +7,9 @@ from langchain.tools import tool
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from .utils import walk, sanitize_filename
 from imagentj.rag.loaders import get_smart_splitter, load_and_split_ipynb
-from .vector_stores import vec_store_docs
+from .vector_stores import get_vec_store_docs, is_rag_available
 import threading
 from pathlib import Path
-from qdrant_client import models
-from ..qdrant_client_singleton import get_qdrant_client
-from config.rag_config import QDRANT_DATA_PATH, DOCS_COLLECTION_NAME
-from ..rag.RAG import get_file_hash, is_document_ingested
 
 SCRIPTS_DIR = os.path.join(os.path.dirname(__file__), "../../scripts/saved_scripts")
 
@@ -26,34 +22,32 @@ def shadow_ingest_upgrade(file_path: str, vector_store, file_hash: str):
     Background worker that replaces fast chunks with high-quality Docling chunks.
     """
     try:
-        print(f"🚀 [Shadow] Starting high-quality re-index: {file_path}")
-        
-        # 1. High-Quality Parsing (The slow part)
+        print(f"[Shadow] Starting high-quality re-index: {file_path}")
+
         from imagentj.rag.loaders import get_docling_converter
         from langchain_docling import DoclingLoader
         from langchain_docling.loader import ExportType
         from langchain_text_splitters import RecursiveCharacterTextSplitter
+        from qdrant_client import models
+        from ..qdrant_client_singleton import get_qdrant_client
+        from config.rag_config import QDRANT_DATA_PATH, DOCS_COLLECTION_NAME
 
         converter = get_docling_converter()
         loader = DoclingLoader(
-            file_path=file_path, 
-            converter=converter, 
+            file_path=file_path,
+            converter=converter,
             export_type=ExportType.DOC_CHUNKS
         )
-        
-        # Docling does its own smart chunking, but we use safety splitter
+
         safety_splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=200)
         raw_chunks = loader.load()
         high_quality_splits = safety_splitter.split_documents(raw_chunks)
-        
-        # Ensure metadata includes the source so we can swap them
+
         for chunk in high_quality_splits:
             chunk.metadata["source"] = file_path
             chunk.metadata["ingestion_quality"] = "high"
             chunk.metadata["file_hash"] = file_hash
 
-        # 2. Delete the old "fast" chunks
-        # We use the Qdrant client directly to wipe points matching this source
         client = get_qdrant_client(path=QDRANT_DATA_PATH)
         client.delete(
             collection_name=DOCS_COLLECTION_NAME,
@@ -71,12 +65,11 @@ def shadow_ingest_upgrade(file_path: str, vector_store, file_hash: str):
             ),
         )
 
-        # 3. Insert the "high" quality chunks
         vector_store.add_documents(high_quality_splits)
-        print(f"✅ [Shadow] Upgrade complete for: {file_path}")
+        print(f"[Shadow] Upgrade complete for: {file_path}")
 
     except Exception as e:
-        print(f"❌ [Shadow] Upgrade failed for {file_path}: {e}")
+        print(f"[Shadow] Upgrade failed for {file_path}: {e}")
 
 
 @tool("inspect_folder_tree")
@@ -194,13 +187,18 @@ def smart_file_reader(file_path: str):
 
     print(f"Analyzing {file_path} ({file_size / 1024:.2f} KB)")
 
+    vec_store_docs = get_vec_store_docs()
+    rag_available = vec_store_docs is not None
+
     # --- CATEGORY 1: Plain Text & Code ---
     if ext in [".txt", ".py", ".md", ".js"]:
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
 
-        if len(content) < MAX_CONTEXT_CHARS:
+        if len(content) < MAX_CONTEXT_CHARS or not rag_available:
             print("Action: Injecting directly into Context (Fastest)")
+            if len(content) > MAX_CONTEXT_CHARS:
+                content = content[:MAX_CONTEXT_CHARS] + "\n\n[... content truncated (RAG unavailable) ...]"
             return {"type": "context", "content": content}
         else:
             print("Action: Large file detected. Indexing into RAG...")
@@ -211,9 +209,6 @@ def smart_file_reader(file_path: str):
 
     # --- CATEGORY 2: PDFs (The slow part) ---
     elif ext == ".pdf":
-        # Use PyMuPDF4LLM for runtime speed (NOT Docling)
-        
-        # Check page count first
         doc = pymupdf.open(file_path)
         page_count = len(doc)
         doc.close()
@@ -221,38 +216,43 @@ def smart_file_reader(file_path: str):
         if page_count <= MAX_CONTEXT_PDF_PAGES:
             md_text = pymupdf4llm.to_markdown(file_path)
             return {"type": "context", "content": md_text}
-        
+
+        elif not rag_available:
+            # RAG unavailable - return truncated content directly
+            md_text = pymupdf4llm.to_markdown(file_path)
+            if len(md_text) > MAX_CONTEXT_CHARS:
+                md_text = md_text[:MAX_CONTEXT_CHARS] + "\n\n[... content truncated (RAG unavailable) ...]"
+            return {"type": "context", "content": md_text}
+
         else:
-            # --- PHASE 1: FAST INGESTION ---
+            from ..rag.RAG import get_file_hash, is_document_ingested
+            from config.rag_config import DOCS_COLLECTION_NAME
+
             file_hash = get_file_hash(file_path)
-    
-            # 1. Check if HIGH QUALITY already exists
+
             if is_document_ingested(file_hash, vec_store_docs.client, DOCS_COLLECTION_NAME):
                 return {"type": "rag", "message": "Document is already fully indexed and optimized."}
             print(f"Action: Fast-indexing {page_count} pages for immediate use...")
             md_text = pymupdf4llm.to_markdown(file_path)
-            
+
             splitter = RecursiveCharacterTextSplitter.from_language(
                 language="markdown", chunk_size=1000, chunk_overlap=150
             )
-            # Mark these as 'fast' so the shadow process can find them
             fast_splits = splitter.create_documents(
-                [md_text], 
+                [md_text],
                 metadatas=[{"source": file_path, "file_hash": file_hash, "ingestion_quality": "fast"}]
             )
             vec_store_docs.add_documents(fast_splits)
 
-            # --- PHASE 2: TRIGGER SHADOW UPGRADE ---
-            # We don't 'await' or wait for this; it runs on another thread.
             thread = threading.Thread(
-                target=shadow_ingest_upgrade, 
+                target=shadow_ingest_upgrade,
                 args=(file_path, vec_store_docs, file_hash)
             )
-            thread.daemon = True # Thread dies if main process exits
+            thread.daemon = True
             thread.start()
 
             return {
-                "type": "rag", 
+                "type": "rag",
                 "message": f"Document '{Path(file_path).name}' is ready for questions."
                            f"I'm optimizing the search quality in the background."
             }
@@ -269,7 +269,9 @@ def smart_file_reader(file_path: str):
                 clean_content.append(f"[{cell['cell_type'].upper()}]\n{source}")
 
         full_text = "\n\n".join(clean_content)
-        if len(full_text) < MAX_CONTEXT_CHARS:
+        if len(full_text) < MAX_CONTEXT_CHARS or not rag_available:
+            if len(full_text) > MAX_CONTEXT_CHARS:
+                full_text = full_text[:MAX_CONTEXT_CHARS] + "\n\n[... content truncated (RAG unavailable) ...]"
             return {"type": "context", "content": full_text}
         else:
             splits = load_and_split_ipynb(file_path)

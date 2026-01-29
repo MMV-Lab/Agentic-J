@@ -10,8 +10,8 @@ from .imagej_tools import ask_user, load_image_ij, inspect_all_ui_windows
 from .general_tools import internet_search, inspect_java_class
 from .middleware import SafeToolLoggerMiddleware, TodoDisplayMiddleware
 
-# Import vector stores from vector_stores module
-from .vector_stores import vec_store_docs, vec_store_mistakes
+# Lazy accessors for vector stores (RAG is optional)
+from .vector_stores import get_vec_store_docs, get_vec_store_mistakes, is_rag_available
 
 __all__ = [
     'inspect_folder_tree', 'save_reusable_script', 'smart_file_reader',
@@ -19,5 +19,5 @@ __all__ = [
     'run_script_safe', 'ask_user', 'load_image_ij', 'inspect_all_ui_windows',
     'internet_search', 'inspect_java_class',
     'SafeToolLoggerMiddleware', 'TodoDisplayMiddleware',
-    'vec_store_docs', 'vec_store_mistakes'
+    'get_vec_store_docs', 'get_vec_store_mistakes', 'is_rag_available'
 ]
