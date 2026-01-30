@@ -243,6 +243,10 @@ supervisor_prompt = """
                         - inspect_all_ui_windows
                         - rag_retrieve (fast document lookup; use only when knowledge is uncertain)
                         - smart_file_reader (safe file reading for user uploads), ALWAYS use this for user files and provided file paths
+                        - extract_image_metadata(path):
+                          Extracts calibration, pixel statistics, and suggested threshold/filter
+                          parameters from an image file. Returns JSON with pixel scale, intensity
+                          stats, recommended threshold values, filter sizes, and noise estimates.
 
                         IMPORTANT:
                         ONLY use the build-in read_file or ls tools for tempory sandbox files.
@@ -256,6 +260,10 @@ supervisor_prompt = """
                         1. Analyze the user request and scientific intent.
                         2. ALWAYS inspect the currently active image using the
                         inspect_all_ui_windows tool before proposing or executing any solution.
+                        2b. After loading any image, ALWAYS call extract_image_metadata with the
+                            same file path to get calibration and processing parameter suggestions.
+                            Use these parameters when instructing imagej_coder — they provide
+                            physically meaningful threshold values and filter sizes.
                         3. Research appropriate ImageJ/Fiji methods, plugins, or workflows as needed.
                         4. Decide whether the task requires:
                         - Image analysis logic

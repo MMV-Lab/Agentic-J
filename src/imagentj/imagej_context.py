@@ -6,5 +6,5 @@ _ij_instance: Optional["imagej.ImageJ"] = None
 def get_ij():
     global _ij_instance
     if _ij_instance is None:
-        _ij_instance  = imagej.init(r"C:\Users\lukas.johanns\Downloads\fiji-latest-win64-jdk(1)\Fiji", mode='interactive')
+        _ij_instance  = imagej.init("/home/marilin/Downloads/Fiji.app", mode='interactive')
     return _ij_instance

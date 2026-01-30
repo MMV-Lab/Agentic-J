@@ -15,12 +15,7 @@ from imagentj.agents import init_agent
 from imagentj.imagej_context import get_ij
 # Import the specific execution tool directly for the "Run" button
 from imagentj.tools import run_script_safe
-from config.imagej_config import FIJI_JAVA_HOME
-
 SCRIPTS_DIR = os.path.join(os.path.dirname(__file__), "scripts/saved_scripts")
-
-
-os.environ["JAVA_HOME"] = FIJI_JAVA_HOME
 
 # ----- CONFIG -----
 THREAD_ID = "imagej_supervisor_thread"   # keep constant to preserve context

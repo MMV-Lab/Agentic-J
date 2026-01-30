@@ -9,10 +9,6 @@ import os
 from imagentj.agents import init_agent
 from langchain_openai import ChatOpenAI
 from imagentj.imagej_context import get_ij
-from config.imagej_config import FIJI_JAVA_HOME
-
-
-os.environ["JAVA_HOME"] = FIJI_JAVA_HOME
 
 # from langgraph.checkpoint.memory import MemorySaver  # alternative (in-memory)
 
