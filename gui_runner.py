@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import QObject, Signal, Slot, QThread, Qt
 
+
 # --- Import your existing backend ---
 from imagentj.agents import init_agent
 from imagentj.imagej_context import get_ij
@@ -236,7 +237,8 @@ class ImageJAgentGUI(QWidget):
         self.input_line = QLineEdit()
         self.send_button = QPushButton("Send")
         self.status_label = QLabel("Ready")
-
+        self.status_label.setStyleSheet("color: green; font-weight: bold;")
+        
         chat_layout.addWidget(self.output_area)
         chat_layout.addWidget(self.attachment_status) # Add label above input
         chat_layout.addWidget(self.input_line)
@@ -293,19 +295,36 @@ class ImageJAgentGUI(QWidget):
     def append_output(self, text):
         self.output_area.append(text)
 
+    def set_status(self, text: str):
+        # for differentiating ready and thinking
+        self.status_label.setText(text)
+
+        if text == "Ready":
+            self.status_label.setStyleSheet("color: green; font-weight: bold;")
+        elif text == "Thinking...":
+            self.status_label.setStyleSheet("color: blue; font-weight: bold;")
+
+    def set_ui_busy(self, busy: bool):
+        # for disabling input when widget is running
+        self.input_line.setDisabled(busy)
+        self.send_button.setDisabled(busy)
+
     def on_agent_finished(self):
-        self.status_label.setText("Ready")
+        self.set_status("Ready")
+        self.set_ui_busy(False)
         # Optional: Clean up thread resources if desired here
         # self.thread.quit() 
 
     def on_agent_error(self, msg):
         self.append_output(f"[Agent error]\n{msg}")
         self.status_label.setText("Error")
+        self.set_ui_busy(False)
         self.status_label.setStyleSheet("color: red;")
 
     def _execute_agent_query(self, prompt):
         """Helper to handle the threading boilerplate for any agent interaction."""
-        self.status_label.setText("Thinking...")
+        self.set_status("Thinking...")
+        self.set_ui_busy(True)
         self.status_label.setStyleSheet("color: blue;")
 
         self.thread = QThread()
@@ -360,7 +379,7 @@ class ImageJAgentGUI(QWidget):
         """
         # 1. Check if Agent is busy
         if self.status_label.text() != "Ready":
-            from PySide6.QtWidgets import QMessageBox
+            self.set_ui_busy(True)
             QMessageBox.warning(self, "Agent Busy", "Please wait for the current task to finish.")
             return
 
@@ -400,7 +419,8 @@ class ImageJAgentGUI(QWidget):
 
     def on_saved_script_finished(self, result):
         self.output_area.append(f"<pre>{result}</pre>")
-        self.status_label.setText("Ready")
+        self.set_status("Ready")
+        self.set_ui_busy(False)
         self.status_label.setStyleSheet("color: black;")
         self.output_area.append("✅ <b>Execution complete.</b>")
 
