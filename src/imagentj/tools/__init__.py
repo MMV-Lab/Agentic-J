@@ -8,6 +8,7 @@ from .rag_tools import rag_retrieve_docs, rag_retrieve_mistakes, save_coding_exp
 from .script_tools import run_script_safe
 from .imagej_tools import ask_user, load_image_ij, inspect_all_ui_windows
 from .general_tools import internet_search, inspect_java_class
+from .analyst_tools import run_python_code, inspect_csv_header
 from .middleware import SafeToolLoggerMiddleware, TodoDisplayMiddleware
 
 # Import vector stores from vector_stores module
@@ -19,5 +20,5 @@ __all__ = [
     'run_script_safe', 'ask_user', 'load_image_ij', 'inspect_all_ui_windows',
     'internet_search', 'inspect_java_class',
     'SafeToolLoggerMiddleware', 'TodoDisplayMiddleware',
-    'vec_store_docs', 'vec_store_mistakes'
+    'vec_store_docs', 'vec_store_mistakes', 'run_python_code', 'inspect_csv_header'
 ]

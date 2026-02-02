@@ -27,3 +27,7 @@ scripts/saved_scripts/
 rag_config.py
 
 src/scripts/saved_scripts/
+
+checkpoints*
+
+conversation_history.json

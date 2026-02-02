@@ -1,0 +1,91 @@
+import os
+import pandas as pd
+import subprocess
+import textwrap
+import io
+from langchain_core.tools import tool
+import tempfile
+
+@tool
+def inspect_csv_header(file_path: str):
+    """
+    Reads the column names, data types, and first 5 rows of any CSV file on the PC.
+    Use this tool BEFORE writing any Python code to verify paths and column names.
+    Input MUST be a valid absolute file path (e.g., 'C:/Users/Name/data.csv').
+    """
+    try:
+        # No more path joining; use the path directly
+        if not os.path.exists(file_path):
+            return f"Error: The file path '{file_path}' does not exist on this PC."
+            
+        df = pd.read_csv(file_path, nrows=5)
+        
+        buffer = io.StringIO()
+        df.info(buf=buffer)
+        info_str = buffer.getvalue()
+        
+        return f"Structure of {os.path.basename(file_path)}:\n{info_str}\nData Preview:\n{df.to_string()}"
+    except Exception as e:
+        return f"Error reading file at {file_path}: {str(e)}"
+
+@tool
+def run_python_code(code: str, output_directory: str):
+    
+    """
+    Executes Python code with full PC access. 
+    Packages pd, np, plt, sns, and stats are PRE-IMPORTED.
+    """
+    if not os.path.exists(output_directory):
+        return f"Error: Directory '{output_directory}' not found."
+
+    # 1. Use dedent to clean up the template
+    # 2. Use a raw string for the path
+    header = textwrap.dedent(f"""
+        import pandas as pd
+        import numpy as np
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+        from scipy import stats
+        import os
+        import sys
+
+        try:
+            os.chdir(r'{output_directory}')
+            sns.set_theme(style="whitegrid")
+            plt.rcParams['figure.dpi'] = 300
+            
+            # --- AGENT CODE START ---
+    """).strip()
+
+    footer = textwrap.dedent("""
+            # --- AGENT CODE END ---
+            print("\\n--- EXECUTION FINISHED SUCCESSFULLY ---")
+        except Exception as e:
+            print(f"\\nPYTHON TRACEBACK ERROR: {str(e)}", file=sys.stderr)
+            sys.exit(1)
+    """).strip()
+    
+    # Indent the agent's code by 4 spaces to align with the 'try' block
+    indented_code = textwrap.indent(code, "    ")
+    
+    full_script = f"{header}\n{indented_code}\n{footer}"
+
+    script_path = os.path.join(tempfile.gettempdir(), "supervisor_py_exec.py")
+    with open(script_path, "w", encoding="utf-8") as f:
+        f.write(full_script)
+
+    try:
+        result = subprocess.run(
+            ["python", script_path],
+            capture_output=True,
+            text=True,
+            timeout=60
+        )
+        if result.returncode != 0:
+            return f"CRASH DETECTED IN PYTHON:\nSTDOUT: {result.stdout}\nSTDERR: {result.stderr}"
+        return f"SUCCESS:\n{result.stdout}"
+    except Exception as e:
+        return f"SYSTEM ERROR: {str(e)}"
+    
+
+python_analyst_tools = [inspect_csv_header, run_python_code]
