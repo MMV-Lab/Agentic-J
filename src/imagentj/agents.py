@@ -2,7 +2,7 @@ from deepagents import create_deep_agent
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import MemorySaver
 from .prompts import imagej_coder_prompt, imagej_debugger_prompt, supervisor_prompt
-from .tools import internet_search, inspect_all_ui_windows, run_script_safe, rag_retrieve_docs, inspect_java_class, save_coding_experience, rag_retrieve_mistakes, save_reusable_script, inspect_folder_tree, smart_file_reader, extract_image_metadata
+from .tools import internet_search, inspect_all_ui_windows, run_script_safe, rag_retrieve_docs, inspect_java_class, save_coding_experience, rag_retrieve_mistakes, save_reusable_script, inspect_folder_tree, smart_file_reader, extract_image_metadata, search_fiji_plugins, install_fiji_plugin, check_plugin_installed
 from config.keys import gpt_key
 
 
@@ -62,7 +62,7 @@ def init_agent():
 
     supervisor = create_deep_agent(
     name="ImageJ_Supervisor",
-    tools = [internet_search, inspect_all_ui_windows, run_script_safe, rag_retrieve_docs, save_coding_experience, rag_retrieve_mistakes, save_reusable_script, inspect_folder_tree, smart_file_reader, extract_image_metadata],
+    tools = [internet_search, inspect_all_ui_windows, run_script_safe, rag_retrieve_docs, save_coding_experience, rag_retrieve_mistakes, save_reusable_script, inspect_folder_tree, smart_file_reader, extract_image_metadata, search_fiji_plugins, install_fiji_plugin, check_plugin_installed],
     system_prompt=supervisor_prompt,
     subagents=[imagej_coder, imagej_debugger],
     middleware=[],

@@ -248,11 +248,55 @@ supervisor_prompt = """
                           parameters from an image file. Returns JSON with pixel scale, intensity
                           stats, recommended threshold values, filter sizes, and noise estimates.
 
+                        - search_fiji_plugins(query):
+                          Searches the curated Fiji plugin database for plugins relevant to the task.
+                          Returns ranked results with plugin name, description, and update site info.
+
+                        - install_fiji_plugin(plugin_name):
+                          Installs a Fiji plugin by activating its update site and running the Fiji updater.
+                          Requires an exact plugin name from the registry. Fiji must be restarted after.
+
+                        - check_plugin_installed(plugin_name):
+                          Checks if a plugin is already installed by searching the plugins/jars directories.
+                          ALWAYS call this BEFORE suggesting installation to avoid reinstalling existing plugins.
+
                         IMPORTANT:
                         ONLY use the build-in read_file or ls tools for tempory sandbox files.
                         Do NOT use the built-in read_file or ls tools for analyzing user uploads.
                         You MUST use the smart_file_reader tool for all file interactions. 
                         The built-in filesystem tools are for internal sandbox use only and will fail on user data.
+
+                        ────────────────────────────────────────
+                        PLUGIN INSTALLATION (MANDATORY)
+                        ────────────────────────────────────────
+                        When the user EXPLICITLY asks to install a plugin (e.g., "install StarDist",
+                        "add the MorphoLibJ plugin", "I need TrackMate"):
+
+                        1. FIRST call check_plugin_installed to see if it's already installed.
+                        2. If already installed, inform the user and proceed to use it.
+                        3. If NOT installed, call search_fiji_plugins to find the exact match.
+                        4. If found, confirm with the user: "I found [plugin name]. Install it?"
+                        5. If the user confirms, call install_fiji_plugin with the EXACT plugin name.
+                        6. Report the result and remind them Fiji must be restarted.
+
+                        ALWAYS check if a plugin is installed before suggesting installation.
+
+                        ────────────────────────────────────────
+                        PLUGIN-AWARE WORKFLOW (FOR COMPLEX TASKS)
+                        ────────────────────────────────────────
+                        Before delegating a complex image analysis task to imagej_coder, you SHOULD:
+
+                        1. Call search_fiji_plugins with a query describing the task (e.g.,
+                           "nucleus segmentation in fluorescence images").
+                        2. Review the returned plugins. If a suitable plugin exists:
+                           a. Inform the user about the plugin (name, what it does, why it fits).
+                           b. Ask for permission to install it.
+                           c. If approved, call install_fiji_plugin with the exact plugin name.
+                           d. After installation, inform the user that Fiji must be restarted.
+                           e. Once restarted, delegate code generation to imagej_coder with
+                              instructions to USE the installed plugin via IJ.run().
+                        3. If no suitable plugin is found, proceed with standard custom code workflow.
+                        4. NEVER install a plugin without explicit user confirmation.
 
                         ────────────────────────────────────────
                         YOUR OPERATIONAL RESPONSIBILITIES

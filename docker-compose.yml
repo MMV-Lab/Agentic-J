@@ -1,0 +1,50 @@
+services:
+  imagentj:
+    image: imagent_j-imagentj:with-fastembed
+    # build: .
+    ports:
+      - "6080:6080"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - LANGSMITH_API_KEY=${LANGSMITH_API_KEY:-}
+      - LANGSMITH_TRACING=${LANGSMITH_TRACING:-true}
+      - LANGSMITH_ENDPOINT=${LANGSMITH_ENDPOINT:-https://api.smith.langchain.com}
+      - LANGSMITH_PROJECT=${LANGSMITH_PROJECT:-}
+      - LANGCHAIN_CALLBACKS_BACKGROUND=${LANGCHAIN_CALLBACKS_BACKGROUND:-true}
+      - FIJI_PATH=/opt/Fiji.app
+      - QDRANT_DATA_PATH=/app/qdrant_data
+      - DISPLAY=:1
+    volumes:
+      # Fiji plugin persistence across container rebuilds
+      - fiji_plugins:/opt/Fiji.app/plugins
+      - fiji_jars:/opt/Fiji.app/jars
+      - ./fiji_update:/opt/Fiji.app/update
+      # Saved scripts persistence
+      - saved_scripts:/app/scripts/saved_scripts
+      # Qdrant vector database for plugin search and RAG
+      - ./qdrant_data:/app/qdrant_data
+      # Image data directory (place images in ./data on host, access as /data in container)
+      - ${IMAGE_DATA_DIR:-./data}:/data:ro
+      # Development: mount source code for live updates without rebuilding
+      - ./src:/app/src:ro
+      - ./gui_runner.py:/app/gui_runner.py:ro
+      - ./docker-entrypoint.sh:/docker-entrypoint.sh:ro
+    env_file:
+      - path: .env
+        required: false
+    shm_size: '2gb'
+
+    # ── Security hardening ──────────────────────────────────────────────────
+    # Run as non-root (also set in Dockerfile, belt-and-suspenders)
+    user: "imagentj"
+    # Prevent privilege escalation
+    security_opt:
+      - no-new-privileges:true
+    # Drop all Linux capabilities — none are needed
+    cap_drop:
+      - ALL
+
+volumes:
+  fiji_plugins:
+  fiji_jars:
+  saved_scripts:

@@ -8,16 +8,18 @@ from .rag_tools import rag_retrieve_docs, rag_retrieve_mistakes, save_coding_exp
 from .script_tools import run_script_safe
 from .imagej_tools import ask_user, load_image_ij, inspect_all_ui_windows, extract_image_metadata
 from .general_tools import internet_search, inspect_java_class
+from .plugin_tools import search_fiji_plugins, install_fiji_plugin, check_plugin_installed
 from .middleware import SafeToolLoggerMiddleware, TodoDisplayMiddleware
 
 # Lazy accessors for vector stores (RAG is optional)
-from .vector_stores import get_vec_store_docs, get_vec_store_mistakes, is_rag_available
+from .vector_stores import get_vec_store_docs, get_vec_store_mistakes, is_rag_available, is_plugin_db_available
 
 __all__ = [
     'inspect_folder_tree', 'save_reusable_script', 'smart_file_reader',
     'rag_retrieve_docs', 'rag_retrieve_mistakes', 'save_coding_experience',
     'run_script_safe', 'ask_user', 'load_image_ij', 'inspect_all_ui_windows', 'extract_image_metadata',
     'internet_search', 'inspect_java_class',
+    'search_fiji_plugins', 'install_fiji_plugin', 'check_plugin_installed',
     'SafeToolLoggerMiddleware', 'TodoDisplayMiddleware',
-    'get_vec_store_docs', 'get_vec_store_mistakes', 'is_rag_available'
+    'get_vec_store_docs', 'get_vec_store_mistakes', 'is_rag_available', 'is_plugin_db_available'
 ]

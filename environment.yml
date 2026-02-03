@@ -65,6 +65,7 @@ dependencies:
       - environs
       - et-xmlfile
       - fake-useragent
+      - fastembed
       - faker
       - filelock
       - filetype

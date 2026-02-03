@@ -1,4 +1,4 @@
-from config.rag_config import QDRANT_DATA_PATH, DOCS_COLLECTION_NAME, MISTAKES_COLLECTION_NAME
+from config.rag_config import QDRANT_DATA_PATH, DOCS_COLLECTION_NAME, MISTAKES_COLLECTION_NAME, PLUGINS_COLLECTION_NAME
 
 # Initialize vector stores lazily - RAG is optional
 vec_store_docs = None
@@ -42,3 +42,12 @@ def is_rag_available():
     """Check if the RAG system is available."""
     _try_init_vector_stores()
     return vec_store_docs is not None
+
+def is_plugin_db_available():
+    """Check if the fiji_plugins collection exists in Qdrant."""
+    try:
+        from ..qdrant_client_singleton import get_qdrant_client
+        client = get_qdrant_client(path=QDRANT_DATA_PATH)
+        return client.collection_exists(collection_name=PLUGINS_COLLECTION_NAME)
+    except Exception:
+        return False

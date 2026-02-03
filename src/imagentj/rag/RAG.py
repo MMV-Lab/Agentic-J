@@ -28,10 +28,14 @@ from langchain_docling import DoclingLoader
 from langchain_docling.loader import ExportType
 from config.rag_config import (
     QDRANT_DATA_PATH, DOCS_COLLECTION_NAME, MISTAKES_COLLECTION_NAME,
-    INGESTION_FOLDERS, EMBEDDING_MODEL, BATCH_SIZE, SKIP_PATTERNS, SUPPORTED_EXTENSIONS
+    PLUGINS_COLLECTION_NAME, INGESTION_FOLDERS, EMBEDDING_MODEL, BATCH_SIZE,
+    SKIP_PATTERNS, SUPPORTED_EXTENSIONS
 )
 from config.keys import gpt_key
 import hashlib
+
+import json
+from langchain_core.documents import Document
 
 # --- Configuration for Hybrid Search ---
 
@@ -296,14 +300,77 @@ def ingest_documents():
     load_folder_recursively(INGESTION_FOLDERS, docs_store, DOCS_COLLECTION_NAME)
     print("✅ Document ingestion completed!")
 
+def ingest_plugins():
+    """Ingest curated Fiji plugin records from plugin_registry.json into Qdrant."""
+
+    registry_path = Path(__file__).resolve().parent / "plugin_registry.json"
+    if not registry_path.exists():
+        print(f"Plugin registry not found at {registry_path}")
+        return
+
+    with open(registry_path, "r", encoding="utf-8") as f:
+        plugins = json.load(f)
+
+    print(f"Loaded {len(plugins)} plugins from registry.")
+
+    vector_store = init_vector_store(PLUGINS_COLLECTION_NAME)
+    client = get_qdrant_client(path=QDRANT_DATA_PATH)
+
+    # Duplicate protection: remove existing entries with matching names
+    for plugin in plugins:
+        try:
+            existing = client.scroll(
+                collection_name=PLUGINS_COLLECTION_NAME,
+                scroll_filter=models.Filter(
+                    must=[
+                        models.FieldCondition(
+                            key="metadata.name",
+                            match=models.MatchValue(value=plugin["name"]),
+                        )
+                    ]
+                ),
+                limit=100,
+            )
+            point_ids = [p.id for p in existing[0]]
+            if point_ids:
+                client.delete(
+                    collection_name=PLUGINS_COLLECTION_NAME,
+                    points_selector=models.PointIdsList(points=point_ids),
+                )
+                print(f"  Removed {len(point_ids)} existing entries for '{plugin['name']}'")
+        except Exception:
+            pass
+
+    # Build documents
+    docs = []
+    for plugin in plugins:
+        page_content = (
+            f"{plugin['name']}: {plugin['description']} "
+            f"Category: {plugin['category']} "
+            f"Tags: {', '.join(plugin['tags'])}"
+        )
+        doc = Document(
+            page_content=page_content,
+            metadata=plugin,
+        )
+        docs.append(doc)
+
+    # Batch upsert
+    vector_store.add_documents(docs)
+    print(f"Ingested {len(docs)} plugin records into '{PLUGINS_COLLECTION_NAME}' collection.")
+
+
 if __name__ == "__main__":
     print("RAG System Setup (Hybrid + RRF)")
     print("===============================")
-    
+
     # 1. Initialize
     initialize_rag_system()
 
-    # 2. Ingest (uncomment to run ingestion)
+    # 2. Ingest documents (uncomment to run ingestion)
     ingest_documents()
-    
+
+    # 3. Ingest plugin registry
+    ingest_plugins()
+
     
