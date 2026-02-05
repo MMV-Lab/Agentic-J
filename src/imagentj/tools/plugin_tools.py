@@ -18,6 +18,47 @@ def _load_plugin_registry():
         return json.load(f)
 
 
+def _search_registry_fallback(query: str, limit: int = 5) -> list:
+    """Fallback search using simple keyword matching on the JSON registry."""
+    plugins = _load_plugin_registry()
+    query_lower = query.lower()
+    query_terms = query_lower.split()
+
+    scored_plugins = []
+    for p in plugins:
+        score = 0
+        searchable = f"{p['name']} {p['description']} {' '.join(p.get('tags', []))} {p.get('category', '')}".lower()
+
+        # Score based on term matches
+        for term in query_terms:
+            if term in searchable:
+                score += 1
+            if term in p['name'].lower():
+                score += 2  # Boost name matches
+            if term in p.get('tags', []):
+                score += 1.5  # Boost tag matches
+
+        if score > 0:
+            scored_plugins.append((score, p))
+
+    # Sort by score descending
+    scored_plugins.sort(key=lambda x: x[0], reverse=True)
+
+    results = []
+    for score, p in scored_plugins[:limit]:
+        results.append({
+            "name": p["name"],
+            "description": p["description"],
+            "category": p.get("category"),
+            "update_site_name": p["update_site_name"],
+            "update_site_url": p["update_site_url"],
+            "documentation_url": p.get("documentation_url"),
+            "score": score,
+        })
+
+    return results
+
+
 @tool("search_fiji_plugins")
 def search_fiji_plugins(query: str) -> list:
     """
@@ -25,36 +66,41 @@ def search_fiji_plugins(query: str) -> list:
     Returns ranked results with plugin name, description, category, update site info, and score.
     Use this before delegating complex image analysis tasks to find existing Fiji plugins.
     """
-    if not is_plugin_db_available():
-        return [{"message": "Plugin database is not available. The fiji_plugins collection has not been ingested into Qdrant. Proceed with standard code generation."}]
+    # Try Qdrant-based semantic search first
+    if is_plugin_db_available():
+        try:
+            from ..rag.RAG import hybrid_search_with_rrf, apply_rrf
 
-    from ..rag.RAG import hybrid_search_with_rrf, apply_rrf
+            # Expand the query for better retrieval
+            queries = get_expanded_queries(query)
 
-    # Expand the query for better retrieval
-    queries = get_expanded_queries(query)
+            all_points = []
+            for q in queries:
+                points = hybrid_search_with_rrf(q, collection_name=PLUGINS_COLLECTION_NAME, limit=5)
+                all_points.extend(points)
 
-    all_points = []
-    for q in queries:
-        points = hybrid_search_with_rrf(q, collection_name=PLUGINS_COLLECTION_NAME, limit=5)
-        all_points.extend(points)
+            # RRF re-ranking across all query variants
+            final_results = apply_rrf(all_points, k=60)[:5]
 
-    # RRF re-ranking across all query variants
-    final_results = apply_rrf(all_points, k=60)[:5]
+            results = []
+            for p in final_results:
+                meta = p.payload.get("metadata", {})
+                results.append({
+                    "name": meta.get("name"),
+                    "description": meta.get("description"),
+                    "category": meta.get("category"),
+                    "update_site_name": meta.get("update_site_name"),
+                    "update_site_url": meta.get("update_site_url"),
+                    "documentation_url": meta.get("documentation_url"),
+                    "score": p.score,
+                })
 
-    results = []
-    for p in final_results:
-        meta = p.payload.get("metadata", {})
-        results.append({
-            "name": meta.get("name"),
-            "description": meta.get("description"),
-            "category": meta.get("category"),
-            "update_site_name": meta.get("update_site_name"),
-            "update_site_url": meta.get("update_site_url"),
-            "documentation_url": meta.get("documentation_url"),
-            "score": p.score,
-        })
+            return results
+        except Exception as e:
+            print(f"Qdrant search failed, falling back to keyword search: {e}")
 
-    return results
+    # Fallback to keyword-based search on JSON registry
+    return _search_registry_fallback(query)
 
 
 @tool("install_fiji_plugin")

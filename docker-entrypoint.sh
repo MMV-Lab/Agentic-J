@@ -64,7 +64,16 @@ sleep 1
 
 # ── Start VNC server ─────────────────────────────────────────────────────────
 echo "[entrypoint] Starting x11vnc on display :1..."
-x11vnc -display :1 -forever -nopw -shared -rfbport 5900 -quiet &
+if [ -n "$VNC_PASSWORD" ]; then
+    # Create password file if VNC_PASSWORD is set
+    mkdir -p /home/imagentj/.vnc
+    x11vnc -storepasswd "$VNC_PASSWORD" /home/imagentj/.vnc/passwd 2>/dev/null
+    x11vnc -display :1 -forever -rfbauth /home/imagentj/.vnc/passwd -shared -rfbport 5900 -quiet &
+    echo "[entrypoint] VNC started with password authentication"
+else
+    x11vnc -display :1 -forever -nopw -shared -rfbport 5900 -quiet &
+    echo "[entrypoint] WARNING: VNC started WITHOUT password (set VNC_PASSWORD env var for security)"
+fi
 sleep 1
 
 # ── Start noVNC websocket proxy ──────────────────────────────────────────────

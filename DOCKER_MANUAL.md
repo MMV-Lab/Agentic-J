@@ -34,13 +34,16 @@ Create a `.env` file in the project root:
 # Required
 OPENAI_API_KEY=your-openai-api-key
 
+# Security - VNC password (recommended if exposing to network)
+# VNC_PASSWORD=your-secure-password
+
 # Optional - LangSmith tracing
-LANGSMITH_API_KEY=your-langsmith-key
-LANGSMITH_TRACING=true
-LANGSMITH_PROJECT=imagentj
+# LANGSMITH_API_KEY=your-langsmith-key
+# LANGSMITH_TRACING=true
+# LANGSMITH_PROJECT=imagentj
 
 # Optional - Custom image data directory
-IMAGE_DATA_DIR=/path/to/your/images
+# IMAGE_DATA_DIR=/path/to/your/images
 ```
 
 ### Image Data Access
@@ -125,14 +128,14 @@ docker compose exec imagentj bash
 
 The following data persists across container restarts:
 
-| Data | Location | Docker Volume |
-|------|----------|---------------|
-| Fiji plugins | `/opt/Fiji.app/plugins` | `fiji_plugins` |
-| Fiji jars | `/opt/Fiji.app/jars` | `fiji_jars` |
-| Saved scripts | `/app/scripts/saved_scripts` | `saved_scripts` |
-| Plugin updates | `./fiji_update` | Bind mount |
-| Qdrant database | `./qdrant_data` | Bind mount |
-| Your images | `./data` | Bind mount |
+| Data | Location | Storage |
+|------|----------|---------|
+| Fiji plugins | `/opt/Fiji.app/plugins` | Named volume |
+| Fiji jars | `/opt/Fiji.app/jars` | Named volume |
+| Plugin updates | `/opt/Fiji.app/update` | Named volume |
+| Saved scripts | `/app/scripts/saved_scripts` | Named volume |
+| Qdrant database | `/app/qdrant_data` | Named volume |
+| Your images | `/data` | Bind mount (read-only) |
 
 ### Cleaning Up
 
@@ -210,13 +213,43 @@ docker compose up -d
 2. Check the key is valid
 3. Restart the container after editing `.env`
 
+## Security
+
+By default, the container is configured for **secure local use**:
+
+- noVNC is bound to `localhost` only (not accessible from network)
+- Container runs as non-root user with no Linux capabilities
+- Your image data is mounted read-only
+- Resource limits prevent runaway processes
+
+### Enabling Network Access
+
+If you need to access from another device:
+
+1. Set a VNC password in `.env`:
+   ```bash
+   VNC_PASSWORD=your-secure-password
+   ```
+
+2. Change port binding in `docker-compose.yml`:
+   ```yaml
+   ports:
+     - "0.0.0.0:6080:6080"
+   ```
+
+For detailed security information, see [SECURITY.md](SECURITY.md).
+
 ## Advanced Usage
 
 ### Development Mode
 
-Source code is bind-mounted for live updates:
-- Edit files in `./src/` - changes apply on container restart
-- No rebuild needed for Python code changes
+For development with live code reloading, use the dev compose file:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+```
+
+This adds bind mounts for source code so changes apply on container restart without rebuilding.
 
 ### Custom Fiji Installation
 

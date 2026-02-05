@@ -300,8 +300,13 @@ def ingest_documents():
     load_folder_recursively(INGESTION_FOLDERS, docs_store, DOCS_COLLECTION_NAME)
     print("✅ Document ingestion completed!")
 
-def ingest_plugins():
-    """Ingest curated Fiji plugin records from plugin_registry.json into Qdrant."""
+def ingest_plugins(rebuild: bool = True):
+    """Ingest curated Fiji plugin records from plugin_registry.json into Qdrant.
+
+    Args:
+        rebuild: If True, drop and recreate the collection to remove stale data.
+                 If False, only update existing entries (may leave orphaned records).
+    """
 
     registry_path = Path(__file__).resolve().parent / "plugin_registry.json"
     if not registry_path.exists():
@@ -313,33 +318,14 @@ def ingest_plugins():
 
     print(f"Loaded {len(plugins)} plugins from registry.")
 
-    vector_store = init_vector_store(PLUGINS_COLLECTION_NAME)
     client = get_qdrant_client(path=QDRANT_DATA_PATH)
 
-    # Duplicate protection: remove existing entries with matching names
-    for plugin in plugins:
-        try:
-            existing = client.scroll(
-                collection_name=PLUGINS_COLLECTION_NAME,
-                scroll_filter=models.Filter(
-                    must=[
-                        models.FieldCondition(
-                            key="metadata.name",
-                            match=models.MatchValue(value=plugin["name"]),
-                        )
-                    ]
-                ),
-                limit=100,
-            )
-            point_ids = [p.id for p in existing[0]]
-            if point_ids:
-                client.delete(
-                    collection_name=PLUGINS_COLLECTION_NAME,
-                    points_selector=models.PointIdsList(points=point_ids),
-                )
-                print(f"  Removed {len(point_ids)} existing entries for '{plugin['name']}'")
-        except Exception:
-            pass
+    # Drop and recreate collection to ensure clean state (no stale entries)
+    if rebuild and client.collection_exists(collection_name=PLUGINS_COLLECTION_NAME):
+        print(f"Dropping existing '{PLUGINS_COLLECTION_NAME}' collection to rebuild from scratch...")
+        client.delete_collection(collection_name=PLUGINS_COLLECTION_NAME)
+
+    vector_store = init_vector_store(PLUGINS_COLLECTION_NAME)
 
     # Build documents
     docs = []
