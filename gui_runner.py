@@ -9,18 +9,14 @@ from PySide6.QtWidgets import (
     QSplitter, QGroupBox, QScrollArea, QMessageBox
 )
 from PySide6.QtCore import QObject, Signal, Slot, QThread, Qt
+from queue import Queue
 
 # --- Import your existing backend ---
 from imagentj.agents import init_agent
 from imagentj.imagej_context import get_ij
 # Import the specific execution tool directly for the "Run" button
 from imagentj.tools import run_script_safe
-from config.imagej_config import FIJI_JAVA_HOME
-
 SCRIPTS_DIR = os.path.join(os.path.dirname(__file__), "scripts/saved_scripts")
-
-
-os.environ["JAVA_HOME"] = FIJI_JAVA_HOME
 
 # ----- CONFIG -----
 THREAD_ID = "imagej_supervisor_thread"   # keep constant to preserve context
@@ -41,8 +37,8 @@ If you’re unsure, tell me the biological question and show one representative 
 """
 
 
+
 class AgentWorker(QObject):
-    # Signals to communicate back to the Main Thread
     event_received = Signal(dict)
     finished = Signal()
     error = Signal(str)
@@ -51,34 +47,47 @@ class AgentWorker(QObject):
         super().__init__()
         self.supervisor = supervisor
         self.thread_id = thread_id
+        self.tasks = Queue()
+        self._stop_requested = False
 
-    @Slot(str)
-    def run(self, user_input: str):
-        """
-        This method runs in the background thread.
-        """
+    @Slot()
+    def start(self):
+        # Attach ONCE for lifetime
+        if jpype.isJVMStarted() and not jpype.isThreadAttachedToJVM():
+            jpype.attachThreadToJVM()
+
+        while True:
+            prompt = self.tasks.get()
+
+            if prompt is None:   # poison pill if app closes
+                break
+
+            self._stop_requested = False
+            self._run_prompt(prompt)
+
+    def _run_prompt(self, user_input):
         try:
-            # --- CRITICAL: Attach this thread to the JVM ---
-            # Since ImageJ runs on Java, and this is a new Python thread,
-            # we must explicitly attach it to the JVM or ImageJ calls may hang/crash.
-            if jpype.isJVMStarted() and not jpype.isThreadAttachedToJVM():
-                jpype.attachThreadToJVM()
-
             config = {"configurable": {"thread_id": self.thread_id}}
-            
-            # Streaming the agent response
+
             for event in self.supervisor.stream(
                 {"messages": [{"role": "user", "content": user_input}]},
                 config=config,
                 stream_mode="updates",
             ):
-                # Emit result back to GUI immediately
+                if self._stop_requested:
+                    break
                 self.event_received.emit(event)
-                
+
         except Exception as e:
             self.error.emit(str(e))
         finally:
             self.finished.emit()
+
+    def submit(self, prompt):
+        self.tasks.put(prompt)
+
+    def request_stop(self):
+        self._stop_requested = True
 
 
 class ScriptLibraryWidget(QWidget):
@@ -127,9 +136,10 @@ class ScriptLibraryWidget(QWidget):
         self.btn_run.setEnabled(False)
         self.btn_run.setStyleSheet("background-color: #27ae60; color: white; font-weight: bold;")
         self.btn_run.clicked.connect(self.on_run_click)
-        
+
         btn_layout.addWidget(self.btn_refresh)
         btn_layout.addWidget(self.btn_run)
+
         layout.addLayout(btn_layout)
         
         self.setLayout(layout)
@@ -202,7 +212,7 @@ class ScriptLibraryWidget(QWidget):
             # Confirm with user regarding inputs
             msg = f"Ensure the following requirements are met before running:\n\n{self.current_selection.get('inputs')}\n\nProceed?"
             reply = QMessageBox.question(self, 'Run Script', msg, QMessageBox.Yes | QMessageBox.No)
-            
+
             if reply == QMessageBox.Yes:
                 self.script_run_requested.emit(
                     self.current_selection.get("language", "groovy"),
@@ -240,12 +250,25 @@ class ImageJAgentGUI(QWidget):
         
         self.input_line = QLineEdit()
         self.send_button = QPushButton("Send")
-        self.status_label = QLabel("Ready")
+        self.send_button.setStyleSheet("background-color: #3498db; color: white; font-weight: bold; padding: 8px;")
+
+        self.stop_button = QPushButton("Stop")
+        self.stop_button.setEnabled(False)
+        self.stop_button.setStyleSheet("background-color: #bdc3c7; color: #7f8c8d; font-weight: bold; padding: 8px;")
+        self.stop_button.clicked.connect(self.on_stop)
+
+        self.status_label = QLabel("Agent is ready to help")
+        self.status_label.setStyleSheet("color: green; font-weight: bold;")
+
+        # Button row: Send (stretch) + Stop
+        button_layout = QHBoxLayout()
+        button_layout.addWidget(self.send_button, stretch=4)  # Send takes 80%
+        button_layout.addWidget(self.stop_button, stretch=1)  # Stop takes 20%
 
         chat_layout.addWidget(self.output_area)
         chat_layout.addWidget(self.attachment_status) # Add label above input
         chat_layout.addWidget(self.input_line)
-        chat_layout.addWidget(self.send_button)
+        chat_layout.addLayout(button_layout)
         chat_layout.addWidget(self.status_label)
         chat_widget.setLayout(chat_layout)
 
@@ -269,6 +292,18 @@ class ImageJAgentGUI(QWidget):
         self.ij = get_ij()
         self.ij.ui().showUI()
         self.supervisor, self.checkpointer = init_agent()
+
+
+        self.thread = QThread()
+        self.worker = AgentWorker(self.supervisor, THREAD_ID)
+        self.worker.moveToThread(self.thread)
+
+        self.thread.started.connect(self.worker.start)
+        self.worker.event_received.connect(self.handle_event)
+        self.worker.finished.connect(self.on_agent_finished)
+        self.worker.error.connect(self.on_agent_error)
+
+        self.thread.start()
         
         self.output_area.append(intro_message) 
         self.output_area.append("Use the panel on the right to recall saved scripts or drag files here.")
@@ -298,35 +333,60 @@ class ImageJAgentGUI(QWidget):
     def append_output(self, text):
         self.output_area.append(text)
 
+    def set_status(self, text: str):
+        # for differentiating ready and thinking
+        self.status_label.setText(text)
+
+        if text == "Ready":
+            self.status_label.setText("Agent is ready to help")
+            self.status_label.setStyleSheet("color: green; font-weight: bold;")
+        elif text == "Thinking...":
+            self.status_label.setStyleSheet("color: blue; font-weight: bold;")
+        elif text == "Stopping...":
+            self.status_label.setStyleSheet("color: #e74c3c; font-weight: bold;")
+
+    def set_ui_busy(self, busy: bool):
+        self.stop_button.setEnabled(busy)
+        self.send_button.setDisabled(busy)
+        self.input_line.setDisabled(busy)
+
+        # Update stop button color based on state
+        if busy:
+            self.stop_button.setStyleSheet("background-color: #e74c3c; color: white; font-weight: bold; padding: 8px;")
+            self.send_button.setStyleSheet("background-color: #bdc3c7; color: #7f8c8d; font-weight: bold; padding: 8px;")
+        else:
+            self.stop_button.setStyleSheet("background-color: #bdc3c7; color: #7f8c8d; font-weight: bold; padding: 8px;")
+            self.send_button.setStyleSheet("background-color: #3498db; color: white; font-weight: bold; padding: 8px;")
+
+
+    def on_stop(self):
+        """Stop the currently running agent."""
+        if hasattr(self, 'worker') and self.worker:
+            self.append_output("\n<i style='color: #e74c3c;'>🛑 Stopping agent...</i>")
+            self.worker.request_stop()
+            self.set_status("Stopping...")
+            self.status_label.setStyleSheet("color: #e74c3c; font-weight: bold;")
+
+
+
     def on_agent_finished(self):
-        self.status_label.setText("Ready")
-        # Optional: Clean up thread resources if desired here
-        # self.thread.quit() 
+        # Check if agent was stopped by user
+        if hasattr(self, 'worker') and self.worker._stop_requested:
+            self.append_output("\n<b style='color: green;'>✓ Agent is ready to help</b>")
+
+        self.set_status("Ready")
+        self.set_ui_busy(False)
 
     def on_agent_error(self, msg):
         self.append_output(f"[Agent error]\n{msg}")
         self.status_label.setText("Error")
+        self.set_ui_busy(False)
         self.status_label.setStyleSheet("color: red;")
 
     def _execute_agent_query(self, prompt):
-        """Helper to handle the threading boilerplate for any agent interaction."""
-        self.status_label.setText("Thinking...")
-        self.status_label.setStyleSheet("color: blue;")
-
-        self.thread = QThread()
-        self.worker = AgentWorker(self.supervisor, THREAD_ID)
-        self.worker.moveToThread(self.thread)
-
-        self.start_agent_work.connect(self.worker.run)
-        self.worker.event_received.connect(self.handle_event)
-        self.worker.error.connect(self.on_agent_error)
-        self.worker.finished.connect(self.on_agent_finished)
-        self.worker.finished.connect(self.thread.quit)
-        self.worker.finished.connect(self.worker.deleteLater)
-        self.thread.finished.connect(self.thread.deleteLater)
-
-        self.thread.start()
-        self.start_agent_work.emit(prompt)
+        self.set_status("Thinking...")
+        self.set_ui_busy(True)
+        self.worker.submit(prompt)
 
     def on_send(self):
         user_input = self.input_line.text().strip()
@@ -364,8 +424,7 @@ class ImageJAgentGUI(QWidget):
         This keeps the Agent in the loop for context and error handling.
         """
         # 1. Check if Agent is busy
-        if self.status_label.text() != "Ready":
-            from PySide6.QtWidgets import QMessageBox
+        if self.status_label.text() != "Agent ready to help":
             QMessageBox.warning(self, "Agent Busy", "Please wait for the current task to finish.")
             return
 
@@ -380,32 +439,14 @@ class ImageJAgentGUI(QWidget):
 
         # 3. Update UI to show what's happening
         self.output_area.append(f"\n<b>⚙️ Recall Script:</b> Sending to Agent...")
-        self.status_label.setText("Agent Running Script...")
-        self.status_label.setStyleSheet("color: blue;")
 
-        # 4. Trigger the standard Agent Worker (Same as on_send)
-        # We reuse the existing threading logic!
-        self.thread = QThread()
-        self.worker = AgentWorker(self.supervisor, THREAD_ID)
-        self.worker.moveToThread(self.thread)
-
-        self.start_agent_work.connect(self.worker.run)
-        
-        self.worker.event_received.connect(self.handle_event)
-        self.worker.error.connect(self.on_agent_error)
-        self.worker.finished.connect(self.on_agent_finished)
-        self.worker.finished.connect(self.thread.quit)
-        self.worker.finished.connect(self.worker.deleteLater)
-        self.thread.finished.connect(self.thread.deleteLater)
-
-        self.thread.start()
-        
-        # Emit the signal with our constructed prompt
-        self.start_agent_work.emit(prompt)
+        # 4. Use the standard agent execution helper
+        self._execute_agent_query(prompt)
 
     def on_saved_script_finished(self, result):
         self.output_area.append(f"<pre>{result}</pre>")
-        self.status_label.setText("Ready")
+        self.set_status("Ready")
+        self.set_ui_busy(False)
         self.status_label.setStyleSheet("color: black;")
         self.output_area.append("✅ <b>Execution complete.</b>")
 

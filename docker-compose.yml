@@ -1,0 +1,64 @@
+services:
+  imagentj:
+    image: imagent_j-imagentj:with-fastembed
+    # build: .
+    ports:
+      # Bind to localhost only by default for security
+      # Change to "0.0.0.0:6080:6080" if you need network access (not recommended)
+      - "127.0.0.1:6080:6080"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - LANGSMITH_API_KEY=${LANGSMITH_API_KEY:-}
+      - LANGSMITH_TRACING=${LANGSMITH_TRACING:-true}
+      - LANGSMITH_ENDPOINT=${LANGSMITH_ENDPOINT:-https://api.smith.langchain.com}
+      - LANGSMITH_PROJECT=${LANGSMITH_PROJECT:-}
+      - LANGCHAIN_CALLBACKS_BACKGROUND=${LANGCHAIN_CALLBACKS_BACKGROUND:-true}
+      - FIJI_PATH=/opt/Fiji.app
+      - QDRANT_DATA_PATH=/app/qdrant_data
+      - DISPLAY=:1
+      # Optional: Set a VNC password (recommended if exposing to network)
+      - VNC_PASSWORD=${VNC_PASSWORD:-}
+    volumes:
+      # Fiji plugin persistence across container rebuilds
+      - fiji_plugins:/opt/Fiji.app/plugins
+      - fiji_jars:/opt/Fiji.app/jars
+      - ./fiji_update:/opt/Fiji.app/update
+      # Saved scripts persistence
+      - saved_scripts:/app/scripts/saved_scripts
+      # Qdrant vector database for plugin search and RAG
+      - ./qdrant_data:/app/qdrant_data:rw
+      # Image data directory (place images in ./data on host, access as /mnt/data in container)
+      - ${IMAGE_DATA_DIR:-./data}:/data:ro
+      # Entrypoint script (contains security features like VNC password support)
+      - ./docker-entrypoint.sh:/docker-entrypoint.sh:ro
+      # Source code mount for development (remove in production image)
+      - ./src:/app/src:ro
+      - ./gui_runner.py:/app/gui_runner.py:ro
+    env_file:
+      - path: .env
+        required: false
+    shm_size: '2gb'
+
+    # ── Resource limits ────────────────────────────────────────────────────
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 8G
+        reservations:
+          memory: 2G
+
+    # ── Security hardening ──────────────────────────────────────────────────
+    # Run as non-root (also set in Dockerfile, belt-and-suspenders)
+    user: "imagentj"
+    # Prevent privilege escalation
+    security_opt:
+      - no-new-privileges:true
+    # Drop all Linux capabilities — none are needed
+    cap_drop:
+      - ALL
+
+volumes:
+  fiji_plugins:
+  fiji_jars:
+  saved_scripts:

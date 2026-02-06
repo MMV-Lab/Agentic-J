@@ -28,10 +28,14 @@ from langchain_docling import DoclingLoader
 from langchain_docling.loader import ExportType
 from config.rag_config import (
     QDRANT_DATA_PATH, DOCS_COLLECTION_NAME, MISTAKES_COLLECTION_NAME,
-    INGESTION_FOLDERS, EMBEDDING_MODEL, BATCH_SIZE, SKIP_PATTERNS, SUPPORTED_EXTENSIONS
+    PLUGINS_COLLECTION_NAME, INGESTION_FOLDERS, EMBEDDING_MODEL, BATCH_SIZE,
+    SKIP_PATTERNS, SUPPORTED_EXTENSIONS
 )
 from config.keys import gpt_key
 import hashlib
+
+import json
+from langchain_core.documents import Document
 
 # --- Configuration for Hybrid Search ---
 
@@ -296,14 +300,63 @@ def ingest_documents():
     load_folder_recursively(INGESTION_FOLDERS, docs_store, DOCS_COLLECTION_NAME)
     print("✅ Document ingestion completed!")
 
+def ingest_plugins(rebuild: bool = True):
+    """Ingest curated Fiji plugin records from plugin_registry.json into Qdrant.
+
+    Args:
+        rebuild: If True, drop and recreate the collection to remove stale data.
+                 If False, only update existing entries (may leave orphaned records).
+    """
+
+    registry_path = Path(__file__).resolve().parent / "plugin_registry.json"
+    if not registry_path.exists():
+        print(f"Plugin registry not found at {registry_path}")
+        return
+
+    with open(registry_path, "r", encoding="utf-8") as f:
+        plugins = json.load(f)
+
+    print(f"Loaded {len(plugins)} plugins from registry.")
+
+    client = get_qdrant_client(path=QDRANT_DATA_PATH)
+
+    # Drop and recreate collection to ensure clean state (no stale entries)
+    if rebuild and client.collection_exists(collection_name=PLUGINS_COLLECTION_NAME):
+        print(f"Dropping existing '{PLUGINS_COLLECTION_NAME}' collection to rebuild from scratch...")
+        client.delete_collection(collection_name=PLUGINS_COLLECTION_NAME)
+
+    vector_store = init_vector_store(PLUGINS_COLLECTION_NAME)
+
+    # Build documents
+    docs = []
+    for plugin in plugins:
+        page_content = (
+            f"{plugin['name']}: {plugin['description']} "
+            f"Category: {plugin['category']} "
+            f"Tags: {', '.join(plugin['tags'])}"
+        )
+        doc = Document(
+            page_content=page_content,
+            metadata=plugin,
+        )
+        docs.append(doc)
+
+    # Batch upsert
+    vector_store.add_documents(docs)
+    print(f"Ingested {len(docs)} plugin records into '{PLUGINS_COLLECTION_NAME}' collection.")
+
+
 if __name__ == "__main__":
     print("RAG System Setup (Hybrid + RRF)")
     print("===============================")
-    
+
     # 1. Initialize
     initialize_rag_system()
 
-    # 2. Ingest (uncomment to run ingestion)
+    # 2. Ingest documents (uncomment to run ingestion)
     ingest_documents()
-    
+
+    # 3. Ingest plugin registry
+    ingest_plugins()
+
     

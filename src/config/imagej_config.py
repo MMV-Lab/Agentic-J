@@ -1,3 +1,5 @@
 # ImageJ/Fiji Configuration
 # Update this path to your local Fiji installation's Java home
-FIJI_JAVA_HOME = r"C:\Users\lukas.johanns\Downloads\fiji-latest-win64-jdk(1)\Fiji\java\win64"
+# Docker overrides via FIJI_PATH env var; local dev uses the default below
+import os
+FIJI_JAVA_HOME = os.environ.get("FIJI_PATH", "/home/marilin/Downloads/Fiji.app")

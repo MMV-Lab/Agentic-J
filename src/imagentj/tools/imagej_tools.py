@@ -1,5 +1,7 @@
+import json
 from langchain.tools import tool
 from imagentj.imagej_context import get_ij
+from .metadata_tools import extract_file_metadata
 
 
 @tool
@@ -99,3 +101,20 @@ def inspect_all_ui_windows():
                 })
 
     return str(all_inspections)
+
+
+@tool
+def extract_image_metadata(path: str) -> str:
+    """Extract calibration, pixel intensity statistics, and suggested
+    threshold/filter parameters from an image file.
+
+    Returns a JSON string with pixel scale, intensity stats, recommended
+    threshold values, filter sizes, and noise estimates.  Does NOT require
+    an active ImageJ dataset — reads the file directly.
+
+    Args:
+        path: Absolute file path to the image.
+    """
+
+    result = extract_file_metadata(path)
+    return json.dumps(result, indent=2, default=str)

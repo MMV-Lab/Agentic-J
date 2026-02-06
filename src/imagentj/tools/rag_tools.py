@@ -1,15 +1,12 @@
 from langchain.tools import tool
 from langchain_core.documents import Document
-from .vector_stores import vec_store_mistakes
+from .vector_stores import get_vec_store_mistakes, is_rag_available
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from config.keys import gpt_key
-from ..rag.RAG import hybrid_search_with_rrf, apply_rrf, DOCS_COLLECTION_NAME, MISTAKES_COLLECTION_NAME
 
 __all__ = ['rag_retrieve_docs', 'rag_retrieve_mistakes', 'save_coding_experience']
-
-
 
 
 # Initialize a fast model for expansion
@@ -34,18 +31,21 @@ def rag_retrieve_docs(query: str) -> list:
     """
     Retrieve relevant context from the document RAG using Hybrid Search + Query Expansion.
     """
+    if not is_rag_available():
+        return [{"content": "RAG system is not configured. No documents available for retrieval.", "source": None, "page": None, "score": 0}]
+
+    from ..rag.RAG import hybrid_search_with_rrf, apply_rrf, DOCS_COLLECTION_NAME
+
     # 1. Expand the query
     queries = get_expanded_queries(query)
-    
+
     all_points = []
-    # 2. Search for each variant (In production, use asyncio.gather for speed)
+    # 2. Search for each variant
     for q in queries:
-        # Use our custom RRF search function defined in the previous step
         points = hybrid_search_with_rrf(q, collection_name=DOCS_COLLECTION_NAME, limit=5)
         all_points.extend(points)
 
     # 3. Final RRF re-ranking of all combined results
-    # (Using the apply_rrf helper from the previous response)
     final_results = apply_rrf(all_points, k=60)[:8]
 
     return [
@@ -53,7 +53,7 @@ def rag_retrieve_docs(query: str) -> list:
             "content": p.payload.get("page_content"),
             "source": p.payload.get("metadata", {}).get("source"),
             "page": p.payload.get("metadata", {}).get("page"),
-            "score": p.score # Useful for debugging
+            "score": p.score
         }
         for p in final_results
     ]
@@ -63,14 +63,19 @@ def rag_retrieve_mistakes(query: str) -> list:
     """
     Retrieve relevant context from coding errors and solutions RAG using Query Expansion.
     """
+    if not is_rag_available():
+        return [{"content": "RAG system is not configured. No coding experiences available.", "source": None, "score": 0}]
+
+    from ..rag.RAG import hybrid_search_with_rrf, apply_rrf, MISTAKES_COLLECTION_NAME
+
     queries = get_expanded_queries(query)
     all_points = []
-    
+
     for q in queries:
         points = hybrid_search_with_rrf(q, collection_name=MISTAKES_COLLECTION_NAME, limit=5)
         all_points.extend(points)
 
-    final_results = apply_rrf(all_points, k=60)[:5] # Fewer results for mistakes usually suffices
+    final_results = apply_rrf(all_points, k=60)[:5]
 
     return [
         {
@@ -88,7 +93,10 @@ def save_coding_experience(error_description: str, failed_code: str, working_cod
     Saves a successful fix to the persistent Memory RAG.
     Use this after the debugger fixes a script to prevent the error from happening again.
     """
-    # Create a structured text block for the embedding
+    vec_store_mistakes = get_vec_store_mistakes()
+    if vec_store_mistakes is None:
+        return "RAG system is not configured. Experience could not be saved (no vector store available)."
+
     content = f"""
     PROBLEM: {error_description}
     FAILED CODE: {failed_code}
@@ -106,7 +114,5 @@ def save_coding_experience(error_description: str, failed_code: str, working_cod
         }
     )
 
-    # Use your existing vector_store logic to add this to a NEW collection
-    # Recommended collection name: "AgentMemory"
     vec_store_mistakes.add_documents([doc])
     return "Experience saved successfully. I will remember this for future tasks."

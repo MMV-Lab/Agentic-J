@@ -1,0 +1,916 @@
+[
+  {
+    "name": "StarDist",
+    "description": "Deep-learning-based 2D/3D nucleus and object detection using star-convex polygons. Ideal for segmenting round or roughly convex objects such as cell nuclei in fluorescence microscopy images.",
+    "category": "segmentation",
+    "tags": [
+      "deep-learning",
+      "nuclei",
+      "detection",
+      "fluorescence",
+      "2D",
+      "3D"
+    ],
+    "update_site_name": "StarDist",
+    "update_site_url": "https://sites.imagej.net/StarDist/",
+    "requires_restart": true,
+    "documentation_url": "https://imagej.net/plugins/stardist"
+  },
+  {
+    "name": "MorphoLibJ",
+    "description": "Collection of mathematical morphology tools and plugins for ImageJ. Includes morphological filtering, watershed segmentation, geodesic distance transform, label image operations, and region analysis.",
+    "category": "morphology",
+    "tags": [
+      "morphology",
+      "watershed",
+      "filtering",
+      "label-images",
+      "connected-components",
+      "geodesic"
+    ],
+    "update_site_name": "IJPB-plugins",
+    "update_site_url": "https://sites.imagej.net/IJPB-plugins/",
+    "requires_restart": true,
+    "documentation_url": "https://imagej.net/plugins/morpholibj"
+  },
+  {
+    "name": "CLIJ2",
+    "description": "GPU-accelerated image processing library using OpenCL. Provides fast implementations of common operations like filtering, thresholding, labeling, and measurements on the GPU.",
+    "category": "utilities",
+    "tags": [
+      "GPU",
+      "OpenCL",
+      "acceleration",
+      "filtering",
+      "performance",
+      "batch-processing"
+    ],
+    "update_site_name": "clij",
+    "update_site_url": "https://sites.imagej.net/clij/",
+    "requires_restart": true,
+    "documentation_url": "https://clij.github.io/"
+  },
+  {
+    "name": "BioVoxxel Toolbox",
+    "description": "Collection of tools for biological image analysis including extended particle analyzer, watershed variants, neighborhood analysis, binary feature extractor, and speckle inspector.",
+    "category": "analysis",
+    "tags": [
+      "particle-analysis",
+      "watershed",
+      "binary",
+      "neighborhood",
+      "speckle",
+      "biology"
+    ],
+    "update_site_name": "BioVoxxel",
+    "update_site_url": "https://sites.imagej.net/BioVoxxel/",
+    "requires_restart": true,
+    "documentation_url": "https://imagej.net/plugins/biovoxxel-toolbox"
+  },
+  {
+    "name": "BigStitcher",
+    "description": "Tool for alignment and fusion of large multi-tile, multi-angle, multi-channel microscopy datasets. Handles terabyte-scale datasets with interest point-based registration.",
+    "category": "registration",
+    "tags": [
+      "stitching",
+      "registration",
+      "tiling",
+      "multi-view",
+      "large-data",
+      "fusion"
+    ],
+    "update_site_name": "BigStitcher",
+    "update_site_url": "https://sites.imagej.net/BigStitcher/",
+    "requires_restart": true,
+    "documentation_url": "https://imagej.net/plugins/bigstitcher"
+  },
+  {
+    "name": "BoneJ",
+    "description": "Plugin suite for bone image analysis. Includes tools for measuring bone thickness, connectivity, anisotropy, and fractal dimension from micro-CT images.",
+    "category": "analysis",
+    "tags": [
+      "bone",
+      "micro-CT",
+      "thickness",
+      "connectivity",
+      "anisotropy",
+      "3D"
+    ],
+    "update_site_name": "BoneJ",
+    "update_site_url": "https://sites.imagej.net/BoneJ/",
+    "requires_restart": true,
+    "documentation_url": "https://bonej.org/"
+  },
+  {
+    "name": "Bio-Formats",
+    "description": "Library for reading and writing life sciences image file formats. Supports over 150 formats including proprietary microscopy formats (Zeiss, Leica, Nikon, Olympus, etc.).",
+    "category": "io",
+    "tags": [
+      "file-formats",
+      "import",
+      "export",
+      "microscopy",
+      "metadata",
+      "OME"
+    ],
+    "update_site_name": "Bio-Formats",
+    "update_site_url": "https://sites.imagej.net/Bio-Formats/",
+    "requires_restart": true,
+    "documentation_url": "https://www.openmicroscopy.org/bio-formats/"
+  },
+  {
+    "name": "Labkit",
+    "description": "Intuitive interactive pixel classification and segmentation tool. Uses random forest classifier with fast GPU-accelerated preview for labeling 2D and 3D images.",
+    "category": "segmentation",
+    "tags": [
+      "interactive",
+      "pixel-classification",
+      "random-forest",
+      "labeling",
+      "2D",
+      "3D"
+    ],
+    "update_site_name": "Labkit",
+    "update_site_url": "https://sites.imagej.net/Labkit/",
+    "requires_restart": true,
+    "documentation_url": "https://imagej.net/plugins/labkit"
+  },
+  {
+    "name": "LimeSeg",
+    "description": "3D segmentation plugin based on surface evolution with superellipsoids. Designed for segmenting cells in 3D fluorescence microscopy images, especially epithelial tissues.",
+    "category": "segmentation",
+    "tags": [
+      "3D",
+      "surface-evolution",
+      "cells",
+      "epithelial",
+      "fluorescence",
+      "membrane"
+    ],
+    "update_site_name": "LimeSeg",
+    "update_site_url": "https://sites.imagej.net/LimeSeg/",
+    "requires_restart": true,
+    "documentation_url": "https://imagej.net/plugins/limeseg"
+  },
+  {
+    "name": "SNT",
+    "description": "Semi-automated neuron tracing and analysis framework. Traces neurons in 2D/3D, performs Sholl analysis, and supports SWC format for neuronal morphology reconstruction.",
+    "category": "analysis",
+    "tags": [
+      "neuron-tracing",
+      "Sholl-analysis",
+      "morphology",
+      "SWC",
+      "3D",
+      "neuroscience"
+    ],
+    "update_site_name": "Neuroanatomy",
+    "update_site_url": "https://sites.imagej.net/Neuroanatomy/",
+    "requires_restart": true,
+    "documentation_url": "https://imagej.net/plugins/snt"
+  },
+  {
+    "name": "FeatureJ",
+    "description": "Feature detection and extraction tools based on image derivatives. Includes edge detection (Canny), Hessian-based feature detection, Laplacian, and structure tensor computation.",
+    "category": "filtering",
+    "tags": [
+      "edge-detection",
+      "Canny",
+      "Hessian",
+      "Laplacian",
+      "derivatives",
+      "feature-detection"
+    ],
+    "update_site_name": "ImageScience",
+    "update_site_url": "https://sites.imagej.net/ImageScience/",
+    "requires_restart": true,
+    "documentation_url": "https://imagej.net/plugins/featurej"
+  },
+  {
+    "name": "CSBDeep / N2V",
+    "description": "Deep-learning-based image restoration including CARE (Content-Aware Image Restoration) and Noise2Void self-supervised denoising. Restores noisy, low-SNR microscopy images.",
+    "category": "deconvolution",
+    "tags": [
+      "deep-learning",
+      "denoising",
+      "CARE",
+      "Noise2Void",
+      "restoration",
+      "low-SNR"
+    ],
+    "update_site_name": "CSBDeep",
+    "update_site_url": "https://sites.imagej.net/CSBDeep/",
+    "requires_restart": true,
+    "documentation_url": "https://imagej.net/plugins/csbdeep"
+  },
+  {
+    "name": "TurboReg / StackReg",
+    "description": "Image registration plugins for aligning image stacks. TurboReg performs subpixel registration of pairs of images; StackReg aligns time series using rigid body, affine, or bilinear transforms.",
+    "category": "registration",
+    "tags": [
+      "registration",
+      "alignment",
+      "stack",
+      "timelapse",
+      "rigid-body",
+      "affine"
+    ],
+    "update_site_name": "BIG-EPFL",
+    "update_site_url": "https://sites.imagej.net/BIG-EPFL/",
+    "requires_restart": true,
+    "documentation_url": "http://bigwww.epfl.ch/thevenaz/stackreg/"
+  },
+  {
+    "name": "bUnwarpJ",
+    "description": "Elastic/consistent image registration plugin using B-spline deformations. Performs simultaneous registration of source and target images with regularization constraints.",
+    "category": "registration",
+    "tags": [
+      "registration",
+      "elastic",
+      "B-spline",
+      "deformable",
+      "consistent",
+      "2D"
+    ],
+    "update_site_name": "BIG-EPFL",
+    "update_site_url": "https://sites.imagej.net/BIG-EPFL/",
+    "requires_restart": true,
+    "documentation_url": "https://imagej.net/plugins/bunwarpj"
+  },
+  {
+    "name": "ClearVolume",
+    "description": "Real-time GPU-based volume rendering plugin for Fiji. Provides interactive 3D visualization of volumetric datasets with transfer function editing and multi-channel support.",
+    "category": "visualization",
+    "tags": [
+      "3D-rendering",
+      "volume",
+      "GPU",
+      "real-time",
+      "visualization",
+      "multi-channel"
+    ],
+    "update_site_name": "ClearVolume",
+    "update_site_url": "https://sites.imagej.net/ClearVolume/",
+    "requires_restart": true,
+    "documentation_url": "https://imagej.net/plugins/clearvolume"
+  },
+  {
+    "name": "SciView",
+    "description": "3D visualization tool for scientific data in Fiji using the scenery rendering library. Supports meshes, volumes, point clouds, and VR headsets for immersive visualization.",
+    "category": "visualization",
+    "tags": [
+      "3D",
+      "visualization",
+      "VR",
+      "meshes",
+      "volumes",
+      "point-clouds"
+    ],
+    "update_site_name": "SciView",
+    "update_site_url": "https://sites.imagej.net/SciView/",
+    "requires_restart": true,
+    "documentation_url": "https://imagej.net/plugins/sciview"
+  },
+  {
+    "name": "OMERO Insight",
+    "description": "Integration between Fiji and OMERO image management server. Browse, import, and export images between Fiji and OMERO for centralized image data management.",
+    "category": "io",
+    "tags": [
+      "OMERO",
+      "database",
+      "import",
+      "export",
+      "server",
+      "data-management"
+    ],
+    "update_site_name": "OMERO-5.5",
+    "update_site_url": "https://sites.imagej.net/OMERO-5.5/",
+    "requires_restart": true,
+    "documentation_url": "https://omero-guides.readthedocs.io/en/latest/fiji/docs/index.html"
+  },
+  {
+    "name": "N5 Viewer",
+    "description": "Plugin for reading N5, Zarr, and HDF5 datasets in Fiji via BigDataViewer. Supports multi-scale pyramid datasets for efficient visualization of large images.",
+    "category": "io",
+    "tags": [
+      "N5",
+      "Zarr",
+      "HDF5",
+      "BigDataViewer",
+      "multi-scale",
+      "large-data"
+    ],
+    "update_site_name": "N5",
+    "update_site_url": "https://sites.imagej.net/N5/",
+    "requires_restart": true,
+    "documentation_url": "https://github.com/saalfeldlab/n5-viewer"
+  },
+  {
+    "name": "Rolling Ball Background Subtraction",
+    "description": "Built-in ImageJ tool for subtracting uneven illumination background. Uses a rolling ball algorithm with configurable radius to correct for non-uniform background intensity.",
+    "category": "filtering",
+    "tags": [
+      "background-subtraction",
+      "illumination-correction",
+      "rolling-ball",
+      "preprocessing"
+    ],
+    "update_site_name": "Fiji",
+    "update_site_url": "https://sites.imagej.net/Fiji/",
+    "requires_restart": false,
+    "documentation_url": "https://imagej.net/plugins/rolling-ball-background-subtraction"
+  },
+  {
+    "name": "Auto Local Threshold",
+    "description": "Collection of local thresholding methods including Bernsen, Contrast, Mean, Median, MidGrey, Niblack, Otsu, Phansalkar, and Sauvola. Essential for segmenting images with uneven illumination.",
+    "category": "segmentation",
+    "tags": [
+      "thresholding",
+      "local-threshold",
+      "Otsu",
+      "Phansalkar",
+      "Sauvola",
+      "Niblack"
+    ],
+    "update_site_name": "Fiji",
+    "update_site_url": "https://sites.imagej.net/Fiji/",
+    "requires_restart": false,
+    "documentation_url": "https://imagej.net/plugins/auto-local-threshold"
+  },
+  {
+    "name": "Auto Threshold",
+    "description": "Collection of global thresholding methods including Otsu, Huang, Li, Yen, Triangle, MaxEntropy, RenyiEntropy, and more. Provides 16+ automatic threshold algorithms.",
+    "category": "segmentation",
+    "tags": [
+      "thresholding",
+      "global-threshold",
+      "Otsu",
+      "Huang",
+      "Li",
+      "automatic"
+    ],
+    "update_site_name": "Fiji",
+    "update_site_url": "https://sites.imagej.net/Fiji/",
+    "requires_restart": false,
+    "documentation_url": "https://imagej.net/plugins/auto-threshold"
+  },
+  {
+    "name": "OrientationJ",
+    "description": "Plugin for analyzing local orientation and coherence in images. Computes orientation maps, coherence maps, and distribution of orientations for fibrous or textured structures.",
+    "category": "analysis",
+    "tags": [
+      "orientation",
+      "coherence",
+      "fibers",
+      "texture",
+      "anisotropy",
+      "direction"
+    ],
+    "update_site_name": "BIG-EPFL",
+    "update_site_url": "https://sites.imagej.net/BIG-EPFL/",
+    "requires_restart": true,
+    "documentation_url": "http://bigwww.epfl.ch/demo/orientation/"
+  },
+  {
+    "name": "Shape Filter",
+    "description": "Filters connected components in binary images based on shape descriptors like area, circularity, elongation, solidity, and more. Useful for post-segmentation object selection.",
+    "category": "analysis",
+    "tags": [
+      "shape",
+      "morphology",
+      "filtering",
+      "binary",
+      "connected-components",
+      "descriptors"
+    ],
+    "update_site_name": "BioVoxxel",
+    "update_site_url": "https://sites.imagej.net/BioVoxxel/",
+    "requires_restart": true,
+    "documentation_url": "https://imagej.net/plugins/biovoxxel-toolbox"
+  },
+  {
+    "name": "Measure Stack",
+    "description": "Measures intensity statistics across all slices in an image stack. Generates per-slice measurements including mean, min, max, standard deviation, and integrated density.",
+    "category": "analysis",
+    "tags": [
+      "measurement",
+      "stack",
+      "intensity",
+      "statistics",
+      "quantification",
+      "timelapse"
+    ],
+    "update_site_name": "Fiji",
+    "update_site_url": "https://sites.imagej.net/Fiji/",
+    "requires_restart": false,
+    "documentation_url": "https://imagej.net/imaging/measurement"
+  },
+  {
+    "name": "CLIJ Assistant",
+    "description": "Interactive GUI for building GPU-accelerated image processing workflows. Records operations as scripts (Groovy, Python, etc.) for reproducible GPU processing pipelines.",
+    "category": "utilities",
+    "tags": [
+      "GPU",
+      "workflow",
+      "interactive",
+      "script-generation",
+      "pipeline",
+      "OpenCL"
+    ],
+    "update_site_name": "clij",
+    "update_site_url": "https://sites.imagej.net/clij/",
+    "requires_restart": true,
+    "documentation_url": "https://clij.github.io/assistant/"
+  },
+  {
+    "name": "Colocalization Threshold",
+    "description": "Performs pixel-based colocalization with automatic threshold determination using Costes' method. Generates scatterplots, colocalized pixel maps, and statistical coefficients.",
+    "category": "colocalization",
+    "tags": [
+      "colocalization",
+      "threshold",
+      "Costes",
+      "scatterplot",
+      "pixel-based",
+      "statistics"
+    ],
+    "update_site_name": "Fiji",
+    "update_site_url": "https://sites.imagej.net/Fiji/",
+    "requires_restart": false,
+    "documentation_url": "https://imagej.net/plugins/colocalization-threshold"
+  },
+  {
+    "name": "CellCounter",
+    "description": "Manual cell counting tool with multiple counters. Allows marking and counting objects in images with different categories, exporting counts and positions.",
+    "category": "analysis",
+    "tags": [
+      "counting",
+      "manual",
+      "cells",
+      "markers",
+      "annotation",
+      "quantification"
+    ],
+    "update_site_name": "Fiji",
+    "update_site_url": "https://sites.imagej.net/Fiji/",
+    "requires_restart": false,
+    "documentation_url": "https://imagej.net/plugins/cell-counter"
+  },
+  {
+    "name": "Watershed Irregular Features",
+    "description": "Advanced watershed segmentation for separating touching irregular-shaped objects. Better than standard watershed for non-round objects like elongated cells or tissue regions.",
+    "category": "segmentation",
+    "tags": [
+      "watershed",
+      "segmentation",
+      "touching-objects",
+      "irregular",
+      "separation"
+    ],
+    "update_site_name": "BioVoxxel",
+    "update_site_url": "https://sites.imagej.net/BioVoxxel/",
+    "requires_restart": true,
+    "documentation_url": "https://imagej.net/plugins/biovoxxel-toolbox"
+  },
+  {
+    "name": "Manual Tracking",
+    "description": "Manual point-and-click tracking of objects over time. Generates tracks with XY coordinates per frame and computes velocity and distance measurements.",
+    "category": "tracking",
+    "tags": [
+      "tracking",
+      "manual",
+      "timelapse",
+      "velocity",
+      "trajectory",
+      "coordinates"
+    ],
+    "update_site_name": "Fiji",
+    "update_site_url": "https://sites.imagej.net/Fiji/",
+    "requires_restart": false,
+    "documentation_url": "https://imagej.net/plugins/manual-tracking"
+  },
+  {
+    "name": "IJ-OpenCV",
+    "description": "Bridge between ImageJ and OpenCV for advanced computer vision operations. Enables using OpenCV algorithms (feature matching, contour detection, etc.) from within Fiji.",
+    "category": "utilities",
+    "tags": [
+      "OpenCV",
+      "computer-vision",
+      "feature-matching",
+      "contour",
+      "bridge",
+      "interoperability"
+    ],
+    "update_site_name": "IJ-OpenCV",
+    "update_site_url": "https://sites.imagej.net/IJ-OpenCV/",
+    "requires_restart": true,
+    "documentation_url": "https://imagej.net/plugins/ij-opencv"
+  },
+  {
+    "name": "Results to Excel",
+    "description": "Exports ImageJ Results tables directly to Excel (.xlsx) format. Preserves all measurement data, formatting, and supports batch export of multiple tables.",
+    "category": "io",
+    "tags": [
+      "Excel",
+      "export",
+      "results",
+      "measurements",
+      "table",
+      "spreadsheet"
+    ],
+    "update_site_name": "ResultsToExcel",
+    "update_site_url": "https://sites.imagej.net/ResultsToExcel/",
+    "requires_restart": true,
+    "documentation_url": "https://imagej.net/plugins/results-to-excel"
+  },
+  {
+    "name": "Sholl Analysis",
+    "description": "Quantitative analysis of neuronal arbor morphology using the Sholl method. Counts intersections of neuronal processes with concentric circles/spheres at increasing radii from the soma.",
+    "category": "analysis",
+    "tags": [
+      "Sholl",
+      "neuron",
+      "morphology",
+      "branching",
+      "dendrite",
+      "neuroscience"
+    ],
+    "update_site_name": "Neuroanatomy",
+    "update_site_url": "https://sites.imagej.net/Neuroanatomy/",
+    "requires_restart": true,
+    "documentation_url": "https://imagej.net/plugins/sholl-analysis"
+  },
+  {
+    "name": "CLAHE",
+    "description": "Contrast Limited Adaptive Histogram Equalization for enhancing local contrast in images. Particularly useful for images with varying illumination or low contrast regions.",
+    "category": "filtering",
+    "tags": [
+      "contrast",
+      "enhancement",
+      "histogram",
+      "adaptive",
+      "local-contrast",
+      "preprocessing"
+    ],
+    "update_site_name": "Fiji",
+    "update_site_url": "https://sites.imagej.net/Fiji/",
+    "requires_restart": false,
+    "documentation_url": "https://imagej.net/plugins/clahe"
+  },
+  {
+    "name": "Classic Watershed",
+    "description": "Traditional watershed segmentation algorithm for separating touching objects. Works on grayscale images using intensity gradients to find object boundaries.",
+    "category": "segmentation",
+    "tags": [
+      "watershed",
+      "segmentation",
+      "separation",
+      "touching-objects",
+      "classic",
+      "gradient"
+    ],
+    "update_site_name": "IJPB-plugins",
+    "update_site_url": "https://sites.imagej.net/IJPB-plugins/",
+    "requires_restart": true,
+    "documentation_url": "https://imagej.net/plugins/classic-watershed"
+  },
+  {
+    "name": "Distance Transform Watershed",
+    "description": "Watershed segmentation based on distance transform of binary images. Excellent for separating round touching objects like cells or nuclei.",
+    "category": "segmentation",
+    "tags": [
+      "watershed",
+      "distance-transform",
+      "separation",
+      "touching-objects",
+      "binary",
+      "round-objects"
+    ],
+    "update_site_name": "IJPB-plugins",
+    "update_site_url": "https://sites.imagej.net/IJPB-plugins/",
+    "requires_restart": true,
+    "documentation_url": "https://imagej.net/plugins/marker-controlled-watershed"
+  },
+  {
+    "name": "FilamentDetector",
+    "description": "Detects and traces filamentous structures like actin, microtubules, or other cytoskeletal elements. Provides length, curvature, and intensity measurements.",
+    "category": "analysis",
+    "tags": [
+      "filaments",
+      "cytoskeleton",
+      "actin",
+      "microtubules",
+      "tracing",
+      "curvature"
+    ],
+    "update_site_name": "FilamentDetector",
+    "update_site_url": "https://sites.imagej.net/FilamentDetector/",
+    "requires_restart": true,
+    "documentation_url": "https://imagej.net/plugins/filament-detector"
+  },
+  {
+    "name": "FLIMJ",
+    "description": "Fluorescence Lifetime Imaging analysis plugin. Fits fluorescence decay curves to extract lifetime parameters for FLIM-FRET and metabolic imaging applications.",
+    "category": "analysis",
+    "tags": [
+      "FLIM",
+      "fluorescence-lifetime",
+      "FRET",
+      "decay",
+      "fitting",
+      "metabolic"
+    ],
+    "update_site_name": "FLIMJ",
+    "update_site_url": "https://sites.imagej.net/FLIMJ/",
+    "requires_restart": true,
+    "documentation_url": "https://imagej.net/plugins/flimj"
+  },
+  {
+    "name": "Kappa",
+    "description": "Curvature analysis tool for measuring bending and curvature of filamentous structures. Provides local curvature values along traced curves.",
+    "category": "analysis",
+    "tags": [
+      "curvature",
+      "bending",
+      "filaments",
+      "tracing",
+      "measurement",
+      "curves"
+    ],
+    "update_site_name": "Kappa",
+    "update_site_url": "https://sites.imagej.net/Kappa/",
+    "requires_restart": true,
+    "documentation_url": "https://imagej.net/plugins/kappa"
+  },
+  {
+    "name": "MaMuT",
+    "description": "Massive Multi-view Tracker for large-scale cell tracking in multi-view light-sheet microscopy data. Handles terabyte-scale datasets with manual and semi-automatic tracking.",
+    "category": "tracking",
+    "tags": [
+      "tracking",
+      "light-sheet",
+      "multi-view",
+      "large-data",
+      "lineage",
+      "cells"
+    ],
+    "update_site_name": "MaMuT",
+    "update_site_url": "https://sites.imagej.net/MaMuT/",
+    "requires_restart": true,
+    "documentation_url": "https://imagej.net/plugins/mamut"
+  },
+  {
+    "name": "MoBIE",
+    "description": "Multi-modal Big Image Explorer for browsing and annotating large multi-modal imaging datasets. Integrates with BigDataViewer for seamless navigation.",
+    "category": "visualization",
+    "tags": [
+      "big-data",
+      "multi-modal",
+      "browser",
+      "annotation",
+      "atlas",
+      "exploration"
+    ],
+    "update_site_name": "MoBIE",
+    "update_site_url": "https://sites.imagej.net/MoBIE/",
+    "requires_restart": true,
+    "documentation_url": "https://mobie.github.io/"
+  },
+  {
+    "name": "Multi-Template Matching",
+    "description": "Finds multiple instances of a template pattern in images. Uses normalized cross-correlation with non-maximum suppression for detecting repeated structures.",
+    "category": "analysis",
+    "tags": [
+      "template-matching",
+      "detection",
+      "pattern",
+      "cross-correlation",
+      "multiple",
+      "search"
+    ],
+    "update_site_name": "Multi-Template-Matching",
+    "update_site_url": "https://sites.imagej.net/Multi-Template-Matching/",
+    "requires_restart": true,
+    "documentation_url": "https://imagej.net/plugins/multi-template-matching"
+  },
+  {
+    "name": "NeuronJ",
+    "description": "Semi-automatic neuron tracing tool for 2D images. Uses live-wire algorithm for efficient tracing of neuronal processes with length and branching measurements.",
+    "category": "analysis",
+    "tags": [
+      "neuron",
+      "tracing",
+      "2D",
+      "live-wire",
+      "branching",
+      "neuroscience"
+    ],
+    "update_site_name": "ImageScience",
+    "update_site_url": "https://sites.imagej.net/ImageScience/",
+    "requires_restart": true,
+    "documentation_url": "https://imagej.net/plugins/neuronj"
+  },
+  {
+    "name": "Time Stamper",
+    "description": "Adds timestamps or frame numbers to time-lapse movies. Customizable position, format, font, and time units for annotating temporal sequences.",
+    "category": "utilities",
+    "tags": [
+      "timestamp",
+      "annotation",
+      "timelapse",
+      "movie",
+      "frame-number",
+      "labeling"
+    ],
+    "update_site_name": "Fiji",
+    "update_site_url": "https://sites.imagej.net/Fiji/",
+    "requires_restart": false,
+    "documentation_url": "https://imagej.net/plugins/time-stamper"
+  },
+  {
+    "name": "TransformJ",
+    "description": "Collection of geometric transformation tools including translation, rotation, scaling, shearing, and affine transforms for 2D and 3D images.",
+    "category": "registration",
+    "tags": [
+      "transform",
+      "rotation",
+      "scaling",
+      "affine",
+      "geometric",
+      "2D",
+      "3D"
+    ],
+    "update_site_name": "ImageScience",
+    "update_site_url": "https://sites.imagej.net/ImageScience/",
+    "requires_restart": true,
+    "documentation_url": "https://imagej.net/plugins/transformj"
+  },
+  {
+    "name": "DiameterJ",
+    "description": "Analyzes fiber diameter distributions in SEM and other microscopy images. Segments fibers and measures diameter histograms for nanofiber characterization.",
+    "category": "analysis",
+    "tags": [
+      "diameter",
+      "fibers",
+      "SEM",
+      "nanofibers",
+      "histogram",
+      "measurement"
+    ],
+    "update_site_name": "DiameterJ",
+    "update_site_url": "https://sites.imagej.net/DiameterJ/",
+    "requires_restart": true,
+    "documentation_url": "https://imagej.net/plugins/diameterj"
+  },
+  {
+    "name": "SIMcheck",
+    "description": "Quality control plugin for Structured Illumination Microscopy data. Assesses raw data quality and reconstruction artifacts in SIM images.",
+    "category": "analysis",
+    "tags": [
+      "SIM",
+      "quality-control",
+      "super-resolution",
+      "artifacts",
+      "structured-illumination"
+    ],
+    "update_site_name": "SIMcheck",
+    "update_site_url": "https://sites.imagej.net/SIMcheck/",
+    "requires_restart": true,
+    "documentation_url": "https://imagej.net/plugins/simcheck"
+  },
+  {
+    "name": "TAPAS",
+    "description": "Towards an Automated Processing and Analysis System. Framework for building automated image analysis pipelines with batch processing capabilities.",
+    "category": "utilities",
+    "tags": [
+      "automation",
+      "pipeline",
+      "batch",
+      "workflow",
+      "processing",
+      "framework"
+    ],
+    "update_site_name": "TAPAS",
+    "update_site_url": "https://sites.imagej.net/TAPAS/",
+    "requires_restart": true,
+    "documentation_url": "https://imagej.net/plugins/tapas"
+  },
+  {
+    "name": "Marker-controlled Watershed",
+    "description": "Watershed segmentation using user-defined or automatic markers to control the segmentation. Prevents over-segmentation by seeding from marker positions.",
+    "category": "segmentation",
+    "tags": [
+      "watershed",
+      "markers",
+      "segmentation",
+      "controlled",
+      "seeds",
+      "over-segmentation"
+    ],
+    "update_site_name": "IJPB-plugins",
+    "update_site_url": "https://sites.imagej.net/IJPB-plugins/",
+    "requires_restart": true,
+    "documentation_url": "https://imagej.net/plugins/marker-controlled-watershed"
+  },
+  {
+    "name": "Interactive Marker-controlled Watershed",
+    "description": "Interactive version of marker-controlled watershed where users can add/remove markers and see segmentation results in real-time.",
+    "category": "segmentation",
+    "tags": [
+      "watershed",
+      "interactive",
+      "markers",
+      "real-time",
+      "segmentation",
+      "manual"
+    ],
+    "update_site_name": "IJPB-plugins",
+    "update_site_url": "https://sites.imagej.net/IJPB-plugins/",
+    "requires_restart": true,
+    "documentation_url": "https://imagej.net/plugins/marker-controlled-watershed"
+  },
+  {
+    "name": "RATS",
+    "description": "Robust Automatic Threshold Selection using gradient information. Automatically determines thresholds for images with varying background or noise levels.",
+    "category": "segmentation",
+    "tags": [
+      "threshold",
+      "automatic",
+      "robust",
+      "gradient",
+      "adaptive",
+      "selection"
+    ],
+    "update_site_name": "RATS",
+    "update_site_url": "https://sites.imagej.net/RATS/",
+    "requires_restart": true,
+    "documentation_url": "https://imagej.net/plugins/rats"
+  },
+  {
+    "name": "CiliaQ",
+    "description": "Automated analysis of primary cilia in fluorescence microscopy images. Detects, segments, and measures ciliary structures including length and intensity.",
+    "category": "analysis",
+    "tags": [
+      "cilia",
+      "primary-cilia",
+      "detection",
+      "measurement",
+      "length",
+      "fluorescence"
+    ],
+    "update_site_name": "CiliaQ",
+    "update_site_url": "https://sites.imagej.net/CiliaQ/",
+    "requires_restart": true,
+    "documentation_url": "https://imagej.net/plugins/ciliaq"
+  },
+  {
+    "name": "SpermQ",
+    "description": "Analysis tool for sperm flagellar beating and motility. Tracks sperm heads and analyzes flagellar waveforms for fertility research.",
+    "category": "analysis",
+    "tags": [
+      "sperm",
+      "flagella",
+      "motility",
+      "tracking",
+      "waveform",
+      "fertility"
+    ],
+    "update_site_name": "SpermQ",
+    "update_site_url": "https://sites.imagej.net/SpermQ/",
+    "requires_restart": true,
+    "documentation_url": "https://imagej.net/plugins/spermq"
+  },
+  {
+    "name": "CARE",
+    "description": "Content-Aware Image Restoration using deep learning. Restores images from noisy or underexposed acquisitions, trained on pairs of low/high quality images.",
+    "category": "deconvolution",
+    "tags": [
+      "deep-learning",
+      "restoration",
+      "denoising",
+      "CARE",
+      "content-aware",
+      "training"
+    ],
+    "update_site_name": "CSBDeep",
+    "update_site_url": "https://sites.imagej.net/CSBDeep/",
+    "requires_restart": true,
+    "documentation_url": "https://imagej.net/plugins/care"
+  },
+  {
+    "name": "DenoiSeg",
+    "description": "Joint denoising and segmentation using deep learning. Combines image denoising with instance segmentation in a single network trained with minimal annotations.",
+    "category": "segmentation",
+    "tags": [
+      "deep-learning",
+      "denoising",
+      "segmentation",
+      "joint",
+      "minimal-annotation"
+    ],
+    "update_site_name": "CSBDeep",
+    "update_site_url": "https://sites.imagej.net/CSBDeep/",
+    "requires_restart": true,
+    "documentation_url": "https://imagej.net/plugins/denoiseg"
+  }
+]
