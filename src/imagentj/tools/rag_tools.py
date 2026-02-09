@@ -90,16 +90,26 @@ def rag_retrieve_mistakes(query: str) -> list:
 
 
 @tool("save_coding_experience")
-def save_coding_experience(error_description: str, failed_code: str, working_code: str, class_involved: str):
+def save_coding_experience(language: str, error_description: str, failed_code: str, working_code: str, class_involved: str, error_type: str) -> str:
     """
     Saves a successful fix to the persistent Memory RAG.
     Use this after the debugger fixes a script to prevent the error from happening again.
+
+    Args:   
+
+    language: Programming language of the code (e.g., "Groovy", "Python").
+    error_description: A brief description of the error encountered.
+    failed_code: The original code snippet that caused the error.
+    working_code: The corrected code snippet that resolves the error.
+    class_involved: The main class or plugin involved in the error (e.g., "ImagePlus", "TrackMate").
+    error_type: The type of error (e.g., "MissingMethod", "Logic"), ALWAYS one word.
     """
     vec_store_mistakes = get_vec_store_mistakes()
     if vec_store_mistakes is None:
         return "RAG system is not configured. Experience could not be saved (no vector store available)."
 
     content = f"""
+    LANGUAGE: {language}
     PROBLEM: {error_description}
     FAILED CODE: {failed_code}
     WORKING SOLUTION:
@@ -110,9 +120,9 @@ def save_coding_experience(error_description: str, failed_code: str, working_cod
     doc = Document(
         page_content=content,
         metadata={
-            "type": "lesson_learned",
+            "language": language,
+            "error type": error_type,
             "class": class_involved,
-            "error_type": "MissingMethod" if "MissingMethod" in error_description else "Logic"
         }
     )
 
