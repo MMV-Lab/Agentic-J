@@ -11,6 +11,16 @@
       "2D",
       "3D"
     ],
+    "input_data": "Single-channel or multi-channel 2D/3D fluorescence images with round or convex objects (e.g. DAPI-stained nuclei)",
+    "output_data": "Label image where each detected object has a unique integer ID, ROI set, and object count",
+    "use_when": "You need to segment round or roughly convex objects like nuclei, cells, or organelles in fluorescence images, especially when objects are densely packed or touching",
+    "do_not_use_when": "Objects are highly elongated, irregular, or non-convex (e.g. neurons, filaments). Not suitable for brightfield or H&E images without retraining",
+    "typical_use_cases": [
+      "Counting DAPI-stained nuclei in tissue sections",
+      "Segmenting GFP-labeled cells in culture",
+      "Detecting spots or puncta in fluorescence images",
+      "Quantifying nuclear morphology in high-throughput screens"
+    ],
     "update_site_name": "StarDist",
     "update_site_url": "https://sites.imagej.net/StarDist/",
     "requires_restart": true,
@@ -27,6 +37,17 @@
       "label-images",
       "connected-components",
       "geodesic"
+    ],
+    "input_data": "Grayscale or binary 2D/3D images, or label images from prior segmentation",
+    "output_data": "Filtered images, label images, distance maps, Results tables with region measurements (area, perimeter, shape descriptors, intensity statistics)",
+    "use_when": "You need morphological operations (opening, closing, erosion, dilation), watershed segmentation, connected component analysis, label image manipulation, or region-based measurements",
+    "do_not_use_when": "You need deep-learning-based segmentation or simple global thresholding — use StarDist or Auto Threshold instead",
+    "typical_use_cases": [
+      "Separating touching objects with marker-controlled watershed",
+      "Measuring shape descriptors (circularity, elongation) of segmented regions",
+      "Morphological filtering to remove noise or fill holes",
+      "Geodesic reconstruction for extracting connected foreground regions",
+      "Analyzing label images from other segmentation tools"
     ],
     "update_site_name": "IJPB-plugins",
     "update_site_url": "https://sites.imagej.net/IJPB-plugins/",
@@ -45,6 +66,16 @@
       "performance",
       "batch-processing"
     ],
+    "input_data": "Any 2D/3D image that can be processed by ImageJ (grayscale, binary, label images)",
+    "output_data": "Processed images (same types as input), Results tables with measurements",
+    "use_when": "Processing is too slow on CPU, you have large images or batch processing needs, or you want to speed up filtering/thresholding/labeling pipelines",
+    "do_not_use_when": "No compatible GPU is available, images are small and processing is already fast, or you need operations not implemented in CLIJ2",
+    "typical_use_cases": [
+      "Accelerating Gaussian blur on large 3D stacks",
+      "Fast batch thresholding and labeling of many images",
+      "GPU-accelerated connected component analysis",
+      "Building fast processing pipelines in macro/script"
+    ],
     "update_site_name": "clij",
     "update_site_url": "https://sites.imagej.net/clij/",
     "requires_restart": true,
@@ -61,6 +92,16 @@
       "neighborhood",
       "speckle",
       "biology"
+    ],
+    "input_data": "Binary or grayscale 2D images, typically from prior thresholding or segmentation",
+    "output_data": "Filtered binary images, Results tables with particle measurements, neighborhood analysis statistics",
+    "use_when": "You need advanced particle filtering (by shape, size, circularity), neighborhood/proximity analysis between objects, binary feature extraction, or speckle inspection",
+    "do_not_use_when": "You need basic particle analysis (use built-in Analyze Particles), deep-learning segmentation, or 3D analysis",
+    "typical_use_cases": [
+      "Filtering segmented objects by multiple shape criteria simultaneously",
+      "Analyzing spatial relationships between different cell populations",
+      "Extracting binary features like convex hull deficiency",
+      "Inspecting and removing speckle noise from binary masks"
     ],
     "update_site_name": "BioVoxxel",
     "update_site_url": "https://sites.imagej.net/BioVoxxel/",
@@ -79,6 +120,16 @@
       "large-data",
       "fusion"
     ],
+    "input_data": "Multi-tile, multi-angle, or multi-channel 3D microscopy datasets (e.g. light-sheet, confocal tile scans), typically in HDF5/N5 format",
+    "output_data": "Stitched/fused single image or virtual fusion for visualization, transformation parameters",
+    "use_when": "You have tiled acquisitions, multi-view light-sheet data, or large datasets that need stitching with sub-pixel precision",
+    "do_not_use_when": "You have simple 2D tile grids (use Grid/Collection Stitching), single-view single-tile data, or small datasets that fit in memory",
+    "typical_use_cases": [
+      "Stitching confocal tile scans of whole tissue sections",
+      "Fusing multi-view light-sheet microscopy data",
+      "Registering and merging terabyte-scale cleared tissue datasets",
+      "Aligning multi-channel acquisitions with different orientations"
+    ],
     "update_site_name": "BigStitcher",
     "update_site_url": "https://sites.imagej.net/BigStitcher/",
     "requires_restart": true,
@@ -95,6 +146,16 @@
       "connectivity",
       "anisotropy",
       "3D"
+    ],
+    "input_data": "3D binary or grayscale micro-CT images of bone or similar porous structures",
+    "output_data": "Results tables with measurements (thickness, connectivity density, anisotropy degree, fractal dimension), thickness maps, skeleton images",
+    "use_when": "You need to quantify bone microarchitecture from micro-CT scans, measure trabecular thickness, analyze porosity, or assess structural connectivity",
+    "do_not_use_when": "Images are not bone/porous structures, data is 2D only, or you need soft tissue analysis",
+    "typical_use_cases": [
+      "Measuring trabecular thickness and spacing in micro-CT bone samples",
+      "Quantifying bone volume fraction (BV/TV)",
+      "Analyzing connectivity and anisotropy of trabecular networks",
+      "Assessing scaffold porosity in tissue engineering"
     ],
     "update_site_name": "BoneJ",
     "update_site_url": "https://sites.imagej.net/BoneJ/",
@@ -113,6 +174,16 @@
       "metadata",
       "OME"
     ],
+    "input_data": "Microscopy image files in proprietary or open formats (.czi, .lif, .nd2, .oib, .ome.tiff, .vsi, etc.)",
+    "output_data": "ImagePlus objects with full metadata (pixel size, channel info, timestamps, instrument settings)",
+    "use_when": "You need to open proprietary microscopy formats, preserve metadata during import, export to OME-TIFF, or access multi-series files",
+    "do_not_use_when": "Files are standard formats already supported by ImageJ (TIFF, PNG, JPEG) and you don't need metadata preservation",
+    "typical_use_cases": [
+      "Opening Zeiss .czi, Leica .lif, or Nikon .nd2 files with full metadata",
+      "Importing multi-position, multi-timepoint datasets as separate series",
+      "Converting proprietary formats to OME-TIFF for archiving",
+      "Extracting acquisition metadata (pixel size, exposure, objective) from image files"
+    ],
     "update_site_name": "Bio-Formats",
     "update_site_url": "https://sites.imagej.net/Bio-Formats/",
     "requires_restart": true,
@@ -129,6 +200,16 @@
       "labeling",
       "2D",
       "3D"
+    ],
+    "input_data": "2D or 3D grayscale or multi-channel images where manual annotation of a few example regions is feasible",
+    "output_data": "Segmentation label image, trained classifier model (reusable on similar images)",
+    "use_when": "You need interactive pixel classification with real-time preview, want to train a classifier by painting labels, or need segmentation that adapts to your specific image type",
+    "do_not_use_when": "Objects have well-defined intensity thresholds (use Auto Threshold), you need instance segmentation of individual objects (use StarDist), or fully automated batch processing without user interaction",
+    "typical_use_cases": [
+      "Segmenting tissue regions in histology images by painting examples",
+      "Classifying pixels into foreground/background in complex images",
+      "Training a reusable classifier for batch segmentation of similar images",
+      "Interactive segmentation of 3D volumes slice-by-slice"
     ],
     "update_site_name": "Labkit",
     "update_site_url": "https://sites.imagej.net/Labkit/",
@@ -147,6 +228,16 @@
       "fluorescence",
       "membrane"
     ],
+    "input_data": "3D fluorescence images with membrane-labeled or surface-labeled cells, especially confocal z-stacks of epithelial tissues",
+    "output_data": "3D surface meshes of segmented cells, volume and surface area measurements",
+    "use_when": "You need 3D cell segmentation in epithelial tissues, have membrane-stained confocal data, or want surface mesh outputs for 3D shape analysis",
+    "do_not_use_when": "Cells are not membrane-labeled, images are 2D, objects are not roughly ellipsoidal, or you need nucleus segmentation (use StarDist 3D)",
+    "typical_use_cases": [
+      "Segmenting cells in 3D confocal images of epithelial monolayers",
+      "Measuring cell volume and surface area in developing embryos",
+      "Analyzing cell packing geometry in tissues",
+      "3D shape analysis of membrane-labeled cells"
+    ],
     "update_site_name": "LimeSeg",
     "update_site_url": "https://sites.imagej.net/LimeSeg/",
     "requires_restart": true,
@@ -163,6 +254,16 @@
       "SWC",
       "3D",
       "neuroscience"
+    ],
+    "input_data": "2D or 3D fluorescence images of neurons (confocal, two-photon, light-sheet), or pre-existing SWC reconstruction files",
+    "output_data": "SWC morphology files, Sholl analysis plots and tables, branch statistics, dendritic tree visualizations",
+    "use_when": "You need to trace neuronal arbors, reconstruct dendritic trees, perform Sholl analysis, or quantify branching morphology",
+    "do_not_use_when": "You need to trace non-neuronal filaments (use FilamentDetector), want fully automatic neuron segmentation without manual guidance, or are analyzing non-branching structures",
+    "typical_use_cases": [
+      "Tracing and reconstructing dendritic arbors from confocal z-stacks",
+      "Performing Sholl analysis to quantify neuronal complexity",
+      "Comparing neuronal morphology between experimental conditions",
+      "Exporting neuron reconstructions in SWC format for simulation"
     ],
     "update_site_name": "Neuroanatomy",
     "update_site_url": "https://sites.imagej.net/Neuroanatomy/",
@@ -181,6 +282,16 @@
       "derivatives",
       "feature-detection"
     ],
+    "input_data": "2D grayscale images (8-bit or 32-bit)",
+    "output_data": "Edge maps, Hessian eigenvalue images, Laplacian images, structure tensor images (orientation, coherence)",
+    "use_when": "You need edge detection (Canny), ridge/tubular structure enhancement (Hessian), blob detection (Laplacian), or local orientation analysis (structure tensor)",
+    "do_not_use_when": "You need simple thresholding-based edge detection, 3D feature detection, or deep-learning-based feature extraction",
+    "typical_use_cases": [
+      "Detecting edges in microscopy images using Canny edge detector",
+      "Enhancing tubular structures (vessels, filaments) with Hessian eigenvalues",
+      "Detecting blob-like structures with Laplacian of Gaussian",
+      "Computing local orientation of fibrous structures with structure tensor"
+    ],
     "update_site_name": "ImageScience",
     "update_site_url": "https://sites.imagej.net/ImageScience/",
     "requires_restart": true,
@@ -197,6 +308,16 @@
       "Noise2Void",
       "restoration",
       "low-SNR"
+    ],
+    "input_data": "Noisy 2D/3D fluorescence microscopy images (low-SNR, underexposed, fast acquisitions)",
+    "output_data": "Denoised/restored images with improved signal-to-noise ratio, preserving structural details",
+    "use_when": "Images are noisy due to low light, fast acquisition, or low laser power, and you want to improve image quality without losing structural detail",
+    "do_not_use_when": "Images already have good SNR, noise is caused by artifacts rather than photon statistics, or you need real-time processing (model inference can be slow without GPU)",
+    "typical_use_cases": [
+      "Denoising low-light live-cell imaging data",
+      "Restoring images acquired with minimal laser exposure to reduce phototoxicity",
+      "Self-supervised denoising with Noise2Void when no paired training data is available",
+      "Improving image quality for downstream segmentation or analysis"
     ],
     "update_site_name": "CSBDeep",
     "update_site_url": "https://sites.imagej.net/CSBDeep/",
@@ -215,6 +336,16 @@
       "rigid-body",
       "affine"
     ],
+    "input_data": "2D image stacks or time-lapse sequences where frames need alignment (e.g. drifting timelapse)",
+    "output_data": "Aligned/registered image stack with corrected drift or motion",
+    "use_when": "You need to correct drift in time-lapse sequences, align sequential 2D images, or stabilize video microscopy data",
+    "do_not_use_when": "You need elastic/non-rigid registration (use bUnwarpJ), 3D volume registration, or multi-tile stitching (use BigStitcher)",
+    "typical_use_cases": [
+      "Correcting XY drift in live-cell time-lapse imaging",
+      "Aligning serial sections for reconstruction",
+      "Stabilizing hand-held or vibrating microscopy videos",
+      "Registering before/after treatment image pairs"
+    ],
     "update_site_name": "BIG-EPFL",
     "update_site_url": "https://sites.imagej.net/BIG-EPFL/",
     "requires_restart": true,
@@ -231,6 +362,16 @@
       "deformable",
       "consistent",
       "2D"
+    ],
+    "input_data": "Pairs of 2D images that need non-rigid alignment (e.g. tissue sections with deformations)",
+    "output_data": "Registered image, deformation field, inverse deformation field",
+    "use_when": "You need non-rigid/elastic registration to account for tissue deformation, stretching, or warping between images",
+    "do_not_use_when": "Simple rigid or affine alignment is sufficient (use StackReg), images are 3D, or you need to register multiple tiles (use BigStitcher)",
+    "typical_use_cases": [
+      "Registering histology serial sections with tissue deformation",
+      "Aligning images from different imaging modalities (correlative microscopy)",
+      "Correcting non-linear distortions between acquisition sessions",
+      "Mapping deformation fields for mechanical analysis"
     ],
     "update_site_name": "BIG-EPFL",
     "update_site_url": "https://sites.imagej.net/BIG-EPFL/",
@@ -249,6 +390,16 @@
       "visualization",
       "multi-channel"
     ],
+    "input_data": "3D image stacks (single or multi-channel confocal, light-sheet, or micro-CT volumes)",
+    "output_data": "Interactive 3D volume rendering (visual display, screenshots, video recordings)",
+    "use_when": "You want real-time interactive 3D visualization of volumetric data with GPU-accelerated rendering and transfer function control",
+    "do_not_use_when": "You need 2D visualization, surface mesh rendering (use SciView), quantitative measurements from 3D data, or don't have a compatible GPU",
+    "typical_use_cases": [
+      "Visualizing confocal z-stacks in 3D with adjustable transparency",
+      "Exploring multi-channel 3D fluorescence datasets interactively",
+      "Creating 3D volume renderings for presentations and publications",
+      "Quick 3D preview of light-sheet microscopy data"
+    ],
     "update_site_name": "ClearVolume",
     "update_site_url": "https://sites.imagej.net/ClearVolume/",
     "requires_restart": true,
@@ -265,6 +416,16 @@
       "meshes",
       "volumes",
       "point-clouds"
+    ],
+    "input_data": "3D volumes, surface meshes (OBJ, STL), point clouds, or combinations thereof",
+    "output_data": "Interactive 3D scene with rendered objects (visual display, screenshots, VR experience)",
+    "use_when": "You need to visualize surface meshes, point clouds, or combined mesh+volume scenes, or want VR-based immersive visualization",
+    "do_not_use_when": "You only need simple volume rendering (use ClearVolume for faster setup), 2D visualization, or quantitative analysis rather than visualization",
+    "typical_use_cases": [
+      "Visualizing segmented cell surfaces as 3D meshes",
+      "Combining volume rendering with surface mesh overlays",
+      "Exploring 3D data in virtual reality with a VR headset",
+      "Rendering point cloud data from localization microscopy"
     ],
     "update_site_name": "SciView",
     "update_site_url": "https://sites.imagej.net/SciView/",
@@ -283,6 +444,16 @@
       "server",
       "data-management"
     ],
+    "input_data": "Images stored on an OMERO server, or local images to upload to OMERO",
+    "output_data": "Images opened in Fiji from OMERO, or images uploaded to OMERO with associated metadata and annotations",
+    "use_when": "Your lab uses an OMERO server for centralized image management and you need to open, analyze, or upload images between Fiji and OMERO",
+    "do_not_use_when": "You don't have access to an OMERO server, images are stored locally, or you need to read proprietary formats directly (use Bio-Formats)",
+    "typical_use_cases": [
+      "Browsing and opening images from an OMERO server in Fiji",
+      "Uploading processed images and ROIs back to OMERO",
+      "Running analysis on OMERO-hosted datasets from Fiji",
+      "Attaching analysis results to OMERO image annotations"
+    ],
     "update_site_name": "OMERO-5.5",
     "update_site_url": "https://sites.imagej.net/OMERO-5.5/",
     "requires_restart": true,
@@ -300,6 +471,16 @@
       "multi-scale",
       "large-data"
     ],
+    "input_data": "N5, Zarr, or HDF5 datasets on local disk or cloud storage (AWS S3), including multi-scale pyramids",
+    "output_data": "BigDataViewer visualization of the dataset, or ImagePlus for further processing",
+    "use_when": "You need to open large N5, Zarr, or HDF5 datasets that are too big for memory, or want to browse multi-scale pyramid datasets efficiently",
+    "do_not_use_when": "Files are small enough to open directly, data is in standard image formats (TIFF, PNG), or you don't need lazy/out-of-core loading",
+    "typical_use_cases": [
+      "Browsing terabyte-scale electron microscopy datasets stored in N5",
+      "Viewing Zarr datasets from cloud storage",
+      "Opening multi-resolution pyramid images for efficient navigation",
+      "Loading HDF5 datasets from computational pipelines"
+    ],
     "update_site_name": "N5",
     "update_site_url": "https://sites.imagej.net/N5/",
     "requires_restart": true,
@@ -314,6 +495,16 @@
       "illumination-correction",
       "rolling-ball",
       "preprocessing"
+    ],
+    "input_data": "2D grayscale images with uneven background illumination or intensity gradients",
+    "output_data": "Background-corrected image with more uniform intensity across the field of view",
+    "use_when": "Images have uneven illumination, vignetting, or intensity gradients that would interfere with thresholding or intensity measurements",
+    "do_not_use_when": "Background is already uniform, you need more sophisticated illumination correction (use flat-field correction), or the signal structures are larger than the rolling ball radius",
+    "typical_use_cases": [
+      "Correcting uneven illumination before thresholding fluorescence images",
+      "Removing background gradients in brightfield microscopy",
+      "Preprocessing images for consistent intensity quantification",
+      "Removing vignetting artifacts from widefield microscopy"
     ],
     "update_site_name": "Fiji",
     "update_site_url": "https://sites.imagej.net/Fiji/",
@@ -332,6 +523,16 @@
       "Sauvola",
       "Niblack"
     ],
+    "input_data": "8-bit grayscale 2D images with uneven illumination or spatially varying background",
+    "output_data": "Binary image (black and white mask) where foreground is separated from background",
+    "use_when": "Global thresholding fails due to uneven illumination, spatially varying background, or local contrast differences across the image",
+    "do_not_use_when": "Illumination is uniform across the image (use Auto Threshold for global methods), you need instance segmentation (use StarDist), or images are already binary",
+    "typical_use_cases": [
+      "Segmenting text or features with uneven illumination using Phansalkar or Sauvola",
+      "Thresholding fluorescence images with spatially varying background",
+      "Binarizing brightfield images with uneven lighting",
+      "Segmenting structures in images where no single global threshold works"
+    ],
     "update_site_name": "Fiji",
     "update_site_url": "https://sites.imagej.net/Fiji/",
     "requires_restart": false,
@@ -348,6 +549,16 @@
       "Huang",
       "Li",
       "automatic"
+    ],
+    "input_data": "8-bit or 16-bit grayscale 2D images with relatively uniform illumination",
+    "output_data": "Binary image (black and white mask), or the computed threshold value",
+    "use_when": "You need automatic binarization of grayscale images with relatively uniform background, or want to compare multiple thresholding algorithms to find the best one",
+    "do_not_use_when": "Illumination is uneven across the image (use Auto Local Threshold), you need instance segmentation (use StarDist), or manual threshold selection is preferred",
+    "typical_use_cases": [
+      "Automatic binarization of fluorescence images with Otsu's method",
+      "Comparing multiple threshold methods (Otsu, Huang, Li, Triangle) to find the optimal one",
+      "Batch thresholding with a consistent automatic method",
+      "Segmenting bright objects on dark background with Triangle method"
     ],
     "update_site_name": "Fiji",
     "update_site_url": "https://sites.imagej.net/Fiji/",
@@ -366,6 +577,16 @@
       "anisotropy",
       "direction"
     ],
+    "input_data": "2D grayscale images containing fibrous, filamentous, or textured structures with directional features",
+    "output_data": "Orientation map (color-coded by angle), coherence map, orientation histogram/distribution, dominant direction angle",
+    "use_when": "You need to analyze the orientation, alignment, or anisotropy of fibrous or textured structures in images",
+    "do_not_use_when": "Structures have no directional features, you need 3D orientation analysis, or you want to segment individual fibers (use FilamentDetector)",
+    "typical_use_cases": [
+      "Measuring collagen fiber alignment in tissue sections",
+      "Quantifying actin stress fiber orientation in cell cultures",
+      "Analyzing the degree of alignment in electrospun nanofiber scaffolds",
+      "Determining dominant orientation of muscle fibers or plant cell walls"
+    ],
     "update_site_name": "BIG-EPFL",
     "update_site_url": "https://sites.imagej.net/BIG-EPFL/",
     "requires_restart": true,
@@ -382,6 +603,16 @@
       "binary",
       "connected-components",
       "descriptors"
+    ],
+    "input_data": "Binary 2D images with segmented objects (connected components)",
+    "output_data": "Filtered binary image containing only objects matching the shape criteria",
+    "use_when": "You need to filter segmented objects by shape (circularity, elongation, solidity, area, convexity) to keep only objects of interest",
+    "do_not_use_when": "You need to perform the initial segmentation (use thresholding or StarDist first), or you only need simple area-based filtering (use built-in Analyze Particles)",
+    "typical_use_cases": [
+      "Removing elongated debris while keeping round cells after segmentation",
+      "Selecting only cells with specific circularity values",
+      "Filtering out small noise particles and large aggregates by area and shape",
+      "Isolating objects with specific morphological properties for further analysis"
     ],
     "update_site_name": "BioVoxxel",
     "update_site_url": "https://sites.imagej.net/BioVoxxel/",
@@ -400,6 +631,16 @@
       "quantification",
       "timelapse"
     ],
+    "input_data": "Image stacks (z-stacks or time-lapse sequences), optionally with ROI selections",
+    "output_data": "Results table with per-slice measurements (mean, min, max, StdDev, integrated density, area)",
+    "use_when": "You need intensity measurements across all slices of a stack or time-lapse, rather than measuring only the current slice",
+    "do_not_use_when": "You only need to measure a single 2D image (use Measure), or you need per-object measurements (use Analyze Particles)",
+    "typical_use_cases": [
+      "Measuring fluorescence intensity changes over time in time-lapse data",
+      "Quantifying signal intensity across z-stack slices",
+      "Tracking intensity dynamics in ROIs across a movie",
+      "Generating intensity profiles along the z-axis"
+    ],
     "update_site_name": "Fiji",
     "update_site_url": "https://sites.imagej.net/Fiji/",
     "requires_restart": false,
@@ -416,6 +657,16 @@
       "script-generation",
       "pipeline",
       "OpenCL"
+    ],
+    "input_data": "Any 2D/3D image that can be opened in ImageJ",
+    "output_data": "Processed image plus auto-generated script (Groovy, Python, JavaScript, or macro) recording all operations",
+    "use_when": "You want to interactively build a GPU-accelerated processing pipeline and automatically generate a reproducible script from it",
+    "do_not_use_when": "You already know the pipeline and can write it directly in a script, no GPU is available, or you need operations not in CLIJ2",
+    "typical_use_cases": [
+      "Prototyping image processing workflows with instant GPU-accelerated preview",
+      "Generating reproducible scripts from interactive image processing sessions",
+      "Building GPU-accelerated batch processing pipelines for non-programmers",
+      "Exploring CLIJ2 operations with visual feedback before scripting"
     ],
     "update_site_name": "clij",
     "update_site_url": "https://sites.imagej.net/clij/",
@@ -434,6 +685,16 @@
       "pixel-based",
       "statistics"
     ],
+    "input_data": "Two-channel (or dual-color) fluorescence images where you want to assess signal overlap between channels",
+    "output_data": "Colocalization coefficients (Pearson's, Manders', overlap), scatterplot, colocalized pixel map, Costes significance test p-value",
+    "use_when": "You need to quantify the degree of spatial overlap between two fluorescent labels, determine if colocalization is statistically significant, or compute standard colocalization metrics",
+    "do_not_use_when": "You need object-based colocalization (proximity of discrete objects), have more than two channels to compare simultaneously, or images have significant bleedthrough that hasn't been corrected",
+    "typical_use_cases": [
+      "Measuring colocalization of two proteins labeled with different fluorophores",
+      "Computing Pearson's and Manders' coefficients for two-channel images",
+      "Determining statistical significance of colocalization with Costes' method",
+      "Generating scatterplots and colocalized pixel maps for publications"
+    ],
     "update_site_name": "Fiji",
     "update_site_url": "https://sites.imagej.net/Fiji/",
     "requires_restart": false,
@@ -451,6 +712,16 @@
       "annotation",
       "quantification"
     ],
+    "input_data": "Any 2D image or stack where objects need to be counted manually",
+    "output_data": "Marker positions (XY coordinates), counts per category, exportable marker files",
+    "use_when": "Automatic counting methods fail or are unreliable, you need to manually count and categorize objects, or you need ground truth annotations for validating automated methods",
+    "do_not_use_when": "Objects can be reliably counted automatically (use StarDist or Analyze Particles), you have many images to process (use automated counting), or objects are too dense to mark individually",
+    "typical_use_cases": [
+      "Manually counting cells in images where automated detection is unreliable",
+      "Counting and categorizing different cell types in tissue sections",
+      "Creating ground truth annotations for training or validating automated counters",
+      "Counting objects in complex images where thresholding fails"
+    ],
     "update_site_name": "Fiji",
     "update_site_url": "https://sites.imagej.net/Fiji/",
     "requires_restart": false,
@@ -466,6 +737,16 @@
       "touching-objects",
       "irregular",
       "separation"
+    ],
+    "input_data": "Binary 2D images with touching or overlapping irregular-shaped objects",
+    "output_data": "Binary image with separated objects, each object isolated by watershed lines",
+    "use_when": "Standard watershed over-segments elongated or irregular objects, and you need to separate touching non-round objects",
+    "do_not_use_when": "Objects are round (use Distance Transform Watershed), objects are well-separated, or you need 3D watershed segmentation",
+    "typical_use_cases": [
+      "Separating touching elongated cells that standard watershed splits incorrectly",
+      "Splitting clustered irregular-shaped tissue regions",
+      "Separating touching objects in binary masks where shape is non-circular",
+      "Post-processing binary segmentation to split merged objects"
     ],
     "update_site_name": "BioVoxxel",
     "update_site_url": "https://sites.imagej.net/BioVoxxel/",
@@ -484,6 +765,16 @@
       "trajectory",
       "coordinates"
     ],
+    "input_data": "Time-lapse 2D image stacks with moving objects to track",
+    "output_data": "Track data (XY coordinates per frame), velocity, distance, and trajectory plots",
+    "use_when": "You need to track a small number of objects manually with high accuracy, automated tracking fails, or you need ground truth tracks",
+    "do_not_use_when": "You have many objects to track (use automated tracking like TrackMate), objects are too numerous for manual annotation, or tracks span hundreds of frames",
+    "typical_use_cases": [
+      "Tracking individual cell migration in wound healing assays",
+      "Manually tracking organelle movement in live-cell movies",
+      "Creating ground truth tracks for validating automated tracking",
+      "Measuring velocity and directionality of a few cells over time"
+    ],
     "update_site_name": "Fiji",
     "update_site_url": "https://sites.imagej.net/Fiji/",
     "requires_restart": false,
@@ -500,6 +791,16 @@
       "contour",
       "bridge",
       "interoperability"
+    ],
+    "input_data": "Any ImageJ image (ImagePlus) that you want to process with OpenCV algorithms",
+    "output_data": "Processed images, detected features, contours, or matched keypoints, converted back to ImageJ format",
+    "use_when": "You need computer vision algorithms from OpenCV (SIFT, SURF, template matching, contour analysis, Hough transforms) that are not natively available in ImageJ",
+    "do_not_use_when": "The operation you need is already available natively in ImageJ/Fiji, or you can use a dedicated ImageJ plugin for the task",
+    "typical_use_cases": [
+      "Using OpenCV feature matching (SIFT/ORB) for image registration",
+      "Applying Hough transform for line or circle detection",
+      "Advanced contour detection and analysis using OpenCV methods",
+      "Leveraging OpenCV's machine learning classifiers from within Fiji"
     ],
     "update_site_name": "IJ-OpenCV",
     "update_site_url": "https://sites.imagej.net/IJ-OpenCV/",
@@ -518,6 +819,16 @@
       "table",
       "spreadsheet"
     ],
+    "input_data": "ImageJ Results tables from any measurement or analysis operation",
+    "output_data": "Excel (.xlsx) file containing the results data with formatting preserved",
+    "use_when": "You need to export measurement results to Excel format for downstream analysis, reporting, or sharing with colleagues who use Excel",
+    "do_not_use_when": "CSV output is sufficient (use File > Save As), you need programmatic data processing (use CSV/TSV), or no Results table exists",
+    "typical_use_cases": [
+      "Exporting particle analysis measurements to Excel for statistical analysis",
+      "Saving intensity measurements from multiple images into a single Excel workbook",
+      "Creating formatted Excel reports of image analysis results",
+      "Batch exporting results tables from automated analysis pipelines"
+    ],
     "update_site_name": "ResultsToExcel",
     "update_site_url": "https://sites.imagej.net/ResultsToExcel/",
     "requires_restart": true,
@@ -535,10 +846,20 @@
       "dendrite",
       "neuroscience"
     ],
+    "input_data": "2D/3D images of traced neurons (binary skeletons or traced paths), or SWC reconstruction files",
+    "output_data": "Sholl profile (intersections vs. distance), critical radius, ramification index, polynomial fit, Sholl decay",
+    "use_when": "You need to quantify neuronal complexity, branching patterns, or compare dendritic arbor morphology between conditions using the Sholl method",
+    "do_not_use_when": "You need to trace neurons first (use SNT for tracing), structures are not branching/tree-like, or you need non-Sholl morphometric analysis",
+    "typical_use_cases": [
+      "Quantifying dendritic complexity in Golgi-stained neurons",
+      "Comparing neuronal branching between wild-type and mutant conditions",
+      "Analyzing Sholl profiles from reconstructed neurons in SWC format",
+      "Measuring the extent and complexity of astrocyte processes"
+    ],
     "update_site_name": "Neuroanatomy",
     "update_site_url": "https://sites.imagej.net/Neuroanatomy/",
     "requires_restart": true,
-    "documentation_url": "https://imagej.net/plugins/sholl-analysis"
+    "documentation_url": "https://imagej.net/plugins/snt/sholl"
   },
   {
     "name": "CLAHE",
@@ -551,6 +872,16 @@
       "adaptive",
       "local-contrast",
       "preprocessing"
+    ],
+    "input_data": "8-bit grayscale 2D images with poor or uneven contrast",
+    "output_data": "Contrast-enhanced image with improved local visibility of features",
+    "use_when": "You need to enhance local contrast in images with varying illumination, reveal details in both bright and dark regions simultaneously, or improve visibility for visual inspection",
+    "do_not_use_when": "You need to preserve original intensity values for quantitative measurements, global contrast adjustment is sufficient (use Brightness/Contrast), or image already has good contrast",
+    "typical_use_cases": [
+      "Enhancing contrast in H&E-stained histology images for visual inspection",
+      "Improving visibility of structures in low-contrast microscopy images",
+      "Preprocessing images with uneven illumination before manual analysis",
+      "Enhancing details in both bright and dark regions of electron microscopy images"
     ],
     "update_site_name": "Fiji",
     "update_site_url": "https://sites.imagej.net/Fiji/",
@@ -569,6 +900,16 @@
       "classic",
       "gradient"
     ],
+    "input_data": "Grayscale 2D images (typically gradient or distance transform images) where intensity represents topography",
+    "output_data": "Label image with each catchment basin assigned a unique label, separated by watershed lines",
+    "use_when": "You need watershed segmentation on grayscale images (not binary), want to use intensity gradients as the landscape for watershed, or need more control than binary watershed",
+    "do_not_use_when": "You have binary images (use Distance Transform Watershed), objects are very irregular (use Watershed Irregular Features), or you need marker-controlled watershed to prevent over-segmentation",
+    "typical_use_cases": [
+      "Segmenting cells using gradient magnitude as watershed input",
+      "Separating touching objects in distance-transformed binary images",
+      "Watershed segmentation of stained tissue sections",
+      "Splitting merged objects using intensity valleys as boundaries"
+    ],
     "update_site_name": "IJPB-plugins",
     "update_site_url": "https://sites.imagej.net/IJPB-plugins/",
     "requires_restart": true,
@@ -585,6 +926,16 @@
       "touching-objects",
       "binary",
       "round-objects"
+    ],
+    "input_data": "Binary 2D images with touching round or convex objects",
+    "output_data": "Label image where each separated object has a unique integer ID",
+    "use_when": "You need to separate touching round objects (cells, nuclei) in binary images, as distance transform peaks correspond to object centers",
+    "do_not_use_when": "Objects are highly elongated or irregular (use Watershed Irregular Features), objects are not touching, or you need grayscale watershed",
+    "typical_use_cases": [
+      "Separating touching nuclei after thresholding DAPI-stained images",
+      "Splitting clustered round cells in binary masks",
+      "Post-processing binary segmentation to individualize round objects",
+      "Preparing binary masks for per-object measurements"
     ],
     "update_site_name": "IJPB-plugins",
     "update_site_url": "https://sites.imagej.net/IJPB-plugins/",
@@ -603,6 +954,16 @@
       "tracing",
       "curvature"
     ],
+    "input_data": "2D fluorescence images containing filamentous/linear structures (actin, microtubules, intermediate filaments)",
+    "output_data": "Detected filament paths with measurements (length, curvature, mean intensity), filament overlay image",
+    "use_when": "You need to detect, trace, and measure individual filaments or linear structures in 2D fluorescence images",
+    "do_not_use_when": "Structures are branching trees (use SNT for neurons), you only need orientation analysis (use OrientationJ), or structures are in 3D",
+    "typical_use_cases": [
+      "Measuring actin filament lengths in fluorescence images",
+      "Quantifying microtubule curvature and straightness",
+      "Detecting and counting individual filaments in cytoskeleton images",
+      "Measuring intensity along traced filaments"
+    ],
     "update_site_name": "FilamentDetector",
     "update_site_url": "https://sites.imagej.net/FilamentDetector/",
     "requires_restart": true,
@@ -619,6 +980,16 @@
       "decay",
       "fitting",
       "metabolic"
+    ],
+    "input_data": "FLIM datasets (fluorescence decay curves per pixel), typically from time-correlated single photon counting (TCSPC) or frequency-domain FLIM systems",
+    "output_data": "Lifetime maps, fitted decay parameters (tau, amplitude, chi-squared), FRET efficiency maps",
+    "use_when": "You have FLIM data and need to fit fluorescence decay curves, extract lifetime values, compute FRET efficiencies, or create lifetime maps",
+    "do_not_use_when": "You have standard intensity-based fluorescence images (not FLIM), data is not time-resolved, or you need simple intensity colocalization",
+    "typical_use_cases": [
+      "Fitting fluorescence lifetime decay curves from TCSPC-FLIM data",
+      "Creating lifetime maps to visualize protein-protein interactions via FRET",
+      "Analyzing metabolic state via NADH/FAD lifetime changes",
+      "Quantifying FRET efficiency from donor lifetime changes"
     ],
     "update_site_name": "FLIMJ",
     "update_site_url": "https://sites.imagej.net/FLIMJ/",
@@ -637,6 +1008,16 @@
       "measurement",
       "curves"
     ],
+    "input_data": "2D images containing curved filamentous structures that can be traced as curves (B-splines)",
+    "output_data": "Curvature values along traced curves, curvature plots, point-by-point curvature measurements",
+    "use_when": "You need to measure local curvature or bending of filamentous structures along their length, such as cytoskeletal elements or membrane contours",
+    "do_not_use_when": "You only need filament length (use FilamentDetector), structures are straight, or you need global orientation rather than local curvature (use OrientationJ)",
+    "typical_use_cases": [
+      "Measuring curvature of microtubules under different conditions",
+      "Analyzing membrane bending at sites of endocytosis",
+      "Quantifying filament stiffness through curvature measurements",
+      "Measuring local curvature along cell boundaries or contours"
+    ],
     "update_site_name": "Kappa",
     "update_site_url": "https://sites.imagej.net/Kappa/",
     "requires_restart": true,
@@ -653,6 +1034,16 @@
       "large-data",
       "lineage",
       "cells"
+    ],
+    "input_data": "Large multi-view light-sheet microscopy time-lapse datasets (BigDataViewer format, HDF5/XML)",
+    "output_data": "Cell tracks, lineage trees, division events, track statistics (velocity, displacement)",
+    "use_when": "You need to track cells in large multi-view light-sheet data, build cell lineage trees, or track divisions in developing embryos",
+    "do_not_use_when": "Data is 2D (use TrackMate or Manual Tracking), data is small enough for standard tracking tools, or you don't need lineage/division tracking",
+    "typical_use_cases": [
+      "Tracking cells during embryonic development in light-sheet data",
+      "Building lineage trees with cell division tracking",
+      "Semi-automatic cell tracking in multi-view time-lapse data",
+      "Analyzing cell migration patterns in large 3D+time datasets"
     ],
     "update_site_name": "MaMuT",
     "update_site_url": "https://sites.imagej.net/MaMuT/",
@@ -671,6 +1062,16 @@
       "atlas",
       "exploration"
     ],
+    "input_data": "Large multi-modal datasets (EM, light microscopy, segmentations, annotations) stored in N5/Zarr/HDF5 format, typically organized as a MoBIE project",
+    "output_data": "Interactive multi-modal visualization, annotations, bookmarks, table-linked views",
+    "use_when": "You need to browse, explore, and annotate large multi-modal imaging datasets (e.g. correlative EM/LM), or create interactive atlases",
+    "do_not_use_when": "Data is a single small image, you don't need multi-modal overlay, or you need quantitative analysis rather than exploration",
+    "typical_use_cases": [
+      "Browsing correlative electron and light microscopy datasets",
+      "Exploring tissue atlases with overlaid segmentations and annotations",
+      "Navigating large connectomics datasets with linked tables",
+      "Creating shareable multi-modal image projects for collaboration"
+    ],
     "update_site_name": "MoBIE",
     "update_site_url": "https://sites.imagej.net/MoBIE/",
     "requires_restart": true,
@@ -687,6 +1088,16 @@
       "cross-correlation",
       "multiple",
       "search"
+    ],
+    "input_data": "2D image to search in, plus one or more template images (cropped examples of the object to find)",
+    "output_data": "Detected positions (XY coordinates) and correlation scores for each match, ROI set marking detections",
+    "use_when": "You need to find multiple instances of a known pattern or object in an image, especially when objects have consistent appearance but varying positions",
+    "do_not_use_when": "Objects vary significantly in appearance, size, or rotation (use feature-based detection), you need semantic segmentation, or templates are not available",
+    "typical_use_cases": [
+      "Detecting repeated structures (wells, colonies, landmarks) in plate images",
+      "Finding multiple cells with similar morphology using a template crop",
+      "Locating fiducial markers or registration landmarks across images",
+      "Counting objects with consistent appearance by template matching"
     ],
     "update_site_name": "Multi-Template-Matching",
     "update_site_url": "https://sites.imagej.net/Multi-Template-Matching/",
@@ -705,6 +1116,16 @@
       "branching",
       "neuroscience"
     ],
+    "input_data": "2D grayscale or fluorescence images of neurons with visible processes (dendrites, axons)",
+    "output_data": "Traced neurite paths with length measurements, branching topology, exportable tracings",
+    "use_when": "You need semi-automatic neuron tracing in 2D images with the live-wire algorithm for guided tracing along neurite paths",
+    "do_not_use_when": "Data is 3D (use SNT), you need fully automatic tracing, or structures are not neuron-like (use FilamentDetector for cytoskeleton)",
+    "typical_use_cases": [
+      "Tracing neurites in 2D fluorescence images of cultured neurons",
+      "Measuring total neurite length per cell in differentiation assays",
+      "Quantifying branching complexity in 2D neuronal images",
+      "Semi-automated tracing with live-wire guidance along neurite paths"
+    ],
     "update_site_name": "ImageScience",
     "update_site_url": "https://sites.imagej.net/ImageScience/",
     "requires_restart": true,
@@ -721,6 +1142,16 @@
       "movie",
       "frame-number",
       "labeling"
+    ],
+    "input_data": "Time-lapse image stacks or movies",
+    "output_data": "Annotated image stack with timestamps or frame numbers burned into each frame",
+    "use_when": "You need to add time annotations, frame numbers, or elapsed time labels to time-lapse movies for presentations or publications",
+    "do_not_use_when": "You need to add spatial scale bars (use Scale Bar tool), timestamps are already embedded, or you need non-destructive overlays",
+    "typical_use_cases": [
+      "Adding elapsed time labels to live-cell imaging movies",
+      "Stamping frame numbers on time-lapse sequences for reference",
+      "Annotating movies with custom time formats (hh:mm:ss, seconds) for presentations",
+      "Adding timestamps before exporting movies as AVI or MP4"
     ],
     "update_site_name": "Fiji",
     "update_site_url": "https://sites.imagej.net/Fiji/",
@@ -740,6 +1171,16 @@
       "2D",
       "3D"
     ],
+    "input_data": "2D or 3D images that need geometric transformations",
+    "output_data": "Transformed image (rotated, scaled, translated, sheared, or affine-transformed)",
+    "use_when": "You need precise geometric transformations (arbitrary rotation angles, scaling, affine) with control over interpolation method",
+    "do_not_use_when": "You need image registration (use StackReg or bUnwarpJ), built-in Image > Transform operations are sufficient, or you need elastic deformations",
+    "typical_use_cases": [
+      "Rotating images by arbitrary angles with high-quality interpolation",
+      "Applying known affine transformation matrices to images",
+      "Scaling images with specific interpolation methods (linear, cubic, quintic)",
+      "Geometric correction of tilted or skewed microscopy images"
+    ],
     "update_site_name": "ImageScience",
     "update_site_url": "https://sites.imagej.net/ImageScience/",
     "requires_restart": true,
@@ -757,6 +1198,16 @@
       "histogram",
       "measurement"
     ],
+    "input_data": "SEM or microscopy images of fibrous materials (electrospun nanofibers, collagen, etc.), pre-segmented or raw",
+    "output_data": "Diameter distribution histograms, mean/median diameter, fiber orientation distribution, segmented fiber image",
+    "use_when": "You need to measure fiber diameter distributions in images of fibrous materials, especially electrospun nanofibers or similar networks",
+    "do_not_use_when": "Fibers are isolated (can measure manually), structures are not fibrous, or you need single-fiber tracing (use FilamentDetector)",
+    "typical_use_cases": [
+      "Measuring nanofiber diameter distributions from SEM images",
+      "Characterizing electrospun scaffold fiber sizes",
+      "Analyzing collagen fiber diameters in tissue sections",
+      "Quality control of fiber-based biomaterials"
+    ],
     "update_site_name": "DiameterJ",
     "update_site_url": "https://sites.imagej.net/DiameterJ/",
     "requires_restart": true,
@@ -772,6 +1223,16 @@
       "super-resolution",
       "artifacts",
       "structured-illumination"
+    ],
+    "input_data": "Raw SIM data (multiple orientations and phases) and/or reconstructed SIM images",
+    "output_data": "Quality metrics (modulation contrast, Fourier plots, motion/illumination checks), artifact assessment reports",
+    "use_when": "You have SIM data and need to assess raw data quality before reconstruction, check for reconstruction artifacts, or validate SIM image reliability",
+    "do_not_use_when": "Data is not from SIM microscopy, you need to process standard widefield or confocal images, or you need quality control for other super-resolution methods (STORM, PALM)",
+    "typical_use_cases": [
+      "Checking raw SIM data quality (modulation contrast, pattern visibility)",
+      "Detecting reconstruction artifacts in SIM images (honeycomb patterns, hallucinations)",
+      "Assessing motion artifacts in SIM time-lapse data",
+      "Validating SIM reconstruction parameters before publication"
     ],
     "update_site_name": "SIMcheck",
     "update_site_url": "https://sites.imagej.net/SIMcheck/",
@@ -790,6 +1251,16 @@
       "processing",
       "framework"
     ],
+    "input_data": "Any images supported by ImageJ/Fiji, with pipeline configuration files defining processing steps",
+    "output_data": "Processed images and measurement results as defined by the pipeline configuration",
+    "use_when": "You need to build reproducible, automated image analysis pipelines with batch processing, or want a framework for chaining processing steps without writing macros",
+    "do_not_use_when": "You only need to process a single image interactively, the pipeline is simple enough for a macro, or you need GPU acceleration (use CLIJ2)",
+    "typical_use_cases": [
+      "Building automated batch processing pipelines for image analysis",
+      "Creating reproducible workflows with configuration files",
+      "Chaining multiple analysis steps (segmentation, measurement, filtering) into a pipeline",
+      "Processing large batches of images with consistent parameters"
+    ],
     "update_site_name": "TAPAS",
     "update_site_url": "https://sites.imagej.net/TAPAS/",
     "requires_restart": true,
@@ -806,6 +1277,16 @@
       "controlled",
       "seeds",
       "over-segmentation"
+    ],
+    "input_data": "Grayscale or gradient image plus a marker/seed image (label image with one label per object to segment)",
+    "output_data": "Label image where each region is assigned to its nearest marker, separated by watershed lines",
+    "use_when": "Standard watershed over-segments your image and you have (or can generate) marker positions for each object to prevent over-segmentation",
+    "do_not_use_when": "You don't have markers and can't generate them, objects are simple enough for thresholding, or you need interactive marker placement (use Interactive Marker-controlled Watershed)",
+    "typical_use_cases": [
+      "Segmenting cells using detected nuclei as markers to define cell boundaries",
+      "Preventing over-segmentation by seeding watershed from known object centers",
+      "Using local maxima of distance transform as markers for separating touching objects",
+      "Combining nucleus detection (StarDist) with marker-controlled watershed for cell segmentation"
     ],
     "update_site_name": "IJPB-plugins",
     "update_site_url": "https://sites.imagej.net/IJPB-plugins/",
@@ -824,6 +1305,16 @@
       "segmentation",
       "manual"
     ],
+    "input_data": "2D grayscale or gradient image where you want to interactively place markers to guide watershed segmentation",
+    "output_data": "Label image with watershed-segmented regions, controlled by user-placed markers",
+    "use_when": "You need interactive control over watershed segmentation, want to manually place/adjust markers and see results in real-time, or are optimizing marker placement",
+    "do_not_use_when": "You need automated batch processing (use Marker-controlled Watershed), markers can be generated programmatically, or images don't need watershed segmentation",
+    "typical_use_cases": [
+      "Interactively segmenting tissue regions by placing markers",
+      "Manually correcting over- or under-segmentation by adding/removing markers",
+      "Exploring optimal marker placement for watershed segmentation",
+      "Segmenting a small number of images where manual guidance is feasible"
+    ],
     "update_site_name": "IJPB-plugins",
     "update_site_url": "https://sites.imagej.net/IJPB-plugins/",
     "requires_restart": true,
@@ -840,6 +1331,16 @@
       "gradient",
       "adaptive",
       "selection"
+    ],
+    "input_data": "2D grayscale images, especially those with varying background, noise, or low contrast between foreground and background",
+    "output_data": "Binary image with automatically determined threshold, adapted to local image properties",
+    "use_when": "Standard global and local thresholding methods fail, the image has spatially varying noise or contrast, or you need a robust threshold that considers gradient information",
+    "do_not_use_when": "Standard Auto Threshold or Auto Local Threshold methods work well, image has uniform contrast, or you need deep-learning-based segmentation",
+    "typical_use_cases": [
+      "Thresholding images where standard methods produce inconsistent results",
+      "Segmenting structures with low contrast against a noisy background",
+      "Robust binarization of images with spatially varying noise levels",
+      "Automatic thresholding when gradient information helps distinguish foreground from background"
     ],
     "update_site_name": "RATS",
     "update_site_url": "https://sites.imagej.net/RATS/",
@@ -858,6 +1359,16 @@
       "length",
       "fluorescence"
     ],
+    "input_data": "2D/3D fluorescence images with labeled primary cilia (e.g. acetylated tubulin, Arl13b staining)",
+    "output_data": "Detected cilia with measurements (length, intensity, orientation, bending), per-cilium results table",
+    "use_when": "You need to detect, segment, and measure primary cilia in fluorescence microscopy images, including length, intensity, and orientation",
+    "do_not_use_when": "Structures are not cilia (use FilamentDetector for other filaments), images are of motile cilia, or cilia are not fluorescently labeled",
+    "typical_use_cases": [
+      "Measuring primary cilia length in cultured cells",
+      "Quantifying cilia frequency (percentage of ciliated cells)",
+      "Analyzing cilia intensity for protein localization studies",
+      "Comparing cilia morphology between control and treated conditions"
+    ],
     "update_site_name": "CiliaQ",
     "update_site_url": "https://sites.imagej.net/CiliaQ/",
     "requires_restart": true,
@@ -874,6 +1385,16 @@
       "tracking",
       "waveform",
       "fertility"
+    ],
+    "input_data": "Time-lapse 2D dark-field or phase-contrast microscopy images of swimming sperm",
+    "output_data": "Flagellar waveform parameters (beat frequency, amplitude, wavelength), head trajectory, curvature along flagellum over time",
+    "use_when": "You need to analyze sperm flagellar beating patterns, measure beat frequency, or quantify sperm motility parameters",
+    "do_not_use_when": "You need general cell tracking (use TrackMate), structures are not sperm, or images are not time-lapse",
+    "typical_use_cases": [
+      "Measuring sperm flagellar beat frequency and amplitude",
+      "Analyzing sperm swimming patterns and head trajectories",
+      "Quantifying flagellar waveform changes under different conditions",
+      "Assessing sperm motility for fertility research"
     ],
     "update_site_name": "SpermQ",
     "update_site_url": "https://sites.imagej.net/SpermQ/",
@@ -892,6 +1413,16 @@
       "content-aware",
       "training"
     ],
+    "input_data": "Noisy/degraded 2D/3D microscopy images, with paired low/high quality training data for model training",
+    "output_data": "Restored/denoised images with improved signal-to-noise ratio while preserving structures",
+    "use_when": "You have paired low/high quality training data and want to train a content-aware restoration model, or want to apply a pre-trained CARE model to noisy images",
+    "do_not_use_when": "No paired training data is available (use Noise2Void/N2V instead for self-supervised denoising), images already have good quality, or you need real-time processing",
+    "typical_use_cases": [
+      "Training a denoising model on paired noisy/clean image acquisitions",
+      "Restoring low-SNR live-cell imaging data using a trained CARE model",
+      "Improving image quality from fast/low-dose acquisitions",
+      "Enhancing images for downstream segmentation or analysis"
+    ],
     "update_site_name": "CSBDeep",
     "update_site_url": "https://sites.imagej.net/CSBDeep/",
     "requires_restart": true,
@@ -907,6 +1438,16 @@
       "segmentation",
       "joint",
       "minimal-annotation"
+    ],
+    "input_data": "Noisy 2D fluorescence microscopy images with a small number of segmentation annotations (only a few annotated images needed)",
+    "output_data": "Denoised images and instance segmentation masks simultaneously",
+    "use_when": "You have noisy images that need both denoising and segmentation, and you only have a small number of annotated training examples",
+    "do_not_use_when": "Images are clean and only need segmentation (use StarDist), you have many annotations (use standard segmentation), or you only need denoising (use N2V/CARE)",
+    "typical_use_cases": [
+      "Simultaneously denoising and segmenting cells with minimal annotations",
+      "Segmenting noisy live-cell images with only a few training examples",
+      "Joint restoration and segmentation when annotation budget is limited",
+      "Processing low-SNR images where noise interferes with segmentation"
     ],
     "update_site_name": "CSBDeep",
     "update_site_url": "https://sites.imagej.net/CSBDeep/",

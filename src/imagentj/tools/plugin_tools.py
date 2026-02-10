@@ -27,7 +27,13 @@ def _search_registry_fallback(query: str, limit: int = 5) -> list:
     scored_plugins = []
     for p in plugins:
         score = 0
-        searchable = f"{p['name']} {p['description']} {' '.join(p.get('tags', []))} {p.get('category', '')}".lower()
+        # Include new fields in searchable text for better matching
+        use_cases_text = ' '.join(p.get('typical_use_cases', []))
+        searchable = (
+            f"{p['name']} {p['description']} {' '.join(p.get('tags', []))} "
+            f"{p.get('category', '')} {p.get('input_data', '')} "
+            f"{p.get('output_data', '')} {p.get('use_when', '')} {use_cases_text}"
+        ).lower()
 
         # Score based on term matches
         for term in query_terms:
@@ -37,6 +43,9 @@ def _search_registry_fallback(query: str, limit: int = 5) -> list:
                 score += 2  # Boost name matches
             if term in p.get('tags', []):
                 score += 1.5  # Boost tag matches
+            # Boost matches in use_when (high relevance for task selection)
+            if term in p.get('use_when', '').lower():
+                score += 1.5
 
         if score > 0:
             scored_plugins.append((score, p))
@@ -50,6 +59,11 @@ def _search_registry_fallback(query: str, limit: int = 5) -> list:
             "name": p["name"],
             "description": p["description"],
             "category": p.get("category"),
+            "input_data": p.get("input_data"),
+            "output_data": p.get("output_data"),
+            "use_when": p.get("use_when"),
+            "do_not_use_when": p.get("do_not_use_when"),
+            "typical_use_cases": p.get("typical_use_cases"),
             "update_site_name": p["update_site_name"],
             "update_site_url": p["update_site_url"],
             "documentation_url": p.get("documentation_url"),
@@ -89,6 +103,11 @@ def search_fiji_plugins(query: str) -> list:
                     "name": meta.get("name"),
                     "description": meta.get("description"),
                     "category": meta.get("category"),
+                    "input_data": meta.get("input_data"),
+                    "output_data": meta.get("output_data"),
+                    "use_when": meta.get("use_when"),
+                    "do_not_use_when": meta.get("do_not_use_when"),
+                    "typical_use_cases": meta.get("typical_use_cases"),
                     "update_site_name": meta.get("update_site_name"),
                     "update_site_url": meta.get("update_site_url"),
                     "documentation_url": meta.get("documentation_url"),

@@ -287,7 +287,11 @@ supervisor_prompt = """
 
                      - search_fiji_plugins(query):
                        Searches the curated Fiji plugin database for plugins relevant to the task.
-                       Returns ranked results with plugin name, description, and update site info.
+                       Returns ranked results with: plugin name, description, category,
+                       input_data (what the plugin expects), output_data (what it produces),
+                       use_when (when this plugin is the right choice),
+                       do_not_use_when (when to pick a different plugin instead),
+                       typical_use_cases (concrete real-world scenarios), and update site info.
 
                      - install_fiji_plugin(plugin_name):
                        Installs a Fiji plugin by activating its update site and running the Fiji updater.
@@ -318,15 +322,26 @@ supervisor_prompt = """
                      Before delegating a complex image analysis task to imagej_coder, you SHOULD:
 
                      1. Call search_fiji_plugins with a query describing the task.
-                     2. Review the returned plugins. If a suitable plugin exists:
-                        a. Inform the user about the plugin.
+                     2. Review the returned plugins using their metadata to pick the best one:
+                        - Check "use_when" to confirm the plugin fits the user's task.
+                        - Check "do_not_use_when" to rule out plugins that seem relevant
+                          but are wrong for this situation. If a plugin's "do_not_use_when"
+                          matches the user's scenario, skip it and consider alternatives.
+                        - Check "input_data" to verify the user's image type is compatible.
+                        - Check "output_data" to confirm the plugin produces what the user needs.
+                        - Use "typical_use_cases" to match against the user's specific scenario.
+                     3. If a suitable plugin exists:
+                        a. Inform the user about the plugin and WHY it fits their task
+                           (reference the use_when and typical_use_cases).
                         b. Ask for permission to install it.
                         c. If approved, call install_fiji_plugin with the exact plugin name.
                         d. After installation, inform the user that Fiji must be restarted.
                         e. Once restarted, delegate code generation to imagej_coder with
                            instructions to USE the installed plugin via IJ.run().
-                     3. If no suitable plugin is found, proceed with standard custom code workflow.
-                     4. NEVER install a plugin without explicit user confirmation.
+                           Include the plugin's input_data and output_data info so the coder
+                           knows what to expect.
+                     4. If no suitable plugin is found, proceed with standard custom code workflow.
+                     5. NEVER install a plugin without explicit user confirmation.
 
                      - inspect_all_ui_windows:
                      Returns a list of currently open ImageJ windows, image titles, and dimensions.

@@ -327,13 +327,19 @@ def ingest_plugins(rebuild: bool = True):
 
     vector_store = init_vector_store(PLUGINS_COLLECTION_NAME)
 
-    # Build documents
+    # Build documents — embed all semantic fields for better retrieval
     docs = []
     for plugin in plugins:
+        use_cases = ', '.join(plugin.get('typical_use_cases', []))
         page_content = (
             f"{plugin['name']}: {plugin['description']} "
-            f"Category: {plugin['category']} "
-            f"Tags: {', '.join(plugin['tags'])}"
+            f"Category: {plugin['category']}. "
+            f"Tags: {', '.join(plugin['tags'])}. "
+            f"Input: {plugin.get('input_data', '')}. "
+            f"Output: {plugin.get('output_data', '')}. "
+            f"Use when: {plugin.get('use_when', '')}. "
+            f"Do not use when: {plugin.get('do_not_use_when', '')}. "
+            f"Typical use cases: {use_cases}."
         )
         doc = Document(
             page_content=page_content,
