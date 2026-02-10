@@ -28,7 +28,7 @@ services:
       # Qdrant vector database for plugin search and RAG
       - ./qdrant_data:/app/qdrant_data:rw
       # Image data directory (place images in ./data on host, access as /mnt/data in container)
-      - ${IMAGE_DATA_DIR:-./data}:/data:ro
+      - ${IMAGE_DATA_DIR:-./data}:/app/data:ro
       # Entrypoint script (contains security features like VNC password support)
       - ./docker-entrypoint.sh:/docker-entrypoint.sh:ro
       # Source code mount for development (remove in production image)

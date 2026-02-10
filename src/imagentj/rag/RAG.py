@@ -363,6 +363,6 @@ if __name__ == "__main__":
     ingest_documents()
 
     # 3. Ingest plugin registry
-    ingest_plugins()
+    #ingest_plugins()
 
     
