@@ -1,12 +1,6 @@
 import os
 import re
 import multiprocessing
-from pathlib import Path
-from langchain_qdrant import QdrantVectorStore
-from langchain_openai import OpenAIEmbeddings
-from qdrant_client import QdrantClient
-from config.keys import gpt_key
-from ..qdrant_client_singleton import get_qdrant_client
 from langchain_docling import DoclingLoader
 from langchain_docling.loader import ExportType
 from docling.document_converter import DocumentConverter, PdfFormatOption

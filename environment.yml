@@ -19,6 +19,8 @@ dependencies:
   - numpy
   - pandas
   - scipy
+  - seaborn
+  - matplotlib
   - matplotlib-base
   - xarray
   - tifffile

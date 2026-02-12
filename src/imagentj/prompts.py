@@ -73,6 +73,7 @@ python_analyst_prompt = r"""
          - ALWAYS use raw strings for Windows paths: r'C:\Users\...'
          - ALWAYS save plots with `plt.savefig('filename.png', bbox_inches='tight')`.
          - ALWAYS explicitly print the p-value and test statistic to stdout.
+         - If not specified, ALWAYS save the plots in the '/app/data' directory.
          - HANDLE OUTLIERS: If data looks noisy, calculate and report the number of outliers using the IQR method. Print the count of outliers detected before deciding on removal logic.
 
          ────────────────────────────────────────
@@ -301,6 +302,18 @@ supervisor_prompt = """
                        Checks if a plugin is already installed by searching the plugins/jars directories.
                        ALWAYS call this BEFORE suggesting installation to avoid reinstalling existing plugins.
 
+                     - inspect_all_ui_windows:
+                      Returns a list of currently open ImageJ windows, image titles, and dimensions.
+                      ALWAYS use this to verify inputs and outputs.
+
+                     - rag_retrieve_docs: Retrieve documentation.
+                     - rag_retrieve_mistakes: Retrieve past coding errors (Lessons Learned).
+                     - save_coding_experience: Save a fix or lesson.
+                     - save_reusable_script: Save a working pipeline.
+                     - inspect_folder_tree: List files in a directory.
+                     - smart_file_reader: ALWAYS use this to read user-uploaded files.
+                     - read_file: NEVER use this tool.
+
                      ────────────────────────────────────────
                      PLUGIN INSTALLATION (MANDATORY)
                      ────────────────────────────────────────
@@ -343,17 +356,6 @@ supervisor_prompt = """
                      4. If no suitable plugin is found, proceed with standard custom code workflow.
                      5. NEVER install a plugin without explicit user confirmation.
 
-                     - inspect_all_ui_windows:
-                     Returns a list of currently open ImageJ windows, image titles, and dimensions.
-                     ALWAYS use this to verify inputs and outputs.
-
-                     - rag_retrieve_docs: Retrieve documentation.
-                     - rag_retrieve_mistakes: Retrieve past coding errors (Lessons Learned).
-                     - save_coding_experience: Save a fix or lesson.
-                     - save_reusable_script: Save a working pipeline.
-                     - inspect_folder_tree: List files in a directory.
-                     - smart_file_reader: ALWAYS use this to read user-uploaded files.
-                     - read_file: NEVER use this tool.
 
                      ────────────────────────────────────────
                      OPERATIONAL PIPELINE (MANDATORY)
@@ -434,10 +436,26 @@ supervisor_prompt = """
                      3. Repeat until success or max retries.
                      - SMART FILE HANDLING: Do NOT use built-in filesystem tools for user data; use `smart_file_reader`.
 
+                     
+                     ────────────────────────────────────────
+                     DEBUGGING LOOP (PYTHON)
+                     ────────────────────────────────────────
+                     1. When executing a Python script via `run_python_code`:
+                        a. NEVER attempt to debug or correct the Python code yourself.
+                        b. Before running, call `rag_retrieve_mistakes` to check for relevant past errors related to this script or dataset.
+                        c. If the Python script fails, capture the full error message.
+                        d. IMMEDIATELY call `python_data_analyst` with the failed code and error message.
+                        e. Receive the corrected Python script from `python_data_analyst`.
+                        f. Execute the returned script via `run_python_code`.
+                        g. After successful execution, call `save_coding_experience` to record the error, its fix, and any lessons learned.
+                        h. Repeat only if the analyst provides a new corrected script; do NOT attempt incremental fixes yourself.
+                        i. Ensure `Statistics_Results.csv` is successfully created before requesting any plotting scripts.
+
+
                      ────────────────────────────────────────
                      STRICT CONSTRAINTS
                      ────────────────────────────────────────
-                     - Never generate ImageJ/Fiji code yourself.
+                     - Never generate ImageJ/Fiji or Python code yourself.
                      - Never assume image properties without inspection.
                      - The supervisor is the ONLY agent allowed to execute scripts.
                      - Always run image analysis, statistics, and plotting in SEPARATE scripts using file-based data exchange.

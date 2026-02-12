@@ -1,11 +1,13 @@
+import os
 from langchain.tools import tool
 from langchain_core.documents import Document
 from .vector_stores import get_vec_store_mistakes, is_rag_available
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from config.keys import gpt_key
 
+
+gpt_key = os.getenv("OPENAI_API_KEY")
 __all__ = ['rag_retrieve_docs', 'rag_retrieve_mistakes', 'save_coding_experience']
 
 
@@ -31,8 +33,8 @@ def rag_retrieve_docs(query: str) -> list:
     """
     Retrieve relevant context from the document RAG using Hybrid Search + Query Expansion.
     """
-    if not is_rag_available():
-        return [{"content": "RAG system is not configured. No documents available for retrieval.", "source": None, "page": None, "score": 0}]
+    #if not is_rag_available():
+     #   return [{"content": "RAG system is not configured. No documents available for retrieval.", "source": None, "page": None, "score": 0}]
 
     from ..rag.RAG import hybrid_search_with_rrf, apply_rrf, DOCS_COLLECTION_NAME
 
@@ -88,16 +90,26 @@ def rag_retrieve_mistakes(query: str) -> list:
 
 
 @tool("save_coding_experience")
-def save_coding_experience(error_description: str, failed_code: str, working_code: str, class_involved: str):
+def save_coding_experience(language: str, error_description: str, failed_code: str, working_code: str, class_involved: str, error_type: str) -> str:
     """
     Saves a successful fix to the persistent Memory RAG.
     Use this after the debugger fixes a script to prevent the error from happening again.
+
+    Args:   
+
+    language: Programming language of the code (e.g., "Groovy", "Python").
+    error_description: A brief description of the error encountered.
+    failed_code: The original code snippet that caused the error.
+    working_code: The corrected code snippet that resolves the error.
+    class_involved: The main class or plugin involved in the error (e.g., "ImagePlus", "TrackMate").
+    error_type: The type of error (e.g., "MissingMethod", "Logic"), ALWAYS one word.
     """
     vec_store_mistakes = get_vec_store_mistakes()
     if vec_store_mistakes is None:
         return "RAG system is not configured. Experience could not be saved (no vector store available)."
 
     content = f"""
+    LANGUAGE: {language}
     PROBLEM: {error_description}
     FAILED CODE: {failed_code}
     WORKING SOLUTION:
@@ -108,9 +120,9 @@ def save_coding_experience(error_description: str, failed_code: str, working_cod
     doc = Document(
         page_content=content,
         metadata={
-            "type": "lesson_learned",
+            "language": language,
+            "error type": error_type,
             "class": class_involved,
-            "error_type": "MissingMethod" if "MissingMethod" in error_description else "Logic"
         }
     )
 

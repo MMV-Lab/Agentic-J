@@ -1,10 +1,10 @@
+import os
 from deepagents import create_deep_agent
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import MemorySaver
 from .prompts import imagej_coder_prompt, imagej_debugger_prompt, supervisor_prompt, python_analyst_prompt
 from .tools import internet_search, inspect_all_ui_windows, run_script_safe, rag_retrieve_docs, inspect_java_class, save_coding_experience, rag_retrieve_mistakes, save_reusable_script, inspect_folder_tree, smart_file_reader, run_python_code, inspect_csv_header, extract_image_metadata, search_fiji_plugins, install_fiji_plugin, check_plugin_installed
-from config.keys import gpt_key
-
+gpt_key = os.getenv("OPENAI_API_KEY")
 
 checkpointer_supervisor = MemorySaver()
 checkpointer_imagej_coder = MemorySaver()
