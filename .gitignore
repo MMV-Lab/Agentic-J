@@ -30,4 +30,8 @@ src/scripts/saved_scripts/
 
 checkpoints*
 
+/data/
+
+.env
+
 conversation_history.json

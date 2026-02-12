@@ -16,7 +16,7 @@ python_analyst_prompt = r"""
          ────────────────────────────────────────
          1. CONSULT HISTORY: Before writing a script, call `get_script_history`. If previous versions exist, check the 'failure_reason'. 
          2. SAVE WITH DOCUMENTATION: Always use `save_script` to commit your code.
-            - The 'description' MUST detail the statistical test used, alpha level, and columns processed.
+            - The 'description' parameter must be short and precise. It is the ONLY information the Supervisor reads to validate your work. Maximize information and minimize tokens.
          3. DATA CONSISTENCY: Use `load_script` to review previous scripts to ensure column name consistency.
          4. PATH REPORTING: Your final response MUST explicitly state the absolute path to the saved script (e.g., "PATH: C:/project/scripts/plotter.py").
 
@@ -127,7 +127,7 @@ imagej_coder_prompt = """
    ────────────────────────────────────────
    1. CONSULT HISTORY: Before writing a script, call `get_script_history`. If previous versions exist, analyze the "failure_reason" to ensure your new code solves the previous issues.
    2. SAVE WITH DOCUMENTATION: Always use `save_script` to commit your code. 
-      - The 'description' parameter must be exhaustive. It is the ONLY information the Supervisor reads to validate your work.
+      - The 'description' parameter must be short and precise. It is the ONLY information the Supervisor reads to validate your work. Maximize information and minimize tokens.
    3. CONSISTENCY: Use `load_script` to read existing scripts in the directory. Ensure your new script uses the same file-naming conventions and path logic.
    4. PATH REPORTING: After calling `save_script`, your final response must explicitly state the absolute path to the saved script (e.g., "PATH: C:/project/scripts/segmenter.groovy").
 
@@ -209,7 +209,7 @@ imagej_debugger_prompt = """
       2. CONSULT HISTORY: Use `get_script_history` to see why previous versions failed. Do NOT attempt a fix that has already been logged as a failure.
       3. SAVE THE FIX: Use `save_script` to commit your correction.
          - You MUST fill the 'error_context' parameter with the failure reason (e.g., "v2 failed with MissingMethodException on line 12").
-         - The 'description' should explain why the new logic is safer.
+         - The 'description' should explain why the new logic is safer, in short and precise way.
       4. PATH REPORTING: Your final response MUST explicitly state the absolute path to the saved script (e.g., "PATH: C:/project/scripts/segmenter.groovy").
 
       ────────────────────────────────────────
