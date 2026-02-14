@@ -34,7 +34,7 @@ def rag_retrieve_docs(query: str) -> list:
     Retrieve relevant context from the document RAG using Hybrid Search + Query Expansion.
     """
     if not is_rag_available():
-       return [{"content": "RAG system is not configured. No documents available for retrieval.", "source": None, "page": None, "score": 0}]
+       return is_rag_available()
 
     from ..rag.RAG import hybrid_search_with_rrf, apply_rrf, DOCS_COLLECTION_NAME
 
