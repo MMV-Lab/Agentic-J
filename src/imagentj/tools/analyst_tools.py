@@ -12,6 +12,7 @@ def inspect_csv_header(file_path: str):
     Reads the column names, data types, and first 5 rows of any CSV file on the PC.
     Use this tool BEFORE writing any Python code to verify paths and column names.
     Input MUST be a valid absolute file path (e.g., 'C:/Users/Name/data.csv').
+    ONLY shows the FIRST 5 ROWS to minimize token usage. If the file cannot be read, returns an error message.
     """
     try:
         # No more path joining; use the path directly
