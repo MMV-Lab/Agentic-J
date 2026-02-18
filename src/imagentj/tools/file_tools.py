@@ -13,6 +13,13 @@ from pathlib import Path
 import os
 import shutil
 from typing import Optional
+import subprocess
+from pathlib import Path
+from imagentj.imagej_context import get_ij
+import importlib.metadata 
+import sys
+import platform
+
 
 SCRIPTS_DIR = os.path.join(os.path.dirname(__file__), "../../scripts/saved_scripts")
 
@@ -340,8 +347,7 @@ def mkdir_copy(action: str, target_path: str, source_path: Optional[str] = None)
 def setup_analysis_workspace(project_name: str) -> str:
     """
     Creates a standardized folder tree to manage a new analysis project.
-    Run this at the start of a project to initialize the directory architecture 
-    for raw images, scripts, data, and figures under /app/data/.
+    Initializes directory architecture and logs environment metadata (Fiji & Python versions).
     """
     # 1. Define the base path
     root = Path(f"/app/data/{project_name}")
@@ -358,27 +364,63 @@ def setup_analysis_workspace(project_name: str) -> str:
         "logs"
     ]
     
-    # 3. Create the directories on the filesystem
+    # 3. Create the directories
     for subdir in subdirs:
         (root / subdir).mkdir(parents=True, exist_ok=True)
     
-    # 4. Return the tree structure as a string for the Agent's context
-    tree_output = f"""
-                Successfully created project structure for: {project_name}
-                Location: {root}
+    # 4. Gather Metadata
+    py_version = sys.version.split()[0]
+    os_info = platform.platform()
 
-                {project_name}/
-                ├── raw_images/           # User uploaded files go here
-                ├── processed_images/     # ImageJ outputs
-                │   ├── channels/         # Individual channels (if multi-channel)
-                │   └── montages/         # Comparison views
-                ├── scripts/              # All analysis scripts
-                │   ├── imagej/
-                │   └── python/
-                ├── data/                 # CSV results
-                ├── figures/              # Publication plots
-                └── logs/                 # Processing logs
-                """
+    # 2. Capture Specific Package Versions
+    # We use a helper to avoid 'ModuleNotFound' errors if a package is missing
+    def get_v(package_name):
+        try:
+            return __import__(package_name).__version__
+        except (ImportError, AttributeError):
+            return "Not Installed"
+
+    versions = {
+        "pandas": get_v("pandas"),
+        "numpy": get_v("numpy"),
+        "matplotlib": get_v("matplotlib"),
+        "seaborn": get_v("seaborn"),
+        "scipy": get_v("scipy")
+    }
+
+    # Get Fiji/ImageJ Version (Assumes 'ImageJ-linux64' or 'fiji' is in PATH or known location)
+    try:
+        # Most Fiji installations respond to --version via the executable
+        fiji_v = get_ij().getVersion()
+    except Exception:
+        fiji_v = "Fiji version not found."
+
+    # 5. Write Metadata to a log file
+    metadata_path = root / "logs/environment_metadata.log"
+    with open(metadata_path, "w") as f:
+        f.write(f"Project: {project_name}\n")
+        f.write(f"OS: {os_info}\n")
+        f.write(f"Python: {py_version}\n")
+        f.write(f"Fiji Version: {fiji_v}\n")
+        f.write("-" * 30 + "\n")
+        f.write("--- Core Libraries ---\n")
+        for pkg, ver in versions.items():
+            f.write(f"{pkg}: {ver}\n")
+
+    # 6. Return the tree structure
+    tree_output = f"""
+Successfully created project structure for: {project_name}
+Location: {root}
+Metadata logged to: {metadata_path}
+
+{project_name}/
+├── raw_images/           # User uploaded files
+├── processed_images/     # ImageJ outputs
+├── scripts/              # All analysis scripts
+├── data/                 # CSV results
+├── figures/              # Publication plots
+└── logs/                 # Processing logs & environment_metadata.log
+"""
     return tree_output
 
 
