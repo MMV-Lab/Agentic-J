@@ -794,6 +794,7 @@ supervisor_prompt = """
                      - inspect_folder_tree: List files in a directory.
                      - smart_file_reader: ALWAYS use this to read user-uploaded files.
                      - read_file: NEVER use this tool.
+                     - inspect_csv_header: Read column names and data types from a CSV file. Reads ONLY the header and first 5 rows. Use this to verify the structure of CSV files before writing code that processes them.
 
                      - setup_analysis_workspace: Creates a structured directory for analysis with subfolders for scripts, raw data, and results.
                      - save_markdown: Save markdown file in specified location
