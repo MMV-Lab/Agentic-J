@@ -15,6 +15,43 @@ checkpointer_imagej_debugger = MemorySaver()
 checkpointer_python_analyst = MemorySaver()
 checkpointer_qa_reporter = MemorySaver() 
 
+'''
+llm_gpt5 = ChatOpenAI(
+    model = "mistral-large-3-675b-instruct-2512",
+    verbose=True,
+    api_key=gpt_key,
+    base_url= "https://chat-ai.academiccloud.de/v1",
+    temperature=0.,
+)
+
+llm_gpt5_nano = ChatOpenAI(
+    model = "qwen3-coder-30b-a3b-instruct",
+    verbose=True,
+    api_key=gpt_key,
+    base_url= "https://chat-ai.academiccloud.de/v1",
+    temperature=0.,
+)'''
+
+
+'''llm_gpt5 = ChatOpenAI(
+    model = "meta-llama/llama-3.3-70b-instruct:free",
+    verbose=True,
+    api_key="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",
+    base_url= "https://openrouter.ai/api/v1",
+    temperature=0.,
+)
+
+llm_gpt5_nano = ChatOpenAI(
+    model = "deepseek/deepseek-r1:free",
+    verbose=True,
+    api_key="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",
+    base_url= "https://openrouter.ai/api/v1",
+    temperature=0.,
+)'''
+
+
+
+
 llm_gpt5 = ChatOpenAI(
     model = "gpt-5.2",
     verbose=True,
@@ -75,7 +112,7 @@ python_data_analyst = {
                     while documenting statistical assumptions in the project dictionary.""",
     "system_prompt": python_analyst_prompt,
     "tools": [inspect_csv_header, save_script, load_script, get_script_history, load_script, get_script_info],
-    "model": llm_gpt5, 
+    "model": llm_gpt5_nano, 
     "middleware": [],
     "checkpointer": checkpointer_python_analyst,
 }
@@ -109,7 +146,7 @@ qa_reporter = {
         inspect_csv_header,
         load_script,
     ],
-    "model": llm_gpt5_nano,
+    "model": llm_gpt5,
     "checkpointer": checkpointer_qa_reporter,
 }
 
@@ -133,5 +170,6 @@ def init_agent():
     debug=False,
     backend=fs_backend,
     checkpointer=checkpointer_supervisor,
+    skills = ["/app/skills/"]
 )
     return supervisor, checkpointer_supervisor
