@@ -86,32 +86,27 @@ def shadow_ingest_upgrade(file_path: str, vector_store, file_hash: str):
 def inspect_folder_tree(
     path: str,
     recursive: bool = True,
-    max_depth: int = 5
+    max_depth: int = 5,
+    max_files_per_dir: int = 10
 ) -> str:
     """
     Inspects a folder and returns its subfolder structure and file names.
     Does NOT read file contents.
-
     Args:
         path: Absolute or relative path to the root folder.
         recursive: Whether to recurse into subfolders.
         max_depth: Maximum depth to traverse (root = depth 0).
-
+        max_files_per_dir: Maximum number of files to list per directory before truncating.
     Returns:
         A JSON-like string describing the folder tree.
     """
-
     root = os.path.abspath(os.path.expanduser(path))
-
     if not os.path.exists(root):
         return f"ERROR: Path does not exist: {root}"
-
     if not os.path.isdir(root):
         return f"ERROR: Path is not a directory: {root}"
-
-    tree = walk(root, depth=0, max_depth=max_depth, recursive=recursive)
-
-    # Return as a string so it fits the same pattern as your other tools
+    tree = walk(root, depth=0, max_depth=max_depth, recursive=recursive,
+                max_files_per_dir=max_files_per_dir)
     import json
     return json.dumps(tree, indent=2)
 
