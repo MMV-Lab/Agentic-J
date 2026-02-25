@@ -9,16 +9,14 @@ from docling.datamodel.base_models import InputFormat
 from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend
 
 
-def walk(dir_path: str, depth: int, max_depth: int = 5, recursive: bool = True) -> dict:
+def walk(dir_path: str, depth: int, max_depth: int = 5, recursive: bool = True, max_files_per_dir: int = 10) -> dict:
     node = {
         "name": os.path.basename(dir_path) or dir_path,
         "type": "directory",
         "children": []
     }
-
     if depth >= max_depth:
         return node
-
     try:
         entries = sorted(os.listdir(dir_path))
     except PermissionError:
@@ -28,26 +26,27 @@ def walk(dir_path: str, depth: int, max_depth: int = 5, recursive: bool = True) 
         })
         return node
 
+    files = []
     for entry in entries:
         full_path = os.path.join(dir_path, entry)
-
         if os.path.isdir(full_path):
             if recursive:
-                node["children"].append(walk(full_path, depth + 1))
+                node["children"].append(walk(full_path, depth + 1, max_depth, recursive, max_files_per_dir))
             else:
-                node["children"].append({
-                    "name": entry,
-                    "type": "directory"
-                })
-
+                node["children"].append({"name": entry, "type": "directory"})
         elif os.path.isfile(full_path):
-            node["children"].append({
-                "name": entry,
-                "type": "file"
-            })
+            files.append(entry)
+
+    # Add files with truncation
+    visible_files = files[:max_files_per_dir]
+    for f in visible_files:
+        node["children"].append({"name": f, "type": "file"})
+
+    hidden = len(files) - max_files_per_dir
+    if hidden > 0:
+        node["children"].append({"name": f"... and {hidden} more file(s)", "type": "truncated"})
 
     return node
-
 
 def sanitize_filename(name: str) -> str:
     """Converts a script name into a valid filename."""

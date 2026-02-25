@@ -273,11 +273,11 @@ class ImageJAgentGUI(QWidget):
         chat_widget.setLayout(chat_layout)
 
         # --- RIGHT: Script Library ---
-        self.library_widget = ScriptLibraryWidget()
-        self.library_widget.script_run_requested.connect(self.run_saved_script)
+        #self.library_widget = ScriptLibraryWidget()
+        #self.library_widget.script_run_requested.connect(self.run_saved_script)
 
         splitter.addWidget(chat_widget)
-        splitter.addWidget(self.library_widget)
+        #splitter.addWidget(self.library_widget)
         splitter.setStretchFactor(0, 3) 
         splitter.setStretchFactor(1, 1)
 

@@ -3,7 +3,7 @@ import os
 SCRIPTS_DIR = os.path.join(os.path.dirname(__file__), "../../scripts/saved_scripts")
 
 # Tools package - re-export all tools for backward compatibility
-from .file_tools import inspect_folder_tree, save_reusable_script, smart_file_reader, mkdir_copy
+from .file_tools import inspect_folder_tree, save_reusable_script, smart_file_reader, mkdir_copy, setup_analysis_workspace, save_markdown
 from .rag_tools import rag_retrieve_docs, rag_retrieve_mistakes, save_coding_experience
 from .script_tools import run_script_safe, save_script, execute_script, get_script_info, load_script, get_script_history
 from .imagej_tools import ask_user, load_image_ij, inspect_all_ui_windows, extract_image_metadata
@@ -23,5 +23,6 @@ __all__ = [
     'search_fiji_plugins', 'install_fiji_plugin', 'check_plugin_installed',
     'SafeToolLoggerMiddleware', 'TodoDisplayMiddleware',
     'get_vec_store_docs', 'get_vec_store_mistakes', 'is_rag_available', 'is_plugin_db_available',
-    'run_python_code', 'inspect_csv_header', 'mkdir_copy','save_script', 'execute_script', 'get_script_info', 'load_script', 'get_script_history'
+    'run_python_code', 'inspect_csv_header', 'mkdir_copy','save_script', 'execute_script', 'get_script_info', 'load_script', 'get_script_history',
+    'setup_analysis_workspace', 'save_markdown'
 ]
