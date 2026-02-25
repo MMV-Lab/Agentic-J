@@ -24,7 +24,7 @@ services:
       # Fiji plugin persistence across container rebuilds
       - fiji_plugins:/opt/Fiji.app/plugins
       - fiji_jars:/opt/Fiji.app/jars
-      - fiji_update:/opt/Fiji.app/update
+      - ./fiji_update:/opt/Fiji.app/update
       # Saved scripts persistence
       - saved_scripts:/app/scripts/saved_scripts
       # Qdrant vector database for plugin search and RAG
