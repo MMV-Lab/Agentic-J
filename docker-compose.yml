@@ -34,7 +34,7 @@ services:
       # Image data directory (place images in ./data on host, access as /mnt/data in container)
       - ${IMAGE_DATA_DIR:-./data}:/data
       # Entrypoint script (contains security features like VNC password support)
-      - ./docker-entrypoint.sh:/docker-entrypoint.sh:ro
+      - ./docker-entrypoint.sh:/docker-entrypoint.sh
       # Source code mount for development (remove in production image)
       - ./src:/app/src:ro
       - ./gui_runner.py:/app/gui_runner.py:ro
@@ -42,10 +42,15 @@ services:
       - ./data:/app/data
       # Extra pip packages installed on host (avoids image rebuild for small packages)
       - ./extra_packages:/app/extra_packages:ro
+      # Folder for skills
+      - ./skills:/app/skills:ro
     env_file:
       - path: .env
         required: false
     shm_size: '2gb'
+
+    networks:
+      - imagent_net
 
     # ── Resource limits ────────────────────────────────────────────────────
     deploy:
@@ -72,3 +77,11 @@ volumes:
   fiji_update:
   saved_scripts:
   qdrant_data:
+
+networks:
+  imagent_net:
+    ipam:
+      driver: default
+      config:
+        # Using 10.10.10.0/24 is usually safe from 172.x conflicts
+        - subnet: 10.10.10.0/24
