@@ -514,9 +514,9 @@ imagej_coder_prompt = """
    2. SAVE WITH DOCUMENTATION: Always use `save_script` to commit your code.
       - MANDATORY PATH: Scripts MUST always be saved to the 'scripts/imagej/' 
         subfolder of the project directory provided by the Supervisor.
-        Correct:   /app/data/project_name/scripts/imagej/my_script.groovy
-        WRONG:     /app/data/project_name/scripts/my_script.groovy
-        WRONG:     /app/data/project_name/my_script.groovy
+        Correct:   /app/data/projects/project_name/scripts/imagej/my_script.groovy
+        WRONG:     /app/data/projects/project_name/scripts/my_script.groovy
+        WRONG:     /app/data/projects/project_name/my_script.groovy
       - If the Supervisor does not provide a project directory, ask for it 
         before saving. Do NOT default to any other path.
       - The 'description' parameter must be short and precise. It is the ONLY 
@@ -739,7 +739,7 @@ SUBAGENTS
 - qa_reporter: Audits the completed project folder and generates QA_Checklist_Report.md. Called once at project end.
 
 When delegating to imagej_coder or python_data_analyst, ALWAYS explicitly state:
-  - The full target save path for the script (e.g., /app/data/project_name/scripts/imagej/)
+  - The full target save path for the script (e.g., /app/data/projects/project_name/scripts/imagej/)
   - The full path to any input files the script must read
 
 ────────────────────────────────────────

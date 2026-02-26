@@ -152,9 +152,9 @@ def save_script(directory: str, filename: str, content: str, description: str, e
     
     Args:
         directory: Path to the directory where the script should be saved must look like this:
-        Correct:   /app/data/[project_name]/scripts/imagej/
-        WRONG:     /app/data/[project_name]/scripts/
-        WRONG:     /app/data/[project_name]/
+        Correct:   /app/data/projects/[project_name]/scripts/imagej/
+        WRONG:     /app/data/projects/[project_name]/scripts/
+        WRONG:     /app/data/projects/[project_name]/
         filename: Name of the script (must be .py or .groovy).
         content: The new source code.
         description: A short and precise summary of what the script does for the supervisor. Maximize information and minimze tokens.

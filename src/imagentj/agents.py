@@ -9,7 +9,21 @@ from .tools import load_script, get_script_history, setup_analysis_workspace, sa
 
 gpt_key = os.getenv("OPENAI_API_KEY")
 
-checkpointer_supervisor = MemorySaver()
+# Supervisor uses SqliteSaver so chat history survives container restarts.
+# Falls back to MemorySaver if the package is not installed.
+_CHATS_DIR = os.environ.get("CHAT_DATA_PATH", "/app/data/chats")
+os.makedirs(_CHATS_DIR, exist_ok=True)
+try:
+    import sqlite3
+    from langgraph.checkpoint.sqlite import SqliteSaver
+    _db_path = os.path.join(_CHATS_DIR, "checkpoints.db")
+    _conn = sqlite3.connect(_db_path, check_same_thread=False)
+    checkpointer_supervisor = SqliteSaver(_conn)
+    print(f"[agents] Using SqliteSaver at {_db_path}")
+except ImportError:
+    checkpointer_supervisor = MemorySaver()
+    print("[agents] WARNING: langgraph-checkpoint-sqlite not installed — using MemorySaver (history lost on restart)")
+
 checkpointer_imagej_coder = MemorySaver()
 checkpointer_imagej_debugger = MemorySaver()
 checkpointer_python_analyst = MemorySaver()
@@ -84,37 +98,37 @@ python_data_analyst = {
 }
 
 
-qa_reporter = {
-    "name": "qa_reporter",
+# qa_reporter = {
+#     "name": "qa_reporter",
 
-    "description": """Automatically audits a completed project folder and generates two files:
-                    (1) QA_Checklist_Report.md — pass/fail audit against image-analysis publication 
-                    standards (Minimal / Recommended / Ideal levels).
-                    (2) Workflow_Documentation.md — a pre-filled documentation template inferred 
-                    from the project's scripts, CSVs, and figures.
+#     "description": """Automatically audits a completed project folder and generates two files:
+#                     (1) QA_Checklist_Report.md — pass/fail audit against image-analysis publication 
+#                     standards (Minimal / Recommended / Ideal levels).
+#                     (2) Workflow_Documentation.md — a pre-filled documentation template inferred 
+#                     from the project's scripts, CSVs, and figures.
                     
-                    WHEN TO CALL: At the end of every project, after all scripts have run 
-                    successfully and results are saved.
+#                     WHEN TO CALL: At the end of every project, after all scripts have run 
+#                     successfully and results are saved.
                     
-                    INPUT REQUIRED: The absolute path to the project root folder 
-                    (e.g., /app/data/project_name/).
+#                     INPUT REQUIRED: The absolute path to the project root folder 
+#                     (e.g., /app/data/project_name/).
                     
-                    OUTPUT: Absolute paths to QA_Checklist_Report.md and 
-                    Workflow_Documentation.md saved inside the project folder.""",
+#                     OUTPUT: Absolute paths to QA_Checklist_Report.md and 
+#                     Workflow_Documentation.md saved inside the project folder.""",
 
-    "system_prompt": qa_reporter_prompt,
-    "middleware": [],
-    "tools": [
-        inspect_folder_tree,   # discovers project structure
-        smart_file_reader,     # reads scripts, CSVs, logs
-        get_script_info,       # reads script documentation from dictionary
-        save_markdown,           # writes the two output markdown files
-        inspect_csv_header,
-        load_script,
-    ],
-    "model": llm_gpt5,
-    "checkpointer": checkpointer_qa_reporter,
-}
+#     "system_prompt": qa_reporter_prompt,
+#     "middleware": [],
+#     "tools": [
+#         inspect_folder_tree,   # discovers project structure
+#         smart_file_reader,     # reads scripts, CSVs, logs
+#         get_script_info,       # reads script documentation from dictionary
+#         save_markdown,           # writes the two output markdown files
+#         inspect_csv_header,
+#         load_script,
+#     ],
+#     "model": llm_gpt5,
+#     "checkpointer": checkpointer_qa_reporter,
+# }
 
 
 
@@ -130,7 +144,7 @@ def init_agent():
     name="ImageJ_Supervisor",
     tools = [internet_search, inspect_all_ui_windows, rag_retrieve_docs, save_coding_experience, rag_retrieve_mistakes, save_reusable_script, inspect_folder_tree, smart_file_reader, extract_image_metadata, search_fiji_plugins, install_fiji_plugin, check_plugin_installed, mkdir_copy, inspect_csv_header, execute_script, get_script_info, setup_analysis_workspace, save_markdown],
     system_prompt=supervisor_prompt,
-    subagents=[imagej_coder, imagej_debugger, python_data_analyst, qa_reporter],
+    subagents=[imagej_coder, imagej_debugger, python_data_analyst], #, qa_reporter],
     middleware=[],
     model=llm_gpt5,
     debug=False,

@@ -42,6 +42,10 @@ Xvfb :1 -screen 0 1280x800x24 -ac +extension GLX +render -noreset &
 
 export DISPLAY=:1
 
+# echo "[entrypoint] Enabling keyboard repeat..."
+# xset r on
+# xset r rate 300 50
+
 # Wait for X11 socket to be ready
 echo "[entrypoint] Waiting for Xvfb to be ready..."
 for i in $(seq 1 60); do
