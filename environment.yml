@@ -91,6 +91,7 @@ dependencies:
       - langchain-pymupdf4llm
       - langchain-qdrant
       - langchain-text-splitters
+      - langgraph-checkpoint-sqlite
       - lark
       - latex2mathml
       - lxml
