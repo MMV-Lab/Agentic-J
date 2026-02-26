@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QSizePolicy,
 )
 from PySide6.QtGui import QTextCursor
-from PySide6.QtCore import QObject, Signal, Slot, QThread, Qt, QSize
+from PySide6.QtCore import QObject, Signal, Slot, QThread, Qt, QSize, QEvent
 from queue import Queue
 
 # --- Import your existing backend ---
@@ -301,7 +301,7 @@ class ImageJAgentGUI(QWidget):
             "color: #7f8c8d; font-style: italic; padding-left: 5px;"
         )
 
-        self.input_line = QLineEdit()
+        self.input_line = QTextEdit()
         self.input_line.setFixedHeight(120)  # increase input height
 
         self.send_button = QPushButton("Send")
@@ -341,7 +341,8 @@ class ImageJAgentGUI(QWidget):
 
         # ----- Connect UI signals -----
         self.send_button.clicked.connect(self.on_send)
-        self.input_line.returnPressed.connect(self.on_send)
+        self.input_line.installEventFilter(self)
+
 
         # ----- Initialize ImageJ & Agent -----
         self.ij = get_ij()
@@ -442,16 +443,16 @@ class ImageJAgentGUI(QWidget):
     # Drag-and-drop
     # ------------------------------------------------------------------
 
-    def dragEnterEvent(self, event):
-        if event.mimeData().hasUrls():
-            event.acceptProposedAction()
+    # def dragEnterEvent(self, event):
+    #     if event.mimeData().hasUrls():
+    #         event.acceptProposedAction()
 
-    def dropEvent(self, event):
-        for url in event.mimeData().urls():
-            file_path = url.toLocalFile()
-            if file_path not in self.attached_files:
-                self.attached_files.append(file_path)
-        self._update_attachment_ui()
+    # def dropEvent(self, event):
+    #     for url in event.mimeData().urls():
+    #         file_path = url.toLocalFile()
+    #         if file_path not in self.attached_files:
+    #             self.attached_files.append(file_path)
+    #     self._update_attachment_ui()
 
     def _update_attachment_ui(self):
         if not self.attached_files:
@@ -467,6 +468,14 @@ class ImageJAgentGUI(QWidget):
     # ------------------------------------------------------------------
     # Status helpers
     # ------------------------------------------------------------------
+
+
+    def eventFilter(self, obj, event):
+        if obj == self.input_line and event.type() == QEvent.KeyPress:
+            if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
+                self.on_send()
+                return True
+        return super().eventFilter(obj, event)
 
     def _agent_is_busy(self) -> bool:
         return self.send_button.isEnabled() is False
@@ -538,7 +547,7 @@ class ImageJAgentGUI(QWidget):
     # ------------------------------------------------------------------
         
     def on_send(self):
-        user_input = self.input_line.text().strip()
+        user_input = self.input_line.toPlainText().strip()
         if not user_input and not self.attached_files:
             return
 
