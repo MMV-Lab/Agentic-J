@@ -1,3 +1,6 @@
+"""
+main.py  –  ImagentJ GUI with per-conversation usage tracking and chat history.
+"""
 
 import sys
 sys.path.insert(0, 'src')
@@ -8,8 +11,8 @@ import jpype
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout,
     QTextEdit, QLineEdit, QPushButton, QLabel, QListWidget,
-    QSplitter, QGroupBox, QScrollArea, QMessageBox, QListWidgetItem,
-    QSizePolicy, QFrame,
+    QSplitter, QGroupBox, QMessageBox, QListWidgetItem,
+    QSizePolicy, QFrame, QFileDialog,
 )
 from PySide6.QtGui import QTextCursor
 from PySide6.QtCore import QObject, Signal, Slot, QThread, Qt, QSize, QEvent
@@ -31,7 +34,7 @@ SCRIPTS_DIR = os.path.join(os.path.dirname(__file__), "scripts/saved_scripts")
 
 intro_message = """
 Hello I am ImageJ agent, some call me ImagentJ :)
-I can design a step-by-step protocol and, if useful, generate a runnable Groovy macro (and execute/test it if you want).
+I can design a step-by-step protocol and, if useful, generate a runnable Groovy macro.
 
 To get started, please share:
 - Goal: what you want measured/segmented/processed.
@@ -39,9 +42,9 @@ To get started, please share:
 - Targets: what objects/features to detect; which channel(s) matter.
 - Preprocessing: background/flat-field correction, denoising needs?
 - Outputs: tables/measurements, labeled masks/overlays, ROIs, saved images.
-- Constraints: plugins available (e.g., Fiji with Bio-Formats, MorpholibJ, TrackMate, StarDist), OS, any runtime limits.
+- Constraints: plugins available (e.g., Fiji with Bio-Formats, MorpholibJ, TrackMate, StarDist).
 
-If you're unsure, tell me the biological question and show one representative image—I'll propose a clear plan and a script you can run.
+If you're unsure, tell me the biological question and show one representative image.
 """
 
 os.environ["LANGSMITH_TRACING"] = "true"
@@ -52,11 +55,14 @@ os.environ["LANGCHAIN_CALLBACKS_BACKGROUND"] = "true"
 
 
 # ===========================================================================
-# Metrics Panel Widget
+# Metrics Panel  — shows current conversation only
 # ===========================================================================
 
 class MetricsPanelWidget(QWidget):
-    """Compact live dashboard showing token, timing, cost and tool-call stats."""
+    """
+    All numbers shown are for the ACTIVE conversation.
+    Resets automatically when the user switches threads.
+    """
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -67,7 +73,7 @@ class MetricsPanelWidget(QWidget):
         root.setContentsMargins(6, 6, 6, 6)
         root.setSpacing(4)
 
-        header = QLabel("<b>📊 Session Metrics</b>")
+        header = QLabel("<b>📊 Conversation Metrics</b>")
         header.setAlignment(Qt.AlignCenter)
         root.addWidget(header)
 
@@ -76,8 +82,8 @@ class MetricsPanelWidget(QWidget):
         sep.setFrameShadow(QFrame.Sunken)
         root.addWidget(sep)
 
-        # Token group
-        tok_box = QGroupBox("Tokens")
+        # Tokens
+        tok_box    = QGroupBox("Tokens")
         tok_layout = QVBoxLayout(tok_box)
         tok_layout.setSpacing(2)
         self._lbl_in    = QLabel()
@@ -88,8 +94,8 @@ class MetricsPanelWidget(QWidget):
             tok_layout.addWidget(lbl)
         root.addWidget(tok_box)
 
-        # Performance group
-        perf_box = QGroupBox("Performance")
+        # Performance
+        perf_box    = QGroupBox("Performance")
         perf_layout = QVBoxLayout(perf_box)
         perf_layout.setSpacing(2)
         self._lbl_time = QLabel()
@@ -99,8 +105,8 @@ class MetricsPanelWidget(QWidget):
             perf_layout.addWidget(lbl)
         root.addWidget(perf_box)
 
-        # Tool group
-        tool_box = QGroupBox("Tool Calls")
+        # Tool calls
+        tool_box    = QGroupBox("Tool Calls")
         tool_layout = QVBoxLayout(tool_box)
         tool_layout.setSpacing(2)
         self._lbl_calls  = QLabel()
@@ -111,9 +117,14 @@ class MetricsPanelWidget(QWidget):
             tool_layout.addWidget(lbl)
         root.addWidget(tool_box)
 
-        self._btn_reset = QPushButton("🔁 Reset Session Stats")
-        self._btn_reset.setStyleSheet("font-size: 11px; padding: 4px;")
-        root.addWidget(self._btn_reset)
+        # Buttons
+        self._btn_save = QPushButton("💾 Save Usage Report")
+        self._btn_save.setStyleSheet(
+            "padding: 4px; background-color: #2980b9; "
+            "color: white; border-radius: 3px; font-size: 11px;"
+        )
+        root.addWidget(self._btn_save)
+
         root.addStretch()
 
         self.update_metrics({
@@ -122,30 +133,32 @@ class MetricsPanelWidget(QWidget):
             "tool_calls": 0, "failed_tool_calls": 0, "soft_error_tool_calls": 0,
         })
 
+    @staticmethod
+    def _fmt(name: str, value: str, color: str, bold: bool = False) -> str:
+        w = "bold" if bold else "normal"
+        return (
+            f"<span style='color:#555;'>{name}:</span> "
+            f"<span style='color:{color};font-weight:{w};'>{value}</span>"
+        )
+
     @Slot(dict)
     def update_metrics(self, data: dict):
-        def fmt(name, value, color, bold=False):
-            w = "bold" if bold else "normal"
-            return (
-                f"<span style='color:#555;'>{name}:</span> "
-                f"<span style='color:{color};font-weight:{w};'>{value}</span>"
-            )
-
-        self._lbl_in.setText(    fmt("Input",    f"{data['input_tokens']:,}",  "#2980b9"))
-        self._lbl_out.setText(   fmt("Output",   f"{data['output_tokens']:,}", "#27ae60"))
-        self._lbl_total.setText( fmt("Total",    f"{data['total_tokens']:,}",  "#8e44ad", bold=True))
+        f = self._fmt
+        self._lbl_in.setText(    f("Input",   f"{data['input_tokens']:,}",  "#2980b9"))
+        self._lbl_out.setText(   f("Output",  f"{data['output_tokens']:,}", "#27ae60"))
+        self._lbl_total.setText( f("Total",   f"{data['total_tokens']:,}",  "#8e44ad", bold=True))
 
         secs  = data["thinking_seconds"]
         t_str = f"{int(secs//60)}m {int(secs%60)}s" if secs >= 60 else f"{secs:.1f}s"
-        self._lbl_time.setText(  fmt("⏱ Think time", t_str,                    "#16a085"))
+        self._lbl_time.setText(  f("⏱ Think time", t_str,   "#16a085"))
 
-        cost = data["cost_usd"]
+        cost     = data["cost_usd"]
         cost_str = f"${cost:.4f}" if cost >= 0.0001 else "—"
-        self._lbl_cost.setText(  fmt("💰 Est. cost",  cost_str,                 "#c0392b"))
+        self._lbl_cost.setText(  f("💰 Est. cost",  cost_str, "#c0392b", bold=True))
 
-        self._lbl_calls.setText( fmt("Total",          data['tool_calls'],             "#2c3e50"))
-        self._lbl_failed.setText(fmt("Hard errors",    data['failed_tool_calls'],      "#e74c3c"))
-        self._lbl_soft.setText(  fmt("Soft errors ⚠",  data['soft_error_tool_calls'],  "#e67e22"))
+        self._lbl_calls.setText( f("Total",       str(data["tool_calls"]),            "#2c3e50"))
+        self._lbl_failed.setText(f("Hard errors", str(data["failed_tool_calls"]),     "#e74c3c"))
+        self._lbl_soft.setText(  f("Soft errors ⚠", str(data["soft_error_tool_calls"]), "#e67e22"))
 
 
 # ===========================================================================
@@ -153,9 +166,7 @@ class MetricsPanelWidget(QWidget):
 # ===========================================================================
 
 class ChatHistoryPanel(QWidget):
-    """Left-hand panel: session list + New Chat button."""
-
-    thread_selected  = Signal(str)   # emits thread_id
+    thread_selected    = Signal(str)
     new_chat_requested = Signal()
 
     def __init__(self):
@@ -199,7 +210,7 @@ class ChatHistoryPanel(QWidget):
         for thread_id, meta in threads:
             title    = meta.get("title", "Untitled")
             date_str = meta.get("last_updated", "")[:10]
-            item = QListWidgetItem(f"{title}\n{date_str}")
+            item     = QListWidgetItem(f"{title}\n{date_str}")
             item.setSizeHint(QSize(0, 52))
             self.session_list.addItem(item)
             self._thread_ids.append(thread_id)
@@ -237,10 +248,9 @@ class AgentWorker(QObject):
     def start(self):
         if jpype.isJVMStarted() and not jpype.isThreadAttachedToJVM():
             jpype.attachThreadToJVM()
-
         while True:
             prompt = self.tasks.get()
-            if prompt is None:   # poison pill
+            if prompt is None:
                 break
             self._stop_requested = False
             self._run_prompt(prompt)
@@ -280,31 +290,30 @@ class AgentWorker(QObject):
 class ImageJAgentGUI(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("ImagentJ - AI Supervisor & Script Library")
+        self.setWindowTitle("ImagentJ - AI Supervisor")
         self.resize(1100, 680)
         self.setAcceptDrops(True)
         self.attached_files: list[str] = []
 
-        # History manager
         self.history_manager = ChatHistoryManager()
 
-        # ── Agent + metrics (created here so QApplication already exists) ───
+        # ── Agent + metrics (created AFTER QApplication exists) ──────────
         (self.supervisor,
          self.checkpointer,
          self._metrics,
          self._metrics_bridge,
          self._tracker_cb) = init_agent()
 
-        # ── Build UI ─────────────────────────────────────────────────────────
+        # ── UI ────────────────────────────────────────────────────────────
         main_layout = QHBoxLayout()
         splitter    = QSplitter(Qt.Horizontal)
 
-        # LEFT: chat history sidebar
+        # LEFT: history
         self.history_panel = ChatHistoryPanel()
         self.history_panel.thread_selected.connect(self.switch_thread)
         self.history_panel.new_chat_requested.connect(self.new_chat)
 
-        # MIDDLE: chat interface
+        # MIDDLE: chat
         chat_widget = QWidget()
         chat_layout = QVBoxLayout()
 
@@ -333,22 +342,22 @@ class ImageJAgentGUI(QWidget):
         self.status_label = QLabel("Agent is ready to help")
         self.status_label.setStyleSheet("color: green; font-weight: bold;")
 
-        button_layout = QHBoxLayout()
-        button_layout.addWidget(self.send_button, stretch=4)
-        button_layout.addWidget(self.stop_button, stretch=1)
+        btn_row = QHBoxLayout()
+        btn_row.addWidget(self.send_button, stretch=4)
+        btn_row.addWidget(self.stop_button, stretch=1)
 
-        chat_layout.addWidget(self.output_area,        stretch=3)
-        chat_layout.addWidget(self.attachment_status,  stretch=0)
-        chat_layout.addWidget(self.input_line,         stretch=1)
-        chat_layout.addLayout(button_layout)
-        chat_layout.addWidget(self.status_label,       stretch=0)
+        chat_layout.addWidget(self.output_area,       stretch=3)
+        chat_layout.addWidget(self.attachment_status, stretch=0)
+        chat_layout.addWidget(self.input_line,        stretch=1)
+        chat_layout.addLayout(btn_row)
+        chat_layout.addWidget(self.status_label,      stretch=0)
         chat_widget.setLayout(chat_layout)
 
-        # RIGHT: metrics panel
+        # RIGHT: metrics
         self.metrics_panel = MetricsPanelWidget()
-        self.metrics_panel.setMinimumWidth(180)
-        self.metrics_panel.setMaximumWidth(240)
-        self.metrics_panel._btn_reset.clicked.connect(self._reset_metrics)
+        self.metrics_panel.setMinimumWidth(190)
+        self.metrics_panel.setMaximumWidth(250)
+        self.metrics_panel._btn_save.clicked.connect(self._save_report)
 
         splitter.addWidget(self.history_panel)
         splitter.addWidget(chat_widget)
@@ -365,11 +374,11 @@ class ImageJAgentGUI(QWidget):
         self.input_line.installEventFilter(self)
         self._metrics_bridge.updated.connect(self.metrics_panel.update_metrics)
 
-        # ── ImageJ ───────────────────────────────────────────────────────
+        # ── ImageJ ────────────────────────────────────────────────────────
         self.ij = get_ij()
         self.ij.ui().showUI()
 
-        # ── Worker thread ─────────────────────────────────────────────────
+        # ── Worker ────────────────────────────────────────────────────────
         self.current_thread_id: str = ""
         self._is_new_thread: bool   = True
 
@@ -382,7 +391,6 @@ class ImageJAgentGUI(QWidget):
         self.worker.error.connect(self.on_agent_error)
         self.thread.start()
 
-        # ── Init session ──────────────────────────────────────────────────
         self._init_session()
 
     # ------------------------------------------------------------------
@@ -402,6 +410,8 @@ class ImageJAgentGUI(QWidget):
         self.current_thread_id = thread_id
         self.worker.thread_id  = thread_id
         self._is_new_thread    = True
+        # Tell tracker: new blank conversation
+        self._tracker_cb.switch_thread(thread_id)
         self.output_area.clear()
         self.output_area.append(intro_message)
         self.history_panel.populate(self.history_manager.list_threads())
@@ -411,8 +421,12 @@ class ImageJAgentGUI(QWidget):
         self.current_thread_id = thread_id
         self.worker.thread_id  = thread_id
         self._is_new_thread    = False
+        # Tell tracker: switch conversation + reload saved totals → emits updated signal
+        self._tracker_cb.switch_thread(thread_id)
         self.output_area.clear()
-        messages = self.history_manager.get_messages_for_display(self.supervisor, thread_id)
+        messages = self.history_manager.get_messages_for_display(
+            self.supervisor, thread_id
+        )
         if not messages:
             self.output_area.append(intro_message)
         else:
@@ -423,7 +437,9 @@ class ImageJAgentGUI(QWidget):
 
     def new_chat(self):
         if self._agent_is_busy():
-            QMessageBox.warning(self, "Agent Busy", "Please wait for the current task to finish.")
+            QMessageBox.warning(
+                self, "Agent Busy", "Please wait for the current task to finish."
+            )
             return
         self._start_new_thread()
 
@@ -431,17 +447,33 @@ class ImageJAgentGUI(QWidget):
         if thread_id == self.current_thread_id:
             return
         if self._agent_is_busy():
-            QMessageBox.warning(self, "Agent Busy", "Please wait for the current task to finish.")
+            QMessageBox.warning(
+                self, "Agent Busy", "Please wait for the current task to finish."
+            )
             return
         self._load_thread(thread_id)
 
     # ------------------------------------------------------------------
-    # Metrics helpers
+    # Report export
     # ------------------------------------------------------------------
 
-    def _reset_metrics(self):
-        self._metrics.reset()
-        self._metrics_bridge.updated.emit(self._metrics.snapshot())
+    def _save_report(self):
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Usage Report",
+            os.path.expanduser("~/imagentj_usage_report.json"),
+            "JSON files (*.json);;All files (*)",
+        )
+        if not path:
+            return
+        try:
+            report = self._tracker_cb.get_report()
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(report, f, indent=2, ensure_ascii=False)
+            QMessageBox.information(self, "Saved", f"Report saved to:\n{path}")
+        except Exception as e:
+            log.exception(f"Failed to save report: {e}")
+            QMessageBox.warning(self, "Save Failed", str(e))
 
     # ------------------------------------------------------------------
     # Drag & drop
@@ -533,7 +565,6 @@ class ImageJAgentGUI(QWidget):
             log.debug("finish_query completed OK")
         except Exception as e:
             log.exception(f"finish_query failed: {e}")
-
         if hasattr(self, 'worker') and self.worker._stop_requested:
             self.append_output("\n<b style='color: green;'>✓ Agent is ready to help</b>")
         self.set_status("Ready")
@@ -547,7 +578,7 @@ class ImageJAgentGUI(QWidget):
         self.set_ui_busy(False)
 
     def _execute_agent_query(self, prompt: str):
-        self._tracker_cb.start_query(prompt)
+        self._tracker_cb.start_query(prompt, thread_id=self.current_thread_id)
         self.set_status("Thinking...")
         self.set_ui_busy(True)
         self.worker.submit(prompt)
@@ -564,17 +595,22 @@ class ImageJAgentGUI(QWidget):
         full_prompt = user_input
         if self.attached_files:
             file_list_str = "\n".join([f"- {p}" for p in self.attached_files])
-            full_prompt += f"\n\n[SYSTEM: The user has attached the following files/folders]:\n{file_list_str}"
+            full_prompt  += (
+                f"\n\n[SYSTEM: The user has attached the following files/folders]:\n"
+                f"{file_list_str}"
+            )
 
         self.append_output(f"\n<b>You:</b> {user_input if user_input else '[Attached Files]'}")
         if self.attached_files:
             display_names = ", ".join([os.path.basename(p) for p in self.attached_files])
-            self.append_output(f"<i style='color: #2980b9;'>📎 Sent with: {display_names}</i>")
+            self.append_output(
+                f"<i style='color: #2980b9;'>📎 Sent with: {display_names}</i>"
+            )
 
         self.append_output("AI: ...")
         self.input_line.clear()
 
-        # Update history metadata
+        # Update history index
         current_title = self.history_manager._index.get(
             self.current_thread_id, {}
         ).get("title", "New Chat")
@@ -591,7 +627,7 @@ class ImageJAgentGUI(QWidget):
         self._update_attachment_ui()
 
     # ------------------------------------------------------------------
-    # Event handler (streaming from agent)
+    # Event handler
     # ------------------------------------------------------------------
 
     def handle_event(self, event: dict):
@@ -600,8 +636,7 @@ class ImageJAgentGUI(QWidget):
                 continue
 
             if node_name in ("supervisor", "model"):
-                messages = node_data.get("messages", [])
-                for msg in messages:
+                for msg in node_data.get("messages", []):
                     tool_calls = getattr(msg, "tool_calls", [])
                     for tc in tool_calls:
                         name = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", "")
@@ -609,11 +644,12 @@ class ImageJAgentGUI(QWidget):
                         if name == "task":
                             agent_type = args.get("subagent_type", "Specialist")
                             desc       = args.get("description", "")
-                            short_desc = (desc[:120] + '...') if len(desc) > 120 else desc
+                            short_desc = (desc[:120] + "...") if len(desc) > 120 else desc
                             self.append_output(
-                                f"\n<div style='color: #e67e22;'><b>🚀 Routing to {agent_type}:</b></div>"
+                                f"\n<div style='color:#e67e22;'>"
+                                f"<b>🚀 Routing to {agent_type}:</b></div>"
                             )
-                            self.append_output(f"<i style='color: #7f8c8d;'>{short_desc}</i>")
+                            self.append_output(f"<i style='color:#7f8c8d;'>{short_desc}</i>")
                         else:
                             self.append_output(f"\n<i>[System] Calling tool: {name}...</i>")
 
@@ -625,7 +661,13 @@ class ImageJAgentGUI(QWidget):
 
         if "tools" in event:
             for tool_msg in event["tools"].get("messages", []):
-                name = getattr(tool_msg, "name", "Tool")
+                name    = getattr(tool_msg, "name", "Tool")
+                content = getattr(tool_msg, "content", "")
+
+                # ── detect workspace creation ─────────────────────────────
+                if name == "setup_analysis_workspace":
+                    self._tracker_cb.notify_workspace_created(str(content))
+
                 if name == "task":
                     self.append_output("\n✅ <b>Sub-agent task completed.</b>")
                 else:

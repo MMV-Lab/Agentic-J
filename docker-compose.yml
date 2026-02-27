@@ -40,8 +40,6 @@ services:
       - ./gui_runner.py:/app/gui_runner.py:ro
       # Folder to save data
       - ./data:/app/data
-      # Extra pip packages installed on host (avoids image rebuild for small packages)
-      - ./extra_packages:/app/extra_packages:ro
       # Folder for skills
       - ./skills:/app/skills:ro
     env_file:

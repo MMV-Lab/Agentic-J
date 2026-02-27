@@ -1,20 +1,21 @@
 """
-usage_tracker.py  –  Real-time token, timing, cost & tool-call metrics.
+usage_tracker.py  –  Per-conversation token, timing, cost & tool-call metrics.
 
-Tracks (per query + cumulative session):
-  • input / output tokens
-  • agent thinking time  (excludes user typing / reading time)
-  • estimated cost       (configurable price table, $/1M tokens)
-  • total / failed / soft-error tool calls
+Storage layout (mirrors ChatHistoryManager):
+    /app/data/chats/<thread_id>/usage_stats.json   ← one file per conversation
+    /app/data/projects/<name>/logs/usage_log.json  ← auto-created on workspace setup
 
-Persistence:
-  • Appends one JSON record per completed query to STATS_LOG_PATH.
-  • Also writes a cumulative session_totals block on every update.
+The metrics panel always shows the CURRENT conversation only.
+On thread switch the GUI calls:
+    tracker.switch_thread(thread_id)
+which saves the current conversation, resets UsageMetrics, and pre-loads
+the new conversation's saved totals — so the panel updates instantly.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import re
 import threading
 import time
@@ -25,16 +26,16 @@ from typing import Any, Union
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.outputs import LLMResult
 from PySide6.QtCore import QObject, Signal
+import logging
+log = logging.getLogger("imagentj")
 
 
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
 
-STATS_LOG_PATH = Path("/app/data/usage_stats.json")
+CHATS_DIR = Path(os.environ.get("CHAT_DATA_PATH", "/app/data/chats"))
 
-
-# Price in USD per 1 000 000 tokens.  Add / update models here.
 PRICE_TABLE: dict[str, tuple[float, float]] = {
     # model-name-substring        input   output
     "gpt-4o":                    (2.50,  10.00),
@@ -58,7 +59,6 @@ PRICE_TABLE: dict[str, tuple[float, float]] = {
 }
 
 def _price_for_model(model_name: str) -> tuple[float, float]:
-    """Return (input_per_1M, output_per_1M) for the closest matching model."""
     lower = model_name.lower()
     for key, prices in PRICE_TABLE.items():
         if key != "default" and key in lower:
@@ -71,39 +71,39 @@ def _price_for_model(model_name: str) -> tuple[float, float]:
 # ---------------------------------------------------------------------------
 
 _SOFT_ERROR_RE = re.compile(
-    r"\b("
-    r"error|exception|warning|failed|failure|"
+    r"\b(error|exception|warning|failed|failure|"
     r"missingmethodexception|missingmethod|no such method|"
     r"groovyruntimeexception|scriptexception|"
     r"could not|unable to|traceback|illegalargument|"
-    r"nullpointerexception|indexoutofbounds"
-    r")\b",
+    r"nullpointerexception|indexoutofbounds)\b",
     re.IGNORECASE,
 )
 _EXECUTION_TOOLS = {"execute_script", "run_script_safe", "run_python_code"}
 
 
 # ---------------------------------------------------------------------------
-# Per-query record (written to JSON)
+# Per-query record
 # ---------------------------------------------------------------------------
 
 @dataclass
 class QueryRecord:
-    timestamp: str              = ""
-    prompt_preview: str         = ""
-    model: str                  = ""
-    thinking_seconds: float     = 0.0
-    input_tokens: int           = 0
-    output_tokens: int          = 0
-    total_tokens: int           = 0
-    cost_usd: float             = 0.0
-    tool_calls: int             = 0
-    failed_tool_calls: int      = 0
-    soft_error_tool_calls: int  = 0
+    timestamp:             str   = ""
+    thread_id:             str   = ""
+    prompt_preview:        str   = ""
+    model:                 str   = ""
+    thinking_seconds:      float = 0.0
+    input_tokens:          int   = 0
+    output_tokens:         int   = 0
+    total_tokens:          int   = 0
+    cost_usd:              float = 0.0
+    tool_calls:            int   = 0
+    failed_tool_calls:     int   = 0
+    soft_error_tool_calls: int   = 0
 
     def to_dict(self) -> dict:
         return {
             "timestamp":             self.timestamp,
+            "thread_id":             self.thread_id,
             "prompt_preview":        self.prompt_preview,
             "model":                 self.model,
             "thinking_seconds":      round(self.thinking_seconds, 2),
@@ -118,37 +118,31 @@ class QueryRecord:
 
 
 # ---------------------------------------------------------------------------
-# Session-level cumulative metrics
+# Cumulative metrics — always reflects the CURRENT conversation
 # ---------------------------------------------------------------------------
 
 @dataclass
 class UsageMetrics:
-    # tokens
-    input_tokens: int       = 0
-    output_tokens: int      = 0
-    # timing
-    thinking_seconds: float = 0.0
-    _thinking_start: float  = field(default=0.0, repr=False, compare=False)
-    _is_thinking: bool      = field(default=False, repr=False, compare=False)
-    # cost
-    cost_usd: float         = 0.0
-    # tools
-    tool_calls: int             = 0
-    failed_tool_calls: int      = 0
-    soft_error_tool_calls: int  = 0
+    input_tokens:          int   = 0
+    output_tokens:         int   = 0
+    thinking_seconds:      float = 0.0
+    cost_usd:              float = 0.0
+    tool_calls:            int   = 0
+    failed_tool_calls:     int   = 0
+    soft_error_tool_calls: int   = 0
 
-    _lock: threading.Lock = field(default_factory=threading.Lock,
-                                  repr=False, compare=False)
-
-    # ── timing control (called from Qt main thread) ──────────────────────
+    _thinking_start: float         = field(default=0.0,  repr=False, compare=False)
+    _is_thinking:    bool          = field(default=False, repr=False, compare=False)
+    _lock:           threading.RLock = field(
+        default_factory=threading.RLock, repr=False, compare=False
+    )
 
     def start_thinking(self):
         with self._lock:
             self._thinking_start = time.monotonic()
-            self._is_thinking = True
+            self._is_thinking    = True
 
     def stop_thinking(self) -> float:
-        """Commit elapsed time; returns seconds for this query."""
         with self._lock:
             if not self._is_thinking:
                 return 0.0
@@ -158,11 +152,8 @@ class UsageMetrics:
             return elapsed
 
     def live_thinking_seconds(self) -> float:
-        """Session total including any in-progress query. Call with lock held OR not."""
         extra = (time.monotonic() - self._thinking_start) if self._is_thinking else 0.0
         return self.thinking_seconds + extra
-
-    # ── helpers ──────────────────────────────────────────────────────────
 
     @property
     def total_tokens(self) -> int:
@@ -183,15 +174,26 @@ class UsageMetrics:
 
     def reset(self):
         with self._lock:
-            self.input_tokens = 0
-            self.output_tokens = 0
-            self.thinking_seconds = 0.0
-            self._thinking_start = 0.0
-            self._is_thinking = False
-            self.cost_usd = 0.0
-            self.tool_calls = 0
-            self.failed_tool_calls = 0
+            self.input_tokens          = 0
+            self.output_tokens         = 0
+            self.thinking_seconds      = 0.0
+            self._thinking_start       = 0.0
+            self._is_thinking          = False
+            self.cost_usd              = 0.0
+            self.tool_calls            = 0
+            self.failed_tool_calls     = 0
             self.soft_error_tool_calls = 0
+
+    def load_from_totals(self, totals: dict):
+        """Pre-populate from a saved totals dict on thread switch."""
+        with self._lock:
+            self.input_tokens          = totals.get("input_tokens",          0)
+            self.output_tokens         = totals.get("output_tokens",         0)
+            self.thinking_seconds      = totals.get("thinking_seconds",      0.0)
+            self.cost_usd              = totals.get("cost_usd",              0.0)
+            self.tool_calls            = totals.get("tool_calls",            0)
+            self.failed_tool_calls     = totals.get("failed_tool_calls",     0)
+            self.soft_error_tool_calls = totals.get("soft_error_tool_calls", 0)
 
 
 # ---------------------------------------------------------------------------
@@ -199,35 +201,160 @@ class UsageMetrics:
 # ---------------------------------------------------------------------------
 
 class MetricsSignalBridge(QObject):
-    updated = Signal(dict)
+    updated = Signal(dict)   # full snapshot → MetricsPanelWidget.update_metrics
 
 
 # ---------------------------------------------------------------------------
-# JSON persistence
+# JSON helpers
 # ---------------------------------------------------------------------------
 
-class StatsLogger:
-    """Appends one QueryRecord per completed query to a JSON file."""
+def _read_json(path: Path) -> dict:
+    if path.exists():
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {}
 
-    def __init__(self, path: Path = STATS_LOG_PATH):
-        self._path = path
-        self._path.parent.mkdir(parents=True, exist_ok=True)
 
-    def append_query(self, record: QueryRecord, session_totals: dict):
-        if self._path.exists():
-            try:
-                with open(self._path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-            except (json.JSONDecodeError, OSError):
-                data = {"queries": [], "session_totals": {}}
-        else:
-            data = {"queries": [], "session_totals": {}}
-
-        data["queries"].append(record.to_dict())
-        data["session_totals"] = session_totals
-
-        with open(self._path, "w", encoding="utf-8") as f:
+def _write_json(path: Path, data: dict):
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        pass  # never let I/O crash the agent
+
+
+# ---------------------------------------------------------------------------
+# Conversation-scoped logger
+# ---------------------------------------------------------------------------
+
+class ConversationLogger:
+    """
+    Writes  /app/data/chats/<thread_id>/usage_stats.json
+    and (once a project workspace exists)
+            /app/data/projects/<name>/logs/usage_log.json
+    """
+
+    def __init__(self, chats_dir: Path = CHATS_DIR):
+        self._chats_dir         = chats_dir
+        self._thread_id:    str         = ""
+        self._project_log:  Path | None = None
+        self._project_name: str         = ""
+
+    # ── per-conversation file ─────────────────────────────────────────────
+
+    def _conv_path(self, thread_id: str | None = None) -> Path:
+        tid = thread_id or self._thread_id
+        return self._chats_dir / tid / "usage_stats.json"
+
+    def set_thread(self, thread_id: str):
+        """Call on every thread switch."""
+        self._thread_id = thread_id
+        path = self._conv_path()
+        if not path.exists():
+            _write_json(path, {
+                "thread_id": thread_id,
+                "created":   time.strftime("%Y-%m-%dT%H:%M:%S"),
+                "queries":   [],
+                "totals":    {},
+            })
+
+    def load_totals(self, thread_id: str) -> dict:
+        """Return saved cumulative totals for a thread (empty dict if none)."""
+        data = _read_json(self._conv_path(thread_id))
+        return data.get("totals", {})
+
+    def append_query(self, record: QueryRecord, snapshot: dict):
+        """Append one query record and recompute totals."""
+        if not self._thread_id:
+            return
+        path = self._conv_path()
+        data = _read_json(path)
+        data.setdefault("queries", []).append(record.to_dict())
+
+        # Recompute totals from ALL stored records (robust, never drifts)
+        qs = data["queries"]
+        data["totals"] = {
+            "query_count":           len(qs),
+            "input_tokens":          sum(q["input_tokens"]          for q in qs),
+            "output_tokens":         sum(q["output_tokens"]         for q in qs),
+            "total_tokens":          sum(q["total_tokens"]          for q in qs),
+            "thinking_seconds":      round(sum(q["thinking_seconds"] for q in qs), 2),
+            "cost_usd":              round(sum(q["cost_usd"]         for q in qs), 6),
+            "tool_calls":            sum(q["tool_calls"]            for q in qs),
+            "failed_tool_calls":     sum(q["failed_tool_calls"]     for q in qs),
+            "soft_error_tool_calls": sum(q["soft_error_tool_calls"] for q in qs),
+        }
+        _write_json(path, data)
+
+        # Mirror to project log if active
+        self._append_to_project(record)
+
+    # ── project log ───────────────────────────────────────────────────────
+
+    def set_project_path(self, project_root: Path, project_name: str):
+        self._project_log  = project_root / "logs" / "usage_log.json"
+        self._project_name = project_name
+
+        # Load all queries already recorded in this conversation
+        existing_conv = _read_json(self._conv_path())
+        existing_queries = existing_conv.get("queries", [])
+
+        # Write project log with full history from the start of the conversation
+        data = {
+            "project_name": project_name,
+            "created":      time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "queries":      existing_queries,   # ← backfill
+            "totals":       {},
+        }
+        # Recompute totals over the backfilled queries
+        qs = data["queries"]
+        if qs:
+            data["totals"] = {
+                "query_count":           len(qs),
+                "input_tokens":          sum(q["input_tokens"]           for q in qs),
+                "output_tokens":         sum(q["output_tokens"]          for q in qs),
+                "total_tokens":          sum(q["total_tokens"]           for q in qs),
+                "thinking_seconds":      round(sum(q["thinking_seconds"] for q in qs), 2),
+                "cost_usd":              round(sum(q["cost_usd"]         for q in qs), 6),
+                "tool_calls":            sum(q["tool_calls"]             for q in qs),
+                "failed_tool_calls":     sum(q["failed_tool_calls"]      for q in qs),
+                "soft_error_tool_calls": sum(q["soft_error_tool_calls"]  for q in qs),
+            }
+        _write_json(self._project_log, data)
+
+    def _append_to_project(self, record: QueryRecord):
+        if not self._project_log:
+            return
+        data = _read_json(self._project_log)
+        data.setdefault("queries", []).append(record.to_dict())
+        qs = data["queries"]
+        data["totals"] = {
+            "query_count":           len(qs),
+            "input_tokens":          sum(q["input_tokens"]          for q in qs),
+            "output_tokens":         sum(q["output_tokens"]         for q in qs),
+            "total_tokens":          sum(q["total_tokens"]          for q in qs),
+            "thinking_seconds":      round(sum(q["thinking_seconds"] for q in qs), 2),
+            "cost_usd":              round(sum(q["cost_usd"]         for q in qs), 6),
+            "tool_calls":            sum(q["tool_calls"]            for q in qs),
+            "failed_tool_calls":     sum(q["failed_tool_calls"]     for q in qs),
+            "soft_error_tool_calls": sum(q["soft_error_tool_calls"] for q in qs),
+        }
+        _write_json(self._project_log, data)
+
+    # ── export ────────────────────────────────────────────────────────────
+
+    def build_report(self, thread_id: str | None = None) -> dict:
+        conv    = _read_json(self._conv_path(thread_id or self._thread_id))
+        project = _read_json(self._project_log) if self._project_log else {}
+        return {
+            "exported_at":     time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "conversation":    conv,
+            "current_project": project,
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -236,27 +363,53 @@ class StatsLogger:
 
 class UsageTrackerCallback(BaseCallbackHandler):
     """
-    Attached directly to each ChatOpenAI instance so it fires for ALL models
-    including subagents — regardless of LangGraph config propagation.
-
-    The GUI calls start_query() / finish_query() to bracket thinking time.
+    Attached directly to each ChatOpenAI(callbacks=[...]) so it fires for
+    every model including subagents, regardless of LangGraph config propagation.
     """
     raise_error = False
 
     def __init__(self, metrics: UsageMetrics, bridge: MetricsSignalBridge,
-                 logger: StatsLogger | None = None):
+                 logger: ConversationLogger | None = None):
         super().__init__()
-        self._m = metrics
+        self._m      = metrics
         self._bridge = bridge
-        self._logger = logger or StatsLogger()
-        self._current_prompt: str = ""
-        self._query_start_tokens: dict = {}  # tokens at query start for delta
-        self._model_seen: str = ""
+        self._logger = logger or ConversationLogger()
 
-    def start_query(self, prompt: str = ""):
-        """Called by GUI on Send."""
-        self._current_prompt = prompt
-        self._query_start_tokens = {
+        # per-query state
+        self._thread_id:  str  = ""
+        self._prompt:     str  = ""
+        self._q_start:    dict = {}
+        self._model_seen: str  = ""
+
+    def notify_workspace_created(self, output_str: str):
+        """Called by the GUI from handle_event when setup_analysis_workspace completes."""
+        for line in output_str.splitlines():
+            if line.strip().startswith("Location:"):
+                root_path = Path(line.split("Location:", 1)[1].strip())
+                self._logger.set_project_path(root_path, root_path.name)
+                log.debug(f"Project log path set to: {root_path}")
+                break
+
+    # ── GUI control ───────────────────────────────────────────────────────
+
+    def switch_thread(self, thread_id: str):
+        """
+        Called by the GUI on every thread switch (including app startup).
+        Saves nothing — the last finish_query() already wrote the file.
+        Resets metrics and pre-loads the new thread's saved totals.
+        """
+        self._thread_id = thread_id
+        self._logger.set_thread(thread_id)
+        totals = self._logger.load_totals(thread_id)
+        self._m.reset()
+        if totals:
+            self._m.load_from_totals(totals)
+        self._bridge.updated.emit(self._m.snapshot())
+
+    def start_query(self, prompt: str, thread_id: str):
+        self._thread_id = thread_id
+        self._prompt    = prompt
+        self._q_start   = {
             "input":  self._m.input_tokens,
             "output": self._m.output_tokens,
             "tools":  self._m.tool_calls,
@@ -267,47 +420,52 @@ class UsageTrackerCallback(BaseCallbackHandler):
         self._m.start_thinking()
 
     def finish_query(self):
-        """Called by GUI on agent finished."""
         elapsed = self._m.stop_thinking()
-        snap = self._m.snapshot()
-        s = self._query_start_tokens
+        snap    = self._m.snapshot()
+        s       = self._q_start
 
         record = QueryRecord(
-            timestamp           = time.strftime("%Y-%m-%dT%H:%M:%S"),
-            prompt_preview      = (self._current_prompt[:120] + "…")
-                                  if len(self._current_prompt) > 120
-                                  else self._current_prompt,
-            model               = self._model_seen,
-            thinking_seconds    = round(elapsed, 2),
-            # deltas — what THIS query consumed
-            input_tokens        = snap["input_tokens"]  - s["input"],
-            output_tokens       = snap["output_tokens"] - s["output"],
-            total_tokens        = (snap["input_tokens"]  - s["input"])
-                                + (snap["output_tokens"] - s["output"]),
-            cost_usd            = round(snap["cost_usd"] - s["cost"], 6),
-            tool_calls          = snap["tool_calls"]          - s["tools"],
-            failed_tool_calls   = snap["failed_tool_calls"]   - s["failed"],
+            timestamp             = time.strftime("%Y-%m-%dT%H:%M:%S"),
+            thread_id             = self._thread_id,
+            prompt_preview        = (self._prompt[:120] + "…")
+                                    if len(self._prompt) > 120 else self._prompt,
+            model                 = self._model_seen,
+            thinking_seconds      = round(elapsed, 2),
+            input_tokens          = snap["input_tokens"]  - s["input"],
+            output_tokens         = snap["output_tokens"] - s["output"],
+            total_tokens          = (snap["input_tokens"]  - s["input"])
+                                  + (snap["output_tokens"] - s["output"]),
+            cost_usd              = round(snap["cost_usd"] - s["cost"], 6),
+            tool_calls            = snap["tool_calls"]            - s["tools"],
+            failed_tool_calls     = snap["failed_tool_calls"]     - s["failed"],
             soft_error_tool_calls = snap["soft_error_tool_calls"] - s["soft"],
         )
         self._logger.append_query(record, snap)
 
-    # ── Token tracking ────────────────────────────────────────────────────
+    def get_report(self) -> dict:
+        return self._logger.build_report()
+
+    # ── LLM callbacks ─────────────────────────────────────────────────────
 
     def on_llm_start(self, serialized: dict, prompts: list, **kwargs):
-        model = (serialized.get("kwargs") or {}).get("model_name", "") or \
-                (serialized.get("kwargs") or {}).get("model", "")
+        # Try every known location providers use for the model name
+        kw    = serialized.get("kwargs") or {}
+        model = (kw.get("model_name") or kw.get("model") or
+                 serialized.get("name") or "")
         if model:
             self._model_seen = model
 
     def on_llm_end(self, response: LLMResult, **kwargs: Any) -> None:
         added_in = added_out = 0
 
+        # Strategy 1: llm_output dict (OpenAI classic)
         usage = (response.llm_output or {}).get("token_usage") or \
                 (response.llm_output or {}).get("usage")
         if isinstance(usage, dict):
             added_in  = usage.get("prompt_tokens",     0)
             added_out = usage.get("completion_tokens", 0)
 
+        # Strategy 2: usage_metadata on AIMessage (LangChain ≥ 0.2)
         if not (added_in or added_out):
             for gen_list in response.generations:
                 for gen in gen_list:
@@ -316,33 +474,39 @@ class UsageTrackerCallback(BaseCallbackHandler):
                         added_in  += meta.get("input_tokens",  0)
                         added_out += meta.get("output_tokens", 0)
 
+        # Strategy 3: response_metadata (some providers, e.g. Gemini via OpenRouter)
         if not (added_in or added_out):
             for gen_list in response.generations:
                 for gen in gen_list:
                     meta = getattr(getattr(gen, "message", None), "response_metadata", {}) or {}
-                    tok = meta.get("token_usage") or meta.get("usage") or {}
+                    tok  = meta.get("token_usage") or meta.get("usage") or {}
                     added_in  += tok.get("prompt_tokens",     tok.get("input_tokens",  0))
                     added_out += tok.get("completion_tokens", tok.get("output_tokens", 0))
 
         if added_in or added_out:
-            price_in, price_out = _price_for_model(self._model_seen)
-            added_cost = (added_in * price_in + added_out * price_out) / 1_000_000
+            p_in, p_out = _price_for_model(self._model_seen)
+            cost = (added_in * p_in + added_out * p_out) / 1_000_000
             with self._m._lock:
                 self._m.input_tokens  += added_in
                 self._m.output_tokens += added_out
-                self._m.cost_usd      += added_cost
+                self._m.cost_usd      += cost
             self._emit()
 
-    # ── Tool tracking ─────────────────────────────────────────────────────
+    # ── Tool callbacks ─────────────────────────────────────────────────────
 
     def on_tool_start(self, serialized: dict, input_str: str, **kwargs: Any):
         with self._m._lock:
             self._m.tool_calls += 1
         self._emit()
 
-    def on_tool_end(self, output: Any, *, name: str = "", **kwargs: Any):
-        tool_name = name or (kwargs.get("serialized") or {}).get("name", "")
-        if tool_name in _EXECUTION_TOOLS and _SOFT_ERROR_RE.search(str(output)):
+    def on_tool_end(self, output: Any, **kwargs: Any):
+        tool_name  = (
+            kwargs.get("name") or kwargs.get("tool") or
+            (kwargs.get("serialized") or {}).get("name") or ""
+        )
+        output_str = str(output)
+        # soft errors only — workspace detection moved to GUI handle_event
+        if tool_name in _EXECUTION_TOOLS and _SOFT_ERROR_RE.search(output_str):
             with self._m._lock:
                 self._m.soft_error_tool_calls += 1
             self._emit()
