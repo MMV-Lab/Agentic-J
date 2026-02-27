@@ -26,6 +26,8 @@ from imagentj.imagej_context import get_ij
 from imagentj.agents import shared_metrics, shared_bridge, shared_tracker
 
 
+
+
 SCRIPTS_DIR = os.path.join(os.path.dirname(__file__), "scripts/saved_scripts")
 THREAD_ID = "imagej_supervisor_thread"
 
@@ -81,32 +83,45 @@ class MetricsPanelWidget(QWidget):
         tok_box = QGroupBox("Tokens")
         tok_layout = QVBoxLayout(tok_box)
         tok_layout.setSpacing(2)
-        self._lbl_in    = self._make_stat_label("Input",        "#2980b9")
-        self._lbl_out   = self._make_stat_label("Output",       "#27ae60")
-        self._lbl_total = self._make_stat_label("Total",        "#8e44ad", bold=True)
+        self._lbl_in    = QLabel()
+        self._lbl_out   = QLabel()
+        self._lbl_total = QLabel()
         for lbl in (self._lbl_in, self._lbl_out, self._lbl_total):
+            lbl.setTextFormat(Qt.RichText)
             tok_layout.addWidget(lbl)
         root.addWidget(tok_box)
+
+        # Performance group  (NEW)
+        perf_box = QGroupBox("Performance")
+        perf_layout = QVBoxLayout(perf_box)
+        perf_layout.setSpacing(2)
+        self._lbl_time = QLabel()
+        self._lbl_cost = QLabel()
+        for lbl in (self._lbl_time, self._lbl_cost):
+            lbl.setTextFormat(Qt.RichText)
+            perf_layout.addWidget(lbl)
+        root.addWidget(perf_box)
 
         # Tool group
         tool_box = QGroupBox("Tool Calls")
         tool_layout = QVBoxLayout(tool_box)
         tool_layout.setSpacing(2)
-        self._lbl_calls  = self._make_stat_label("Total",        "#2c3e50")
-        self._lbl_failed = self._make_stat_label("Hard Errors",  "#e74c3c")
-        self._lbl_soft   = self._make_stat_label("Soft Errors ⚠", "#e67e22")
+        self._lbl_calls  = QLabel()
+        self._lbl_failed = QLabel()
+        self._lbl_soft   = QLabel()
         for lbl in (self._lbl_calls, self._lbl_failed, self._lbl_soft):
+            lbl.setTextFormat(Qt.RichText)
             tool_layout.addWidget(lbl)
         root.addWidget(tool_box)
 
-        # Reset button
         self._btn_reset = QPushButton("🔁 Reset Session Stats")
         self._btn_reset.setStyleSheet("font-size: 11px; padding: 4px;")
         root.addWidget(self._btn_reset)
-
         root.addStretch()
+
         self.update_metrics({
             "input_tokens": 0, "output_tokens": 0, "total_tokens": 0,
+            "thinking_seconds": 0.0, "cost_usd": 0.0,
             "tool_calls": 0, "failed_tool_calls": 0, "soft_error_tool_calls": 0,
         })
 
@@ -128,12 +143,28 @@ class MetricsPanelWidget(QWidget):
 
     @Slot(dict)
     def update_metrics(self, data: dict):
-        self._lbl_in.setText(   self._fmt("Input",       data["input_tokens"],        "#2980b9"))
-        self._lbl_out.setText(  self._fmt("Output",      data["output_tokens"],       "#27ae60"))
-        self._lbl_total.setText(self._fmt("Total",       data["total_tokens"],        "#8e44ad", bold=True))
-        self._lbl_calls.setText( self._fmt("Total",      data["tool_calls"],          "#2c3e50"))
-        self._lbl_failed.setText(self._fmt("Hard Errors",data["failed_tool_calls"],   "#e74c3c"))
-        self._lbl_soft.setText(  self._fmt("Soft Errors ⚠", data["soft_error_tool_calls"], "#e67e22"))
+        def fmt(name, value, color, bold=False):
+            w = "bold" if bold else "normal"
+            return f"<span style='color:#555;'>{name}:</span> <span style='color:{color};font-weight:{w};'>{value}</span>"
+
+        self._lbl_in.setText(    fmt("Input",    f"{data['input_tokens']:,}",  "#2980b9"))
+        self._lbl_out.setText(   fmt("Output",   f"{data['output_tokens']:,}", "#27ae60"))
+        self._lbl_total.setText( fmt("Total",    f"{data['total_tokens']:,}",  "#8e44ad", bold=True))
+
+        # Format time as  Xm Ys
+        secs  = data["thinking_seconds"]
+        t_str = f"{int(secs//60)}m {int(secs%60)}s" if secs >= 60 else f"{secs:.1f}s"
+        self._lbl_time.setText(  fmt("⏱ Think time", t_str,                   "#16a085"))
+
+        cost = data["cost_usd"]
+        cost_str = f"${cost:.4f}" if cost >= 0.0001 else "—"
+        self._lbl_cost.setText(  fmt("💰 Est. cost",  cost_str,                "#c0392b"))
+
+        self._lbl_calls.setText( fmt("Total",       data['tool_calls'],        "#2c3e50"))
+        self._lbl_failed.setText(fmt("Hard errors", data['failed_tool_calls'], "#e74c3c"))
+        self._lbl_soft.setText(  fmt("Soft errors ⚠", data['soft_error_tool_calls'], "#e67e22"))
+
+
 
 
 # ===========================================================================
@@ -387,7 +418,8 @@ class ImageJAgentGUI(QWidget):
 
     def _reset_metrics(self):
         self._metrics.reset()
-        self.metrics_panel.update_metrics(self._metrics.snapshot())
+        # emit a zeroed snapshot so the panel refreshes immediately
+        self._metrics_bridge.updated.emit(self._metrics.snapshot())
 
     # ── Drag & drop ──────────────────────────────────────────────────────────
 
@@ -444,8 +476,14 @@ class ImageJAgentGUI(QWidget):
             self.set_status("Stopping...")
 
     def on_agent_finished(self):
-        if hasattr(self, 'worker') and self.worker._stop_requested:
-            self.append_output("\n<b style='color: green;'>✓ Agent is ready to help</b>")
+        print("[DEBUG] on_agent_finished called") 
+        try:
+            self._tracker_cb.finish_query()
+        except Exception as e:
+            print(f"[UsageTracker] finish_query failed: {e}")
+        
+        if self.worker._stop_requested:
+            self.append_output("\n<b style='color:green;'>✓ Agent is ready to help</b>")
         self.set_status("Ready")
         self.set_ui_busy(False)
 
@@ -456,6 +494,7 @@ class ImageJAgentGUI(QWidget):
         self.set_ui_busy(False)
 
     def _execute_agent_query(self, prompt: str):
+        self._tracker_cb.start_query(prompt)   # ← starts timer + snapshot
         self.set_status("Thinking...")
         self.set_ui_busy(True)
         self.worker.submit(prompt)
