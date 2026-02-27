@@ -20,7 +20,41 @@ checkpointer_imagej_debugger = MemorySaver()
 checkpointer_python_analyst = MemorySaver()
 checkpointer_qa_reporter = MemorySaver() 
 
+list_apis = """
+moonshotai/kimi-k2.5
+google/gemini-3-flash-preview
+anthropic/claude-opus-4.6
+deepseek/deepseek-v3.2
+openai/gpt-5.2
+openai/gpt-5.3-codex
+anthropic/claude-haiku-4.5
+"""
 
+open_models = """
+qwen/qwen3-235b-a22b-2507
+moonshotai/kimi-k2.5
+z-ai/glm-5
+deepseek/deepseek-v3.2
+mistralai/mistral-small-3.2-24b-instruct
+"""
+
+llm_gpt5 = ChatOpenAI(
+    model = "deepseek/deepseek-v3.2",
+    verbose=True,
+    api_key=gpt_key,
+    base_url= "https://openrouter.ai/api/v1",
+    temperature=0.,
+    callbacks=[shared_tracker],
+)
+
+llm_gpt5_nano = ChatOpenAI(
+    model = "deepseek/deepseek-v3.2",
+    verbose=True,
+    api_key=gpt_key,
+    base_url= "https://openrouter.ai/api/v1",
+    temperature=0.,
+    callbacks=[shared_tracker],
+)
 
 '''llm_gpt5 = ChatOpenAI(
     model = "openai-gpt-oss-120b",
@@ -39,26 +73,6 @@ llm_gpt5_nano = ChatOpenAI(
     temperature=0.,
     callbacks=[shared_tracker],
 )'''
-
-
-llm_gpt5 = ChatOpenAI(
-    model = "google/gemini-3-flash-preview",
-    verbose=True,
-    api_key=gpt_key,
-    base_url= "https://openrouter.ai/api/v1",
-    temperature=0.,
-    callbacks=[shared_tracker],
-)
-
-llm_gpt5_nano = ChatOpenAI(
-    model = "google/gemini-3-flash-preview",
-    verbose=True,
-    api_key=gpt_key,
-    base_url= "https://openrouter.ai/api/v1",
-    temperature=0.,
-    callbacks=[shared_tracker],
-)
-
 
 '''llm_gpt5 = ChatOpenAI(
     model = "gpt-5.2",

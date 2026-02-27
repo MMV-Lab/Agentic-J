@@ -37,7 +37,6 @@ STATS_LOG_PATH = Path("/app/data/usage_stats.json")
 # Price in USD per 1 000 000 tokens.  Add / update models here.
 PRICE_TABLE: dict[str, tuple[float, float]] = {
     # model-name-substring        input   output
-    "qwen3-235b":                (0.00,   0.00),   # academiccloud – free tier
     "gpt-4o":                    (2.50,  10.00),
     "gpt-4o-mini":               (0.15,   0.60),
     "gpt-4.1":                   (2.00,   8.00),
@@ -50,8 +49,12 @@ PRICE_TABLE: dict[str, tuple[float, float]] = {
     "claude-opus-4.6":           (10.00,  37.50),
     "deepseek-v3.2":             (0.25,   0.40),
     "openai/gpt-5.2":            (1.75,   14.00),
-    "anthropic/claude-haiku-4.5": (1.00,   5.00),
-
+    "anthropic/claude-haiku-4.5":(1.00,   5.00),
+    "openai/gpt-5.3-codex":      (1.75,   14.00),
+    "qwen/qwen3-235b-a22b-2507": (0.071,   0.10),
+    "moonshotai/kimi-k2.5":      (0.45,   2.25),
+    "z-ai/glm-5":                (0.95,   2.55),
+    "mistralai/mistral-small-3.2-24b-instruct": (0.075, 0.2),
 }
 
 def _price_for_model(model_name: str) -> tuple[float, float]:
