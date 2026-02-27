@@ -22,40 +22,42 @@ checkpointer_qa_reporter = MemorySaver()
 
 
 
-llm_gpt5 = ChatOpenAI(
-    model = "qwen3-235b-a22b",
-    verbose=True,
-    api_key=gpt_key,
-    base_url= "https://chat-ai.academiccloud.de/v1",
-    temperature=0.,
-    callbacks=[shared_tracker],
-)
-
-llm_gpt5_nano = ChatOpenAI(
-    model = "qwen3-235b-a22b",
-    verbose=True,
-    api_key=gpt_key,
-    base_url= "https://chat-ai.academiccloud.de/v1",
-    temperature=0.,
-    callbacks=[shared_tracker],
-)
-
-
 '''llm_gpt5 = ChatOpenAI(
-    model = "meta-llama/llama-3.3-70b-instruct:free",
+    model = "openai-gpt-oss-120b",
     verbose=True,
-    api_key="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",
-    base_url= "https://openrouter.ai/api/v1",
+    api_key=gpt_key,
+    base_url= "https://chat-ai.academiccloud.de/v1",
     temperature=0.,
+    callbacks=[shared_tracker],
 )
 
 llm_gpt5_nano = ChatOpenAI(
-    model = "deepseek/deepseek-r1:free",
+    model = "openai-gpt-oss-120b",
     verbose=True,
-    api_key="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",
+    api_key=gpt_key,
+    base_url= "https://chat-ai.academiccloud.de/v1",
+    temperature=0.,
+    callbacks=[shared_tracker],
+)'''
+
+
+llm_gpt5 = ChatOpenAI(
+    model = "google/gemini-3-flash-preview",
+    verbose=True,
+    api_key=gpt_key,
     base_url= "https://openrouter.ai/api/v1",
     temperature=0.,
-)'''
+    callbacks=[shared_tracker],
+)
+
+llm_gpt5_nano = ChatOpenAI(
+    model = "google/gemini-3-flash-preview",
+    verbose=True,
+    api_key=gpt_key,
+    base_url= "https://openrouter.ai/api/v1",
+    temperature=0.,
+    callbacks=[shared_tracker],
+)
 
 
 '''llm_gpt5 = ChatOpenAI(
