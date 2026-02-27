@@ -345,7 +345,7 @@ def setup_analysis_workspace(project_name: str) -> str:
     Initializes directory architecture and logs environment metadata (Fiji & Python versions).
     """
     # 1. Define the base path
-    root = Path(f"/app/data/{project_name}")
+    root = Path(f"/app/data/projects/{project_name}")
     
     # 2. Define the subdirectories
     subdirs = [

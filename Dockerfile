@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxcb-icccm4 libxcb-image0 libxcb-shape0 libxkbcommon-x11-0 \
     libxcb-randr0 libxcb-xfixes0 libxcb-sync1 libxcb-glx0 \
     libegl1 libgl1 libglib2.0-0 libfontconfig1 libdbus-1-3 \
+    x11-xserver-utils\
     # Java AWT / Fiji display
     libxtst6 libxi6 libxrender1 libxt6 libxext6 libx11-6 \
     # OpenGL
