@@ -251,16 +251,27 @@ class ConversationLogger:
         return self._chats_dir / tid / "usage_stats.json"
 
     def set_thread(self, thread_id: str):
-        """Call on every thread switch."""
         self._thread_id = thread_id
         path = self._conv_path()
         if not path.exists():
-            _write_json(path, {
+            self._write_conv({
                 "thread_id": thread_id,
                 "created":   time.strftime("%Y-%m-%dT%H:%M:%S"),
                 "queries":   [],
                 "totals":    {},
             })
+        else:
+            # Restore project path if this conversation had one
+            conv_data = _read_json(path)
+            saved_root = conv_data.get("project_root")
+            if saved_root:
+                root_path = Path(saved_root)
+                if root_path.exists():
+                    self._project_log  = root_path / "logs" / "usage_log.json"
+                    self._project_name = root_path.name
+                    log.debug(f"Restored project log path: {self._project_log}")
+                else:
+                    log.debug(f"Saved project root no longer exists: {saved_root}")
 
     def load_totals(self, thread_id: str) -> dict:
         """Return saved cumulative totals for a thread (empty dict if none)."""
@@ -268,82 +279,44 @@ class ConversationLogger:
         return data.get("totals", {})
 
     def append_query(self, record: QueryRecord, snapshot: dict):
-        """Append one query record and recompute totals."""
         if not self._thread_id:
             return
-        path = self._conv_path()
-        data = _read_json(path)
+        data = _read_json(self._conv_path())
         data.setdefault("queries", []).append(record.to_dict())
-
-        # Recompute totals from ALL stored records (robust, never drifts)
         qs = data["queries"]
         data["totals"] = {
             "query_count":           len(qs),
-            "input_tokens":          sum(q["input_tokens"]          for q in qs),
-            "output_tokens":         sum(q["output_tokens"]         for q in qs),
-            "total_tokens":          sum(q["total_tokens"]          for q in qs),
+            "input_tokens":          sum(q["input_tokens"]           for q in qs),
+            "output_tokens":         sum(q["output_tokens"]          for q in qs),
+            "total_tokens":          sum(q["total_tokens"]           for q in qs),
             "thinking_seconds":      round(sum(q["thinking_seconds"] for q in qs), 2),
             "cost_usd":              round(sum(q["cost_usd"]         for q in qs), 6),
-            "tool_calls":            sum(q["tool_calls"]            for q in qs),
-            "failed_tool_calls":     sum(q["failed_tool_calls"]     for q in qs),
-            "soft_error_tool_calls": sum(q["soft_error_tool_calls"] for q in qs),
+            "tool_calls":            sum(q["tool_calls"]             for q in qs),
+            "failed_tool_calls":     sum(q["failed_tool_calls"]      for q in qs),
+            "soft_error_tool_calls": sum(q["soft_error_tool_calls"]  for q in qs),
         }
-        _write_json(path, data)
-
-        # Mirror to project log if active
-        self._append_to_project(record)
+        self._write_conv(data)  
 
     # ── project log ───────────────────────────────────────────────────────
 
     def set_project_path(self, project_root: Path, project_name: str):
+        if self._project_log is not None:
+            return
         self._project_log  = project_root / "logs" / "usage_log.json"
         self._project_name = project_name
 
-        # Load all queries already recorded in this conversation
-        existing_conv = _read_json(self._conv_path())
-        existing_queries = existing_conv.get("queries", [])
-
-        # Write project log with full history from the start of the conversation
-        data = {
-            "project_name": project_name,
-            "created":      time.strftime("%Y-%m-%dT%H:%M:%S"),
-            "queries":      existing_queries,   # ← backfill
-            "totals":       {},
-        }
-        # Recompute totals over the backfilled queries
-        qs = data["queries"]
-        if qs:
-            data["totals"] = {
-                "query_count":           len(qs),
-                "input_tokens":          sum(q["input_tokens"]           for q in qs),
-                "output_tokens":         sum(q["output_tokens"]          for q in qs),
-                "total_tokens":          sum(q["total_tokens"]           for q in qs),
-                "thinking_seconds":      round(sum(q["thinking_seconds"] for q in qs), 2),
-                "cost_usd":              round(sum(q["cost_usd"]         for q in qs), 6),
-                "tool_calls":            sum(q["tool_calls"]             for q in qs),
-                "failed_tool_calls":     sum(q["failed_tool_calls"]      for q in qs),
-                "soft_error_tool_calls": sum(q["soft_error_tool_calls"]  for q in qs),
-            }
-        _write_json(self._project_log, data)
+        # Persist so it survives restarts
+        conv_data = _read_json(self._conv_path())
+        conv_data["project_root"] = str(project_root)
+        self._write_conv(conv_data)   # also triggers _sync_project
+        log.debug(f"Project log initialised at: {self._project_log}")
 
     def _append_to_project(self, record: QueryRecord):
         if not self._project_log:
             return
-        data = _read_json(self._project_log)
-        data.setdefault("queries", []).append(record.to_dict())
-        qs = data["queries"]
-        data["totals"] = {
-            "query_count":           len(qs),
-            "input_tokens":          sum(q["input_tokens"]          for q in qs),
-            "output_tokens":         sum(q["output_tokens"]         for q in qs),
-            "total_tokens":          sum(q["total_tokens"]          for q in qs),
-            "thinking_seconds":      round(sum(q["thinking_seconds"] for q in qs), 2),
-            "cost_usd":              round(sum(q["cost_usd"]         for q in qs), 6),
-            "tool_calls":            sum(q["tool_calls"]            for q in qs),
-            "failed_tool_calls":     sum(q["failed_tool_calls"]     for q in qs),
-            "soft_error_tool_calls": sum(q["soft_error_tool_calls"] for q in qs),
-        }
-        _write_json(self._project_log, data)
+        # Just mirror the full conversation file — always in sync, no separate logic
+        conv_data = _read_json(self._conv_path())
+        _write_json(self._project_log, conv_data)
 
     # ── export ────────────────────────────────────────────────────────────
 
@@ -355,6 +328,18 @@ class ConversationLogger:
             "conversation":    conv,
             "current_project": project,
         }
+    
+    def _write_conv(self, data: dict):
+        """Write conversation file and immediately mirror to project log if active."""
+        _write_json(self._conv_path(), data)
+        self._sync_project()
+
+    def _sync_project(self):
+        """Copy current conversation file into project folder."""
+        if not self._project_log:
+            return
+        conv_data = _read_json(self._conv_path())
+        _write_json(self._project_log, conv_data)
 
 
 # ---------------------------------------------------------------------------
