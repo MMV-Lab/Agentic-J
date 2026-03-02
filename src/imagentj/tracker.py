@@ -346,6 +346,26 @@ class ConversationLogger:
         conv_data = _read_json(self._conv_path())
         _write_json(self._project_log, conv_data)
 
+    def update_live_totals(self, snapshot: dict):
+        """Update only the totals section of the JSON file in real-time."""
+        if not self._thread_id:
+            return
+            
+        path = self._conv_path()
+        data = _read_json(path)
+        
+        # If the file doesn't exist yet, initialize basic structure
+        if not data:
+            data = {
+                "thread_id": self._thread_id,
+                "created": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                "queries": []
+            }
+            
+        # Update the totals key with the current snapshot
+        data["totals"] = snapshot
+        self._write_conv(data)
+
 
 # ---------------------------------------------------------------------------
 # LangChain callback handler
@@ -481,7 +501,6 @@ class UsageTrackerCallback(BaseCallbackHandler):
                 self._m.output_tokens += added_out
                 self._m.cost_usd      += cost
             self._emit()
-            self._logger._sync_project()
 
     # ── Tool callbacks ─────────────────────────────────────────────────────
 
@@ -508,4 +527,11 @@ class UsageTrackerCallback(BaseCallbackHandler):
         self._emit()
 
     def _emit(self):
-        self._bridge.updated.emit(self._m.snapshot())
+        """Synchronize UI and Disk storage simultaneously."""
+        snapshot = self._m.snapshot()
+        
+        # 1. Update the UI
+        self._bridge.updated.emit(snapshot)
+        
+        # 2. Update the JSON files (Local and Project)
+        self._logger.update_live_totals(snapshot)
