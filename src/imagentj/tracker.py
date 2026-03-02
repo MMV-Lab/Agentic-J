@@ -1,5 +1,5 @@
 """
-usage_tracker.py  –  Per-conversation token, timing, cost & tool-call metrics.
+tracker.py  –  Per-conversation token, timing, cost & tool-call metrics.
 
 Storage layout (mirrors ChatHistoryManager):
     /app/data/chats/<thread_id>/usage_stats.json   ← one file per conversation
@@ -251,7 +251,11 @@ class ConversationLogger:
         return self._chats_dir / tid / "usage_stats.json"
 
     def set_thread(self, thread_id: str):
-        self._thread_id = thread_id
+        # Always reset — prevents bleed between conversations
+        self._project_log  = None
+        self._project_name = ""
+        self._thread_id    = thread_id
+
         path = self._conv_path()
         if not path.exists():
             self._write_conv({
@@ -261,17 +265,18 @@ class ConversationLogger:
                 "totals":    {},
             })
         else:
-            # Restore project path if this conversation had one
-            conv_data = _read_json(path)
+            conv_data  = _read_json(path)
             saved_root = conv_data.get("project_root")
             if saved_root:
                 root_path = Path(saved_root)
                 if root_path.exists():
                     self._project_log  = root_path / "logs" / "usage_log.json"
                     self._project_name = root_path.name
-                    log.debug(f"Restored project log path: {self._project_log}")
+                    log.debug(f"Restored project log: {self._project_log}")
+                    self._sync_project()  # immediate sync on restore
                 else:
-                    log.debug(f"Saved project root no longer exists: {saved_root}")
+                    conv_data.pop("project_root", None)
+                    self._write_conv(conv_data)
 
     def load_totals(self, thread_id: str) -> dict:
         """Return saved cumulative totals for a thread (empty dict if none)."""
@@ -476,6 +481,7 @@ class UsageTrackerCallback(BaseCallbackHandler):
                 self._m.output_tokens += added_out
                 self._m.cost_usd      += cost
             self._emit()
+            self._logger._sync_project()
 
     # ── Tool callbacks ─────────────────────────────────────────────────────
 
