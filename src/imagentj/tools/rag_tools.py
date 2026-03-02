@@ -7,12 +7,20 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
 
-gpt_key = os.getenv("OPENAI_API_KEY")
+open_router_key = os.getenv("OPEN_ROUTER_API_KEY")
 __all__ = ['rag_retrieve_docs', 'rag_retrieve_mistakes', 'save_coding_experience']
 
 
 # Initialize a fast model for expansion
-llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, api_key=gpt_key)
+
+llm = ChatOpenAI(
+    model = "openai/gpt-5-nano",
+    verbose=True,
+    api_key=open_router_key,
+    base_url= "https://openrouter.ai/api/v1",
+    temperature=0.,
+)
+#llm = ChatOpenAI(model="openai/gpt-5-nano", temperature=0, base_url="https://openrouter.ai/api/v1", api_key=open_router_key)
 
 def get_expanded_queries(query: str) -> list[str]:
     """Generates 3-4 variations of the query to improve retrieval."""
@@ -33,8 +41,8 @@ def rag_retrieve_docs(query: str) -> list:
     """
     Retrieve relevant context from the document RAG using Hybrid Search + Query Expansion.
     """
-    if not is_rag_available():
-       return is_rag_available()
+    '''if not is_rag_available():
+       return is_rag_available()'''
 
     from ..rag.RAG import hybrid_search_with_rrf, apply_rrf, DOCS_COLLECTION_NAME
 

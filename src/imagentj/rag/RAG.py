@@ -25,6 +25,7 @@ from langchain_community.document_loaders import TextLoader
 from imagentj.rag.loaders import get_smart_splitter, get_docling_converter, load_and_split_ipynb
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_docling import DoclingLoader
+from langchain_community.embeddings.fastembed import FastEmbedEmbeddings
 from langchain_docling.loader import ExportType
 from config.rag_config import (
     QDRANT_DATA_PATH, DOCS_COLLECTION_NAME, MISTAKES_COLLECTION_NAME,
@@ -32,7 +33,7 @@ from config.rag_config import (
     SKIP_PATTERNS, SUPPORTED_EXTENSIONS
 )
 
-gpt_key = os.getenv("OPENAI_API_KEY")
+#gpt_key = os.getenv("OPENAI_API_KEY")
 
 import hashlib
 
@@ -79,7 +80,7 @@ def get_embeddings_models():
     """
     Returns the initialized dense and sparse embedding models.
     """
-    dense_embeddings = OpenAIEmbeddings(model=EMBEDDING_MODEL, api_key=gpt_key)
+    dense_embeddings = FastEmbedEmbeddings(model_name="BAAI/bge-large-en-v1.5")
     sparse_embeddings = FastEmbedSparse(model_name=SPARSE_MODEL_NAME)
     return dense_embeddings, sparse_embeddings
 
@@ -99,7 +100,7 @@ def init_vector_store(collection_name: str, client: QdrantClient = None):
             collection_name=collection_name,
             vectors_config={
                 DENSE_VECTOR_NAME: models.VectorParams(
-                    size=3072,  # Size for text-embedding-3-large
+                    size=1024,  # Size for text-embedding-3-large
                     distance=models.Distance.COSINE
                 )
             },
