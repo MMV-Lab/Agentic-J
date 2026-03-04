@@ -12,7 +12,7 @@ shared_metrics = UsageMetrics()
 shared_bridge = MetricsSignalBridge()
 shared_tracker = UsageTrackerCallback(shared_metrics, shared_bridge)
 
-gpt_key = os.getenv("OPENAI_API_KEY")
+open_router_key = os.getenv("OPEN_ROUTER_API_KEY")
 
 # Supervisor uses SqliteSaver so chat history survives container restarts.
 # Falls back to MemorySaver if the package is not installed.
@@ -53,18 +53,18 @@ mistralai/mistral-small-3.2-24b-instruct
 """
 
 llm_gpt5 = ChatOpenAI(
-    model = "deepseek/deepseek-v3.2",
+    model = "google/gemini-3-flash-preview",
     verbose=True,
-    api_key=gpt_key,
+    api_key=open_router_key,
     base_url= "https://openrouter.ai/api/v1",
     temperature=0.,
     callbacks=[shared_tracker],
 )
 
 llm_gpt5_nano = ChatOpenAI(
-    model = "deepseek/deepseek-v3.2",
+    model = "google/gemini-3-flash-preview",
     verbose=True,
-    api_key=gpt_key,
+    api_key=open_router_key,
     base_url= "https://openrouter.ai/api/v1",
     temperature=0.,
     callbacks=[shared_tracker],
