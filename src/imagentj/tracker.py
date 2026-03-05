@@ -103,6 +103,13 @@ class QueryRecord:
     tool_calls:            int   = 0
     failed_tool_calls:     int   = 0
     soft_error_tool_calls: int   = 0
+    # ── new ──────────────────────────────────────────────────────────────
+    model_breakdown: dict = field(default_factory=dict)
+    # e.g. {"google/gemini-3-pro-preview": {"input": 70000, "output": 2000, "cost": 0.148},
+    #        "anthropic/claude-haiku-4.5":  {"input":  4598, "output":  366, "cost": 0.007}}
+    tool_call_log: list = field(default_factory=list)
+    # e.g. [{"tool": "imagej_coder", "status": "ok"},
+    #        {"tool": "execute_script", "status": "soft_error"}]
 
     def to_dict(self) -> dict:
         return {
@@ -118,8 +125,9 @@ class QueryRecord:
             "tool_calls":            self.tool_calls,
             "failed_tool_calls":     self.failed_tool_calls,
             "soft_error_tool_calls": self.soft_error_tool_calls,
+            "model_breakdown":       self.model_breakdown,   # ← new
+            "tool_call_log":         self.tool_call_log,     # ← new
         }
-
 
 # ---------------------------------------------------------------------------
 # Cumulative metrics — always reflects the CURRENT conversation
@@ -382,18 +390,23 @@ class UsageTrackerCallback(BaseCallbackHandler):
     """
     raise_error = False
 
-    def __init__(self, metrics: UsageMetrics, bridge: MetricsSignalBridge,
-                 logger: ConversationLogger | None = None):
+    def __init__(self, metrics, bridge, logger=None):
         super().__init__()
         self._m      = metrics
         self._bridge = bridge
         self._logger = logger or ConversationLogger()
 
-        # per-query state
-        self._thread_id:  str  = ""
-        self._prompt:     str  = ""
-        self._q_start:    dict = {}
-        self._model_seen: str  = ""
+        self._thread_id  = ""
+        self._prompt     = ""
+        self._q_start    = {}
+        self._model_seen = ""
+        self._run_models: dict[str, str] = {}   # run_id → model name
+
+        # ── new: per-query accumulators ───────────────────────────────────
+        self._q_model_breakdown: dict[str, dict] = {}
+        # {"model_name": {"input": int, "output": int, "cost": float}}
+        self._q_tool_log: list[dict] = []
+        # [{"tool": str, "status": "ok"|"error"|"soft_error"}]
 
     def notify_workspace_created(self, output_str: str):
         """Called by the GUI from handle_event when setup_analysis_workspace completes."""
@@ -431,6 +444,9 @@ class UsageTrackerCallback(BaseCallbackHandler):
             "soft":   self._m.soft_error_tool_calls,
             "cost":   self._m.cost_usd,
         }
+        # reset per-query accumulators
+        self._q_model_breakdown = {}
+        self._q_tool_log        = []
         self._m.start_thinking()
 
     def finish_query(self):
@@ -453,6 +469,9 @@ class UsageTrackerCallback(BaseCallbackHandler):
             tool_calls            = snap["tool_calls"]            - s["tools"],
             failed_tool_calls     = snap["failed_tool_calls"]     - s["failed"],
             soft_error_tool_calls = snap["soft_error_tool_calls"] - s["soft"],
+            # ── new ────────────────────────────────────────────────────────
+            model_breakdown       = self._q_model_breakdown,
+            tool_call_log         = self._q_tool_log,
         )
         self._logger.append_query(record, snap)
 
@@ -462,24 +481,27 @@ class UsageTrackerCallback(BaseCallbackHandler):
     # ── LLM callbacks ─────────────────────────────────────────────────────
 
     def on_llm_start(self, serialized: dict, prompts: list, **kwargs):
-        # Try every known location providers use for the model name
-        kw    = serialized.get("kwargs") or {}
-        model = (kw.get("model_name") or kw.get("model") or
-                 serialized.get("name") or "")
+        run_id = str(kwargs.get("run_id", ""))
+        kw     = serialized.get("kwargs") or {}
+        model  = (kw.get("model_name") or kw.get("model") or
+                  serialized.get("name") or "")
         if model:
             self._model_seen = model
+            if run_id:
+                self._run_models[run_id] = model
 
-    def on_llm_end(self, response: LLMResult, **kwargs: Any) -> None:
+    def on_llm_end(self, response: LLMResult, **kwargs):
+        run_id = str(kwargs.get("run_id", ""))
+        model  = self._run_models.pop(run_id, self._model_seen)
+
         added_in = added_out = 0
 
-        # Strategy 1: llm_output dict (OpenAI classic)
         usage = (response.llm_output or {}).get("token_usage") or \
                 (response.llm_output or {}).get("usage")
         if isinstance(usage, dict):
             added_in  = usage.get("prompt_tokens",     0)
             added_out = usage.get("completion_tokens", 0)
 
-        # Strategy 2: usage_metadata on AIMessage (LangChain ≥ 0.2)
         if not (added_in or added_out):
             for gen_list in response.generations:
                 for gen in gen_list:
@@ -488,7 +510,6 @@ class UsageTrackerCallback(BaseCallbackHandler):
                         added_in  += meta.get("input_tokens",  0)
                         added_out += meta.get("output_tokens", 0)
 
-        # Strategy 3: response_metadata (some providers, e.g. Gemini via OpenRouter)
         if not (added_in or added_out):
             for gen_list in response.generations:
                 for gen in gen_list:
@@ -498,36 +519,56 @@ class UsageTrackerCallback(BaseCallbackHandler):
                     added_out += tok.get("completion_tokens", tok.get("output_tokens", 0))
 
         if added_in or added_out:
-            p_in, p_out = _price_for_model(self._model_seen)
+            p_in, p_out = _price_for_model(model)
             cost = (added_in * p_in + added_out * p_out) / 1_000_000
+
             with self._m._lock:
                 self._m.input_tokens  += added_in
                 self._m.output_tokens += added_out
                 self._m.cost_usd      += cost
+
+            # ── accumulate into per-query model breakdown ─────────────────
+            entry = self._q_model_breakdown.setdefault(
+                model, {"input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0}
+            )
+            entry["input_tokens"]  += added_in
+            entry["output_tokens"] += added_out
+            entry["cost_usd"]       = round(entry["cost_usd"] + cost, 6)
+
             self._emit()
 
     # ── Tool callbacks ─────────────────────────────────────────────────────
 
-    def on_tool_start(self, serialized: dict, input_str: str, **kwargs: Any):
+    def on_tool_start(self, serialized: dict, input_str: str, **kwargs):
+        tool_name = (serialized or {}).get("name", "unknown")
         with self._m._lock:
             self._m.tool_calls += 1
+        # log the tool call — status filled in by on_tool_end / on_tool_error
+        self._q_tool_log.append({"tool": tool_name, "status": "ok"})
         self._emit()
 
-    def on_tool_end(self, output: Any, **kwargs: Any):
+    def on_tool_end(self, output: Any, **kwargs):
         tool_name  = (
             kwargs.get("name") or kwargs.get("tool") or
             (kwargs.get("serialized") or {}).get("name") or ""
         )
         output_str = str(output)
-        # soft errors only — workspace detection moved to GUI handle_event
+
         if tool_name in _EXECUTION_TOOLS and _SOFT_ERROR_RE.search(output_str):
             with self._m._lock:
                 self._m.soft_error_tool_calls += 1
+            # update status on the last matching tool log entry
+            for entry in reversed(self._q_tool_log):
+                if entry["tool"] == tool_name and entry["status"] == "ok":
+                    entry["status"] = "soft_error"
+                    break
             self._emit()
 
-    def on_tool_error(self, error: Union[Exception, KeyboardInterrupt], **kwargs: Any):
+    def on_tool_error(self, error, **kwargs):
         with self._m._lock:
             self._m.failed_tool_calls += 1
+        if self._q_tool_log:
+            self._q_tool_log[-1]["status"] = "error"
         self._emit()
 
     def _emit(self):
