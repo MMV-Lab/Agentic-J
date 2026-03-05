@@ -7,6 +7,7 @@ from .prompts import imagej_coder_prompt, imagej_debugger_prompt, supervisor_pro
 from .tools import internet_search, inspect_all_ui_windows, run_script_safe, rag_retrieve_docs, inspect_java_class, save_coding_experience, rag_retrieve_mistakes, save_reusable_script, inspect_folder_tree, smart_file_reader, run_python_code, inspect_csv_header, extract_image_metadata, search_fiji_plugins, install_fiji_plugin, check_plugin_installed, mkdir_copy, save_script, execute_script, get_script_info
 from .tools import load_script, get_script_history, setup_analysis_workspace, save_markdown
 from imagentj.tracker import UsageMetrics, MetricsSignalBridge, UsageTrackerCallback
+from langchain.agents.middleware import SummarizationMiddleware, ContextEditingMiddleware, ClearToolUsesEdit
 
 shared_metrics = UsageMetrics()
 shared_bridge = MetricsSignalBridge()
@@ -114,7 +115,15 @@ imagej_coder = {
                     It must ALWAYS report the absolute path of the saved script as its final output.""",
 
     "system_prompt": imagej_coder_prompt,
-    "middleware":[],
+    "middleware":[ContextEditingMiddleware(
+                 edits=[
+                ClearToolUsesEdit(
+                    trigger=50000,
+                    keep=10,
+                    clear_tool_inputs=False,
+                    exclude_tools=[],
+                    placeholder="[cleared]",
+                ),],)],
     "tools": [internet_search, inspect_java_class, save_script, load_script, get_script_history],
     "model":llm_worker,
     "checkpointer":checkpointer_imagej_coder,
@@ -134,7 +143,15 @@ imagej_debugger = {
     "system_prompt": imagej_debugger_prompt,
     "tools": [internet_search, inspect_java_class, rag_retrieve_mistakes, save_script, load_script, get_script_history, get_script_info],
     "model":llm_worker,
-    "middleware":[],
+    "middleware":[ContextEditingMiddleware(
+                 edits=[
+                ClearToolUsesEdit(
+                    trigger=50000,
+                    keep=10,
+                    clear_tool_inputs=False,
+                    exclude_tools=[],
+                    placeholder="[cleared]",
+                ),],)],
     "checkpointer":checkpointer_imagej_debugger,
 }   
 
@@ -202,7 +219,21 @@ def init_agent():
     tools = [internet_search, inspect_all_ui_windows, rag_retrieve_docs, save_coding_experience, rag_retrieve_mistakes, save_reusable_script, inspect_folder_tree, smart_file_reader, extract_image_metadata, search_fiji_plugins, install_fiji_plugin, check_plugin_installed, mkdir_copy, inspect_csv_header, execute_script, get_script_info, setup_analysis_workspace, save_markdown],
     system_prompt=supervisor_prompt,
     subagents=[imagej_coder, imagej_debugger, python_data_analyst], #, qa_reporter],
-    middleware=[],
+    middleware=[SummarizationMiddleware(
+                model=llm_nano,
+                trigger=("tokens", 50000),
+                keep=("messages", 20),
+                ),
+                ContextEditingMiddleware(
+                 edits=[
+                ClearToolUsesEdit(
+                    trigger=50000,
+                    keep=10,
+                    clear_tool_inputs=False,
+                    exclude_tools=[],
+                    placeholder="[cleared]",
+                ),],)
+                ],
     model=llm_supervisor,
     debug=False,
     backend=fs_backend,
