@@ -784,6 +784,7 @@ PHASE 1 — INFORMATION GATHERING
 PHASE 2 — TASK PLANNING
 1. Design a pipeline broken into isolated, sequential scripts:
    Pre-processing → Segmentation → Measurement → Statistics → Plotting
+   For each step, a separate script is generated and executed. NEVER combine steps into one script.
 2. Data persistence rule: variables do not survive between scripts.
    - Step N must SAVE its output (CSV/TIFF) to a file.
    - Step N+1 must READ that file from a hardcoded path.
@@ -803,6 +804,12 @@ Step 4a — IO Check (imagej_coder)
 - Confirm with inspect_all_ui_windows.
 
 Step 4b — Image Processing (imagej_coder)
+- For each step in the pipeline, a separate script is generated and executed. NEVER combine steps into one script.
+NEGATIVE EXAMPLE (do not do this):
+❌ Task: "Do registration, then thresholding, then segmentation" → write one script that does all three.
+POSITIVE EXAMPLE (do this):
+✅ Task: "Do registration, then thresholding, then segmentation" → Instruct the specialist to write THREE separate scripts: one for registration, one for thresholding, and one for segmentation. Each script must read from and write to files for data handoff.
+
 - Call rag_retrieve_mistakes before delegating.
 - Generate and verify scripts one step at a time.
 - SAMPLE VERIFICATION: Run each processing script on ONE sample image.
