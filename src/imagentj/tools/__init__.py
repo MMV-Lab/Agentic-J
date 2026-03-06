@@ -9,7 +9,7 @@ from .script_tools import run_script_safe, save_script, execute_script, get_scri
 from .imagej_tools import ask_user, load_image_ij, inspect_all_ui_windows, extract_image_metadata
 from .general_tools import internet_search, inspect_java_class
 from .analyst_tools import run_python_code, inspect_csv_header
-from .plugin_tools import search_fiji_plugins, install_fiji_plugin, check_plugin_installed
+from .plugin_tools import search_fiji_plugins, install_fiji_plugin, check_plugin_installed, get_plugin_docs
 from .middleware import SafeToolLoggerMiddleware, TodoDisplayMiddleware
 
 # Lazy accessors for vector stores (RAG is optional)
@@ -20,7 +20,7 @@ __all__ = [
     'rag_retrieve_docs', 'rag_retrieve_mistakes', 'save_coding_experience',
     'run_script_safe', 'ask_user', 'load_image_ij', 'inspect_all_ui_windows', 'extract_image_metadata',
     'internet_search', 'inspect_java_class',
-    'search_fiji_plugins', 'install_fiji_plugin', 'check_plugin_installed',
+    'search_fiji_plugins', 'install_fiji_plugin', 'check_plugin_installed', 'get_plugin_docs',
     'SafeToolLoggerMiddleware', 'TodoDisplayMiddleware',
     'get_vec_store_docs', 'get_vec_store_mistakes', 'is_rag_available', 'is_plugin_db_available',
     'run_python_code', 'inspect_csv_header', 'mkdir_copy','save_script', 'execute_script', 'get_script_info', 'load_script', 'get_script_history',

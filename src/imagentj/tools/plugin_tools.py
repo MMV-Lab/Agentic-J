@@ -1,13 +1,22 @@
 import json
+import re
+import os
 import subprocess
 from pathlib import Path
 from langchain.tools import tool
+from langchain_openai import ChatOpenAI
 from .vector_stores import is_plugin_db_available
 from .rag_tools import get_expanded_queries
 from config.rag_config import QDRANT_DATA_PATH, PLUGINS_COLLECTION_NAME
 from config.imagej_config import FIJI_JAVA_HOME
 
-__all__ = ['search_fiji_plugins', 'install_fiji_plugin', 'check_plugin_installed']
+__all__ = ['search_fiji_plugins', 'install_fiji_plugin', 'check_plugin_installed', 'get_plugin_docs']
+
+_gpt_key = os.getenv("OPENAI_API_KEY")
+_llm = ChatOpenAI(model="gpt-5.2", temperature=0, api_key=_gpt_key, model_kwargs={"response_format": {"type": "json_object"}})
+
+# Simple in-session cache so repeated calls for the same plugin don't re-fetch
+_docs_cache: dict = {}
 
 PLUGIN_REGISTRY_PATH = Path(__file__).resolve().parent.parent / "rag" / "plugin_registry.json"
 
@@ -231,3 +240,127 @@ def check_plugin_installed(plugin_name: str) -> dict:
             "found_files": [],
             "message": f"Plugin '{plugin_name}' does not appear to be installed."
         }
+
+
+_GET_PLUGIN_DOCS_SYSTEM = """You are an ImageJ/Fiji expert analysing plugin documentation.
+
+You will receive the text content of a plugin's documentation page and optionally
+screenshots of its dialogs and UI. Your job is to extract structured usage guidance
+so that an agent can either write correct Groovy code or give a user precise GUI
+instructions with correct parameter values.
+
+Pay special attention to any screenshots — these often contain the most accurate
+parameter names, dropdown options, and default values that do not appear in the text.
+For each dialog screenshot, extract every visible label, input field, checkbox,
+dropdown, and slider.
+
+Return a single JSON object with these fields (null if genuinely unknown):
+
+- interaction_mode : "scripted" | "guided" | null
+    scripted  = plugin can be fully driven via IJ.run() or a script API
+    guided    = plugin requires GUI interaction (wizard, manual steps)
+    null      = cannot determine from the documentation
+
+- menu_path : exact Fiji menu path to open the plugin, e.g. "Plugins > StarDist > StarDist 2D"
+
+- run_command : the string passed to IJ.run() for scripted plugins, e.g. "StarDist 2D"
+
+- parameters : list of parameter objects, each with:
+    { "name": str, "type": "dropdown"|"checkbox"|"number"|"text"|"slider",
+      "default": str|null, "options": [str]|null, "description": str }
+  Include ALL parameters visible in dialog screenshots.
+
+- gui_steps : list of plain-language steps for guided mode, e.g.:
+    ["Open your image", "Go to Plugins > X", "Set threshold to 0.5", "Click OK"]
+
+- scripting_notes : important notes for writing correct Groovy/macro code,
+    e.g. model file requirements, output variable names, known API quirks.
+
+- caveats : anything the user must know before running the plugin,
+    e.g. "requires GPU", "image must be 8-bit", "restart required after install".
+"""
+
+
+@tool("get_plugin_docs")
+def get_plugin_docs(plugin_name: str) -> dict:
+    """
+    Fetch and parse the documentation for a specific Fiji plugin on demand.
+
+    Returns structured usage guidance: interaction mode (scripted/guided/null),
+    menu path, parameters with types and default values, GUI steps, scripting notes,
+    and caveats. Uses vision on dialog screenshots when available.
+
+    Call this after search_fiji_plugins selects a plugin and BEFORE delegating to
+    imagej_coder or presenting instructions to the user.
+    """
+    if plugin_name in _docs_cache:
+        return _docs_cache[plugin_name]
+
+    # Look up registry entry
+    plugins = _load_plugin_registry()
+    entry = next((p for p in plugins if p["name"].lower() == plugin_name.lower()), None)
+    if entry is None:
+        return {"error": f"Plugin '{plugin_name}' not found in registry."}
+
+    doc_url = entry.get("documentation_url")
+    if not doc_url:
+        return {
+            "error": "No documentation URL available for this plugin.",
+            "interaction_mode": None,
+            "menu_path": None,
+            "run_command": None,
+            "parameters": [],
+            "gui_steps": [],
+            "scripting_notes": None,
+            "caveats": None,
+        }
+
+    # Fetch content via doc_fetcher
+    try:
+        from ..rag.doc_fetcher import fetch_content
+    except ImportError:
+        from imagentj.rag.doc_fetcher import fetch_content
+
+    print(f"[get_plugin_docs] Fetching docs for '{plugin_name}' from {doc_url}")
+    doc = fetch_content(doc_url)
+    if doc is None:
+        return {"error": f"Could not fetch documentation from {doc_url}"}
+
+    # Build the user message — text + all available images
+    MAX_TEXT = 32000
+    text_block = (
+        f"Plugin: {plugin_name}\n\n"
+        f"Registry description: {entry.get('description', '')}\n\n"
+        f"Documentation content:\n{doc.text[:MAX_TEXT]}"
+    )
+
+    content_parts = [{"type": "text", "text": text_block}]
+    for img_url in doc.image_urls:
+        content_parts.append({
+            "type": "image_url",
+            "image_url": {"url": img_url, "detail": "high"},
+        })
+
+    if doc.image_urls:
+        print(f"[get_plugin_docs] Sending {len(doc.image_urls)} image(s) to vision LLM")
+
+    # Call vision-capable LLM
+    from langchain_core.messages import HumanMessage, SystemMessage
+    try:
+        response = _llm.invoke([
+            SystemMessage(content=_GET_PLUGIN_DOCS_SYSTEM),
+            HumanMessage(content=content_parts),
+        ])
+        raw = response.content.strip()
+        # Strip markdown code fences if model wrapped the JSON
+        if raw.startswith("```"):
+            raw = re.sub(r"^```(?:json)?\n?", "", raw).rstrip("` \n")
+        result = json.loads(raw)
+    except json.JSONDecodeError:
+        # Model returned prose instead of JSON — extract what we can
+        result = {"raw_response": response.content, "interaction_mode": None}
+    except Exception as e:
+        return {"error": f"LLM call failed: {e}"}
+
+    _docs_cache[plugin_name] = result
+    return result
