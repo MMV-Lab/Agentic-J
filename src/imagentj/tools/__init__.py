@@ -10,6 +10,7 @@ from .imagej_tools import ask_user, load_image_ij, inspect_all_ui_windows, extra
 from .general_tools import internet_search, inspect_java_class
 from .analyst_tools import run_python_code, inspect_csv_header
 from .plugin_tools import search_fiji_plugins, install_fiji_plugin, check_plugin_installed
+from .tools_plugin_research import create_plugin_test_script, list_plugin_skill_folder, read_plugin_skill_file, save_plugin_skill_file, fetch_github_file, fetch_github_plugin_info, search_imagej_wiki, fetch_plugin_docs_url
 from .middleware import SafeToolLoggerMiddleware, TodoDisplayMiddleware
 
 # Lazy accessors for vector stores (RAG is optional)
@@ -24,5 +25,6 @@ __all__ = [
     'SafeToolLoggerMiddleware', 'TodoDisplayMiddleware',
     'get_vec_store_docs', 'get_vec_store_mistakes', 'is_rag_available', 'is_plugin_db_available',
     'run_python_code', 'inspect_csv_header', 'mkdir_copy','save_script', 'execute_script', 'get_script_info', 'load_script', 'get_script_history',
-    'setup_analysis_workspace', 'save_markdown'
+    'setup_analysis_workspace', 'save_markdown',
+    'create_plugin_test_script', 'list_plugin_skill_folder', 'read_plugin_skill_file', 'save_plugin_skill_file', 'fetch_github_file', 'fetch_github_plugin_info', 'search_imagej_wiki', 'fetch_plugin_docs_url',
 ]
