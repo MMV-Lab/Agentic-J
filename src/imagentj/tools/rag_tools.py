@@ -7,29 +7,32 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
 
-open_router_key = os.getenv("OPEN_ROUTER_API_KEY")
 __all__ = ['rag_retrieve_docs', 'rag_retrieve_mistakes', 'save_coding_experience']
+
+openrouter_key = os.getenv("OPEN_ROUTER_API_KEY")
 
 
 # Initialize a fast model for expansion
 
-llm = ChatOpenAI(
-    model = "openai/gpt-5-nano",
-    verbose=True,
-    api_key=open_router_key,
-    base_url= "https://openrouter.ai/api/v1",
-    temperature=0.,
-)
-#llm = ChatOpenAI(model="openai/gpt-5-nano", temperature=0, base_url="https://openrouter.ai/api/v1", api_key=open_router_key)
 
 def get_expanded_queries(query: str) -> list[str]:
+    from ..agents import shared_tracker
+    llm_nano = ChatOpenAI(
+    model="openai/gpt-4o-mini",
+    api_key=openrouter_key,
+    base_url="https://openrouter.ai/api/v1",
+    temperature=0.,
+    verbose=True,
+    callbacks=[shared_tracker],
+)
+
     """Generates 3-4 variations of the query to improve retrieval."""
     prompt = ChatPromptTemplate.from_template(
         "You are an ImageJ/Fiji expert. Generate 3 search query variations for: {question}\n"
         "Focus on technical API terms, alternative function names, and common library methods.\n"
         "Output only the queries, one per line."
     )
-    chain = prompt | llm | StrOutputParser()
+    chain = prompt | llm_nano | StrOutputParser()
     variants = chain.invoke({"question": query}).strip().split("\n")
     # Clean and return unique queries including the original
     return list(set([query] + [v.strip("- ").strip() for v in variants]))
@@ -41,8 +44,8 @@ def rag_retrieve_docs(query: str) -> list:
     """
     Retrieve relevant context from the document RAG using Hybrid Search + Query Expansion.
     """
-    '''if not is_rag_available():
-       return is_rag_available()'''
+    if not is_rag_available():
+       return is_rag_available()
 
     from ..rag.RAG import hybrid_search_with_rrf, apply_rrf, DOCS_COLLECTION_NAME
 
