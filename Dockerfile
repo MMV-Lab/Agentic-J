@@ -58,9 +58,11 @@ COPY . /app
 # Use keys_template.py as keys.py (keys.py is .dockerignored since it has real secrets)
 RUN cp /app/src/config/keys_template.py /app/src/config/keys.py
 
-# Ensure the app user owns everything it needs to write to
+# Ensure the app user owns everything it needs to write to,
+# and has write permission (Fiji zip may contain read-only files like config/fiji.py)
 RUN chown -R imagentj:imagentj /app /home/imagentj \
-    && chown -R imagentj:imagentj /opt/Fiji.app
+    && chown -R imagentj:imagentj /opt/Fiji.app \
+    && chmod -R u+w /opt/Fiji.app
 
 # ── Environment defaults ─────────────────────────────────────────────────────
 ENV DISPLAY=:1
@@ -73,6 +75,13 @@ COPY docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
 
 EXPOSE 6080
+
+# ── Pre-install TensorFlow for CSBDeep/StarDist ───────────────────────────────
+# Runs headlessly during build so TF native libs land in lib/linux64/ (not a
+# volume mount, so this layer is always present without a manual update step)
+# RUN /opt/Fiji.app/fiji-linux-x64 \
+#         --update add-update-site TensorFlow https://sites.imagej.net/TensorFlow/ \
+#     && /opt/Fiji.app/fiji-linux-x64 --update update || true
 
 USER imagentj
 

@@ -6,6 +6,23 @@ set -e
 rm -f /tmp/.X1-lock
 rm -f /tmp/.X11-unix/X1
 
+# ── Fix CSBDeep/StarDist protobuf JAR conflict ───────────────────────────────
+# CSBDeep's TensorFlow 1.x bindings require protobuf-java-3.6.x.
+# The makeExtensionsImmutable() NoSuchMethodError is caused by a newer protobuf
+# JAR shadowing the version TF was compiled against. Replace it at startup since
+# fiji_jars is a named volume that survives image rebuilds.
+FIJI_JARS=/opt/Fiji.app/jars
+REQUIRED_PROTOBUF="protobuf-java-3.6.1.jar"
+if [ ! -f "$FIJI_JARS/$REQUIRED_PROTOBUF" ]; then
+    echo "[entrypoint] Fixing protobuf JAR for CSBDeep/StarDist compatibility..."
+    # Remove any protobuf JAR that would conflict
+    rm -f "$FIJI_JARS"/protobuf-java-*.jar
+    wget -q "https://repo1.maven.org/maven2/com/google/protobuf/protobuf-java/3.6.1/protobuf-java-3.6.1.jar" \
+         -O "$FIJI_JARS/$REQUIRED_PROTOBUF" \
+    && echo "[entrypoint] protobuf-java-3.6.1.jar installed" \
+    || echo "[entrypoint] WARNING: failed to download protobuf JAR — StarDist may not work"
+fi
+
 # ── Apply pending Fiji updates ───────────────────────────────────────────────
 # Fiji stages updates in /opt/Fiji.app/update/ - move them to their destinations
 FIJI_HOME=/opt/Fiji.app
@@ -27,6 +44,10 @@ if [ -d "$FIJI_HOME/update" ] && [ "$(ls -A $FIJI_HOME/update 2>/dev/null)" ]; t
     if [ -d "$FIJI_HOME/update/scripts" ]; then
         cp -rv "$FIJI_HOME/update/scripts/"* "$FIJI_HOME/scripts/" 2>/dev/null || true
     fi
+    # Copy native libraries (e.g. TensorFlow .so files for CSBDeep/StarDist)
+    # if [ -d "$FIJI_HOME/update/lib" ]; then
+    #     cp -rv "$FIJI_HOME/update/lib/"* "$FIJI_HOME/lib/" 2>/dev/null || true
+    # fi
     # Clean up update directory after applying
     rm -rf "$FIJI_HOME/update/"*
     echo "[entrypoint] Updates applied successfully"
