@@ -711,7 +711,46 @@ imagej_debugger_prompt = """
       You are a conservative, surgical debugger. Output the code, the PATH, and the LESSON.
 """
 
+pluginstuff = """
 
+PHASE 0 — PLUGIN SKILL CHECK  (run before Phase 1 for any plugin-heavy task)
+1. For each plugin the user mentions:
+   a. Check if /app/skills/plugins/{plugin_name}/SKILL.md already exists
+      using inspect_folder_tree("/app/skills/plugins/").
+   b. If the skill file EXISTS → read it with smart_file_reader 
+      Then if applicable read the other related files (OVERVIEW, UI_GUIDE, GROOVY_API, GROOVY_WORKFLOW) and relay the relevant information
+      to imagej_coder. Include the SKILL.md path in the coder task context.
+   c. If the skill file DOES NOT EXIST → call plugin_skill_builder first.
+      Only proceed to Phase 1 after plugin_skill_builder returns with
+      groovy_test_success=True.
+2. Never ask the user whether to build a skill file — build it automatically.
+
+- plugin_skill_builder: Research a plugin end-to-end and produce a verified skill folder
+  (OVERVIEW, UI_GUIDE, GROOVY_API, GROOVY_WORKFLOW, SKILL.md).
+  Returns PluginSkillHandoff with skill_folder_path and validation flags.
+
+  WHEN TO CALL:
+  • User wants to use a plugin you have little knowledge about.
+  • imagej_coder returns hallucinated or failing IJ.run() commands for a plugin.
+  • User asks "how do I use [PluginName]?" and you have no skill file for it.
+  • After install_fiji_plugin succeeds for a new plugin.
+
+  HOW TO CALL:
+    plugin_skill_builder(
+        plugin_name   = "TrackMate",
+        github_url    = "https://github.com/fiji/TrackMate",   # optional
+        docs_url      = "https://imagej.net/plugins/trackmate", # optional
+        test_image_path = "/app/data/projects/proj/raw_images/sample.tif", # optional
+    )
+
+  AFTER IT RETURNS:
+  1. Check groovy_test_success — if False, relay error_message to the user.
+  2. Check ui_workflow_verified — if False, ask the user to follow the UI checklist.
+  3. When both are True, relay summary to the user.
+  4. For all future imagej_coder calls involving this plugin, prepend the task with:
+       "SKILL FILE: /app/skills/plugins/{plugin_name}/SKILL.md — read it first."
+
+"""
                    
 
 supervisor_prompt  = """
@@ -739,30 +778,6 @@ SPECIALIST TOOLS
 - imagej_debugger: Repairs failing Groovy scripts. Requires: faulty script path + error message.
 - python_data_analyst: Performs biological statistics (Stage 1) and publication-quality plotting (Stage 2). Reads CSVs; saves results and figures. Returns absolute path to saved script.
 - qa_reporter: Audits the completed project folder and generates QA_Checklist_Report.md. Called once at project end.
-- plugin_skill_builder: Research a plugin end-to-end and produce a verified skill folder
-  (OVERVIEW, UI_GUIDE, GROOVY_API, GROOVY_WORKFLOW, SKILL.md).
-  Returns PluginSkillHandoff with skill_folder_path and validation flags.
-
-  WHEN TO CALL:
-  • User wants to use a plugin you have little knowledge about.
-  • imagej_coder returns hallucinated or failing IJ.run() commands for a plugin.
-  • User asks "how do I use [PluginName]?" and you have no skill file for it.
-  • After install_fiji_plugin succeeds for a new plugin.
-
-  HOW TO CALL:
-    plugin_skill_builder(
-        plugin_name   = "TrackMate",
-        github_url    = "https://github.com/fiji/TrackMate",   # optional
-        docs_url      = "https://imagej.net/plugins/trackmate", # optional
-        test_image_path = "/app/data/projects/proj/raw_images/sample.tif", # optional
-    )
-
-  AFTER IT RETURNS:
-  1. Check groovy_test_success — if False, relay error_message to the user.
-  2. Check ui_workflow_verified — if False, ask the user to follow the UI checklist.
-  3. When both are True, relay summary to the user.
-  4. For all future imagej_coder calls involving this plugin, prepend the task with:
-       "SKILL FILE: /app/skills/plugins/{plugin_name}/SKILL.md — read it first."
 
 
 ────────────────────────────────────────
@@ -797,17 +812,6 @@ PLUGIN WORKFLOW
 PIPELINE (MANDATORY — follow phases in order)
 ────────────────────────────────────────
 
-PHASE 0 — PLUGIN SKILL CHECK  (run before Phase 1 for any plugin-heavy task)
-1. For each plugin the user mentions:
-   a. Check if /app/skills/plugins/{plugin_name}/SKILL.md already exists
-      using inspect_folder_tree("/app/skills/plugins/").
-   b. If the skill file EXISTS → read it with smart_file_reader 
-      Then if applicable read the other related files (OVERVIEW, UI_GUIDE, GROOVY_API, GROOVY_WORKFLOW) and relay the relevant information
-      to imagej_coder. Include the SKILL.md path in the coder task context.
-   c. If the skill file DOES NOT EXIST → call plugin_skill_builder first.
-      Only proceed to Phase 1 after plugin_skill_builder returns with
-      groovy_test_success=True.
-2. Never ask the user whether to build a skill file — build it automatically.
 
 
 PHASE 1 — INFORMATION GATHERING
