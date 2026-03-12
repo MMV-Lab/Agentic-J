@@ -23,6 +23,37 @@ if [ ! -f "$FIJI_JARS/$REQUIRED_PROTOBUF" ]; then
     || echo "[entrypoint] WARNING: failed to download protobuf JAR — StarDist may not work"
 fi
 
+# ── Remove duplicate JAR versions from fiji_jars ─────────────────────────────
+# Fiji's updater throws "multiple existing versions" critical errors when both
+# old and new versions of the same JAR coexist (e.g. imglib2-7.0.0.jar AND
+# imglib2-7.1.4.jar). This happens because the fiji_jars named volume persists
+# across rebuilds while agent-installed plugins pull in newer dependency versions.
+echo "[entrypoint] Deduplicating JAR versions in fiji_jars..."
+python3 -c "
+import re
+from pathlib import Path
+from collections import defaultdict
+
+jars_dir = Path('/opt/Fiji.app/jars')
+groups = defaultdict(list)
+
+for jar in jars_dir.glob('*.jar'):
+    m = re.match(r'^(.+?)-(\d.*)\.jar$', jar.name)
+    if m:
+        groups[m.group(1)].append(jar)
+
+removed = 0
+for base, jars in groups.items():
+    if len(jars) > 1:
+        jars_sorted = sorted(jars, key=lambda j: j.name)
+        for old in jars_sorted[:-1]:
+            print(f'[entrypoint] Removing older duplicate: {old.name}  (keeping {jars_sorted[-1].name})')
+            old.unlink()
+            removed += 1
+
+print(f'[entrypoint] Removed {removed} duplicate JAR(s)') if removed else print('[entrypoint] No duplicate JARs found')
+" 2>&1 || echo "[entrypoint] WARNING: JAR deduplication skipped"
+
 # ── Apply pending Fiji updates ───────────────────────────────────────────────
 # Fiji stages updates in /opt/Fiji.app/update/ - move them to their destinations
 FIJI_HOME=/opt/Fiji.app
