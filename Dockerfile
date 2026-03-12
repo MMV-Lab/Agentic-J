@@ -48,6 +48,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && fc-cache -f -v
 
+# ── noVNC: default to scale-to-fit + autoconnect ────────────────────────────
+# Overwrites the noVNC landing page so the browser viewport is always filled
+# without the user needing to set options manually.
+RUN printf '<!DOCTYPE html>\n<html>\n<head>\n  <meta charset="utf-8">\n  <meta http-equiv="refresh" content="0; url=vnc.html?resize=scale&autoconnect=true">\n</head>\n<body></body>\n</html>\n' \
+    > /usr/share/novnc/index.html
+
 # ── Non-root user ─────────────────────────────────────────────────────────────
 RUN groupadd -r imagentj && useradd -r -g imagentj -m -d /home/imagentj -s /bin/bash imagentj
 
@@ -79,9 +85,9 @@ EXPOSE 6080
 # ── Pre-install TensorFlow for CSBDeep/StarDist ───────────────────────────────
 # Runs headlessly during build so TF native libs land in lib/linux64/ (not a
 # volume mount, so this layer is always present without a manual update step)
-# RUN /opt/Fiji.app/fiji-linux-x64 \
-#         --update add-update-site TensorFlow https://sites.imagej.net/TensorFlow/ \
-#     && /opt/Fiji.app/fiji-linux-x64 --update update || true
+RUN /opt/Fiji.app/fiji-linux-x64 \
+        --update add-update-site TensorFlow https://sites.imagej.net/TensorFlow/ \
+    && /opt/Fiji.app/fiji-linux-x64 --update update || true
 
 USER imagentj
 

@@ -1,16 +1,17 @@
 import sys
 sys.path.insert(0, 'src')
 import os
+import re
 import json
+import html as html_module
 import jpype
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout,
-    QTextEdit, QLineEdit, QPushButton, QLabel, QListWidget,
-    QSplitter, QGroupBox, QScrollArea, QMessageBox, QListWidgetItem,
-    QSizePolicy,
+    QTextEdit, QPushButton, QLabel, QListWidget,
+    QSplitter, QScrollArea, QMessageBox, QListWidgetItem,
+    QSizePolicy, QFrame,
 )
-from PySide6.QtGui import QTextCursor
-from PySide6.QtCore import QObject, Signal, Slot, QThread, Qt, QSize, QEvent
+from PySide6.QtCore import QObject, Signal, Slot, QThread, Qt, QSize, QEvent, QTimer
 from queue import Queue
 
 # --- Import your existing backend ---
@@ -21,20 +22,226 @@ from imagentj.chat_history import ChatHistoryManager
 
 SCRIPTS_DIR = os.path.join(os.path.dirname(__file__), "scripts/saved_scripts")
 
-intro_message = """
-Hello I am ImageJ agent, some call me ImagentJ :)
+intro_message = """Hello I am ImageJ agent, some call me ImagentJ :)
 I can design a step-by-step protocol and, if useful, generate a runnable Groovy macro (and execute/test it if you want).
 
 To get started, please share:
-- Goal: what you want measured/segmented/processed.
-- Example data: 1–2 sample images (file type), single image or batch?
-- Targets: what objects/features to detect; which channel(s) matter.
-- Preprocessing: background/flat-field correction, denoising needs?
-- Outputs: tables/measurements, labeled masks/overlays, ROIs, saved images.
-- Constraints: plugins available (e.g., Fiji with Bio-Formats, MorpholibJ, TrackMate, StarDist), OS, any runtime limits.
+- **Goal:** what you want measured/segmented/processed.
+- **Example data:** 1–2 sample images (file type), single image or batch?
+- **Targets:** what objects/features to detect; which channel(s) matter.
+- **Preprocessing:** background/flat-field correction, denoising needs?
+- **Outputs:** tables/measurements, labeled masks/overlays, ROIs, saved images.
+- **Constraints:** plugins available (e.g., Fiji with Bio-Formats, MorpholibJ, TrackMate, StarDist), OS, any runtime limits.
 
-If you're unsure, tell me the biological question and show one representative image—I'll propose a clear plan and a script you can run.
-"""
+If you're unsure, tell me the biological question and show one representative image—I'll propose a clear plan and a script you can run."""
+
+
+# ---------------------------------------------------------------------------
+# Text helpers
+# ---------------------------------------------------------------------------
+
+def _extract_text(content) -> str:
+    """Extract plain text from a message content field (str or list of blocks)."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                parts.append(block["text"])
+            elif isinstance(block, str):
+                parts.append(block)
+        return " ".join(parts)
+    return ""
+
+
+def _md_to_html(text: str) -> str:
+    """Convert plain/markdown text to HTML suitable for a QLabel.
+
+    Processes line-by-line so that code-block content is never touched
+    by the inline-formatting rules, and headings / hr are handled properly.
+    """
+    escaped = html_module.escape(text)
+    lines = escaped.split('\n')
+
+    result: list[str] = []
+    in_code = False
+    code_lines: list[str] = []
+
+    for line in lines:
+        # Toggle fenced code blocks
+        if line.startswith('```'):
+            if not in_code:
+                in_code = True
+                code_lines = []
+            else:
+                in_code = False
+                # Use <br> for newlines — avoids relying on white-space:pre-wrap
+                # (Qt's QLabel HTML renderer has limited CSS support)
+                code_html = '<br>'.join(code_lines)
+                result.append(
+                    '<div style="background:#2b2b2b; color:#f8f8f2; '
+                    'padding:10px; border-radius:6px; font-family:monospace; '
+                    f'margin:6px 0;">{code_html}</div>'
+                )
+            continue
+
+        if in_code:
+            code_lines.append(line)
+            continue
+
+        # --- Block-level elements (headings — rendered as bold, hr — skipped) ---
+        if line.startswith('### '):
+            result.append(f'<b>{line[4:]}</b>')
+            continue
+        if line.startswith('## '):
+            result.append(f'<b>{line[3:]}</b>')
+            continue
+        if line.startswith('# '):
+            result.append(f'<b>{line[2:]}</b>')
+            continue
+        if re.fullmatch(r'[-*_]{3,}', line.strip()):
+            continue  # drop horizontal rules entirely
+
+        # --- Inline formatting ---
+        # Inline code  `code`
+        line = re.sub(
+            r'`([^`]+)`',
+            r'<code style="background:rgba(0,0,0,0.12); padding:1px 4px; '
+            r'border-radius:3px; font-family:monospace;">\1</code>',
+            line,
+        )
+        line = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', line)
+        line = re.sub(r'\*(.+?)\*', r'<i>\1</i>', line)
+
+        result.append(line)
+
+    return '<br>'.join(result)
+
+
+# ---------------------------------------------------------------------------
+# Chat bubble widgets
+# ---------------------------------------------------------------------------
+
+class _BubbleLabel(QLabel):
+    """QLabel that lets its parent layout freely constrain the width.
+
+    Qt's rich-text engine reports the 'natural' (unwrapped) text width as the
+    label's minimum size hint, which can be wider than the scroll area viewport.
+    Returning a near-zero minimum width lets the layout engine shrink the label
+    to the available space; the HTML renderer then reflows at that width.
+    """
+    def minimumSizeHint(self):
+        sh = super().minimumSizeHint()
+        return QSize(1, sh.height())
+
+
+class MessageBubble(QFrame):
+    """A single chat message rendered as a styled bubble."""
+
+    _STYLES = {
+        'user': dict(bg='#2980b9',  fg='white',   align='right', label='You'),
+        'ai':   dict(bg='#ecf0f1',  fg='#2c3e50', align='left',  label='AI'),
+        'system': dict(bg='transparent', fg='#7f8c8d', align='left', label=None),
+        'error':  dict(bg='#fdecea',      fg='#c0392b', align='left',  label='Error'),
+    }
+
+    def __init__(self, text: str, role: str = 'ai', parent=None):
+        super().__init__(parent)
+        self.role = role
+        s = self._STYLES.get(role, self._STYLES['system'])
+
+        outer = QHBoxLayout(self)
+        outer.setContentsMargins(4, 2, 4, 2)
+        outer.setSpacing(0)
+
+        self._label = _BubbleLabel()
+        self._label.setWordWrap(True)
+        self._label.setTextFormat(Qt.RichText)
+        self._label.setTextInteractionFlags(
+            Qt.TextSelectableByMouse
+            | Qt.TextSelectableByKeyboard
+            | Qt.LinksAccessibleByMouse
+        )
+        self._label.setOpenExternalLinks(True)
+        self._label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+
+        if s['bg'] != 'transparent':
+            self._label.setStyleSheet(
+                f"background-color:{s['bg']}; color:{s['fg']}; "
+                "border-radius:10px; padding:8px 12px; font-size:13px;"
+            )
+        else:
+            self._label.setStyleSheet(
+                f"color:{s['fg']}; font-size:11px; font-style:italic; padding:2px 8px;"
+            )
+
+        outer.addWidget(self._label)
+
+        self._label_prefix = s['label']
+        self.update_text(text)
+
+    def update_text(self, text: str):
+        body = _md_to_html(text)
+        content = f'<b>{self._label_prefix}:</b> {body}' if self._label_prefix else body
+        if self.role == 'user':
+            self._label.setText(f'<div align="right">{content}</div>')
+        else:
+            self._label.setText(content)
+
+
+class ChatScrollArea(QWidget):
+    """Scrollable container for MessageBubble widgets."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        self._scroll = QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._scroll.setStyleSheet("QScrollArea { border: none; background: white; }")
+
+        self._container = QWidget()
+        self._container.setStyleSheet("background: white;")
+        self._msg_layout = QVBoxLayout(self._container)
+        self._msg_layout.setContentsMargins(8, 8, 8, 8)
+        self._msg_layout.setSpacing(6)
+        self._msg_layout.addStretch()   # keeps bubbles pinned to top
+
+        self._scroll.setWidget(self._container)
+        outer.addWidget(self._scroll)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        # Cap the container to the viewport width so labels never overflow.
+        # This is the fallback for cases (e.g. history load) where the label's
+        # natural text width exceeds the visible area before layout settles.
+        vp_w = self._scroll.viewport().width()
+        if vp_w > 0:
+            self._container.setMaximumWidth(vp_w)
+
+    def add_message(self, role: str, text: str) -> MessageBubble:
+        bubble = MessageBubble(text, role)
+        # Insert before the trailing stretch so bubbles flow top-to-bottom
+        self._msg_layout.insertWidget(self._msg_layout.count() - 1, bubble)
+        self._scroll_to_bottom()
+        return bubble
+
+    def clear_messages(self):
+        while self._msg_layout.count() > 1:
+            item = self._msg_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+    def _scroll_to_bottom(self):
+        QTimer.singleShot(60, lambda: (
+            self._scroll.verticalScrollBar().setValue(
+                self._scroll.verticalScrollBar().maximum()
+            )
+        ))
 
 
 # ---------------------------------------------------------------------------
@@ -108,12 +315,10 @@ class ChatHistoryPanel(QWidget):
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(4)
 
-        # Header
         header = QLabel("<b>Chat history</b>")
         header.setStyleSheet("font-size: 13px; padding: 4px 0;")
         layout.addWidget(header)
 
-        # New Chat button
         self.btn_new = QPushButton("New Chat")
         self.btn_new.setStyleSheet(
             "background-color: #2ecc71; color: white; font-weight: bold; "
@@ -122,13 +327,15 @@ class ChatHistoryPanel(QWidget):
         self.btn_new.clicked.connect(self.new_chat_requested)
         layout.addWidget(self.btn_new)
 
-        # Session list
         self.session_list = QListWidget()
         self.session_list.setWordWrap(True)
         self.session_list.setStyleSheet(
-            "QListWidget { border: 1px solid #ddd; border-radius: 4px; }"
+            "QListWidget { border: 1px solid #ddd; border-radius: 4px; outline: none; }"
             "QListWidget::item { padding: 6px 4px; border-bottom: 1px solid #eee; }"
-            "QListWidget::item:selected { background-color: #3498db; color: white; }"
+            "QListWidget::item:selected, "
+            "QListWidget::item:selected:active, "
+            "QListWidget::item:selected:!active { background-color: #3498db; color: white; }"
+            "QListWidget::item:hover:!selected { background-color: #e8f4fd; }"
         )
         self.session_list.itemClicked.connect(self._on_item_clicked)
         layout.addWidget(self.session_list)
@@ -164,104 +371,6 @@ class ChatHistoryPanel(QWidget):
 
 
 # ---------------------------------------------------------------------------
-# Script library (right panel — currently commented out in layout)
-# ---------------------------------------------------------------------------
-
-# class ScriptLibraryWidget(QWidget):
-#     script_run_requested = Signal(str, str)
-
-#     def __init__(self):
-#         super().__init__()
-#         layout = QVBoxLayout()
-#         layout.addWidget(QLabel("<b>📜 Script Library</b>"))
-#         self.script_list = QListWidget()
-#         self.script_list.itemClicked.connect(self.display_details)
-#         layout.addWidget(self.script_list)
-
-#         self.details_group = QGroupBox("Script Details")
-#         details_layout = QVBoxLayout()
-#         self.lbl_desc = QLabel("Select a script...")
-#         self.lbl_desc.setWordWrap(True)
-#         self.lbl_desc.setStyleSheet("color: #555;")
-#         self.lbl_inputs = QLabel("")
-#         self.lbl_inputs.setWordWrap(True)
-#         self.lbl_inputs.setStyleSheet("color: #d35400; font-weight: bold;")
-#         details_layout.addWidget(self.lbl_desc)
-#         details_layout.addWidget(self.lbl_inputs)
-#         details_layout.addStretch()
-#         self.details_group.setLayout(details_layout)
-#         layout.addWidget(self.details_group)
-
-#         btn_layout = QHBoxLayout()
-#         self.btn_refresh = QPushButton("🔄 Refresh")
-#         self.btn_refresh.clicked.connect(self.load_scripts)
-#         self.btn_run = QPushButton("▶ Run Script")
-#         self.btn_run.setEnabled(False)
-#         self.btn_run.setStyleSheet("background-color: #27ae60; color: white; font-weight: bold;")
-#         self.btn_run.clicked.connect(self.on_run_click)
-#         btn_layout.addWidget(self.btn_refresh)
-#         btn_layout.addWidget(self.btn_run)
-#         layout.addLayout(btn_layout)
-
-#         self.setLayout(layout)
-#         self.scripts_data = []
-#         self.load_scripts()
-
-#     def load_scripts(self):
-#         self.script_list.clear()
-#         self.scripts_data = []
-#         self.current_selection = None
-#         if not os.path.exists(SCRIPTS_DIR):
-#             os.makedirs(SCRIPTS_DIR)
-#             self.script_list.addItem("Library empty (folder created).")
-#             return
-#         try:
-#             files = sorted(os.listdir(SCRIPTS_DIR))
-#             json_files = [f for f in files if f.endswith(".json")]
-#             if not json_files:
-#                 self.script_list.addItem("No scripts found.")
-#                 return
-#             for json_file in json_files:
-#                 meta_path = os.path.join(SCRIPTS_DIR, json_file)
-#                 try:
-#                     with open(meta_path, "r", encoding="utf-8") as f:
-#                         meta = json.load(f)
-#                     script_filename = meta.get("script_file")
-#                     code_path = os.path.join(SCRIPTS_DIR, script_filename)
-#                     if os.path.exists(code_path):
-#                         with open(code_path, "r", encoding="utf-8") as cf:
-#                             meta["code"] = cf.read()
-#                         self.scripts_data.append(meta)
-#                         self.script_list.addItem(meta.get("name", json_file))
-#                 except Exception as e:
-#                     print(f"Error loading {json_file}: {e}")
-#         except Exception as e:
-#             self.script_list.addItem("Error scanning folder.")
-#             print(e)
-
-#     def display_details(self, item):
-#         idx = self.script_list.row(item)
-#         if idx < 0 or idx >= len(self.scripts_data):
-#             return
-#         data = self.scripts_data[idx]
-#         self.current_selection = data
-#         self.lbl_desc.setText(f"<b>Description:</b><br>{data.get('description', 'No description')}")
-#         self.lbl_inputs.setText(f"<b>⚠️ Requires:</b><br>{data.get('inputs', 'None')}")
-#         self.btn_run.setEnabled(True)
-
-#     def on_run_click(self):
-#         if self.current_selection:
-#             msg = (f"Ensure the following requirements are met before running:\n\n"
-#                    f"{self.current_selection.get('inputs')}\n\nProceed?")
-#             reply = QMessageBox.question(self, 'Run Script', msg, QMessageBox.Yes | QMessageBox.No)
-#             if reply == QMessageBox.Yes:
-#                 self.script_run_requested.emit(
-#                     self.current_selection.get("language", "groovy"),
-#                     self.current_selection.get("code"),
-#                 )
-
-
-# ---------------------------------------------------------------------------
 # Main window
 # ---------------------------------------------------------------------------
 
@@ -278,11 +387,13 @@ class ImageJAgentGUI(QWidget):
         # History manager (metadata index + message retrieval)
         self.history_manager = ChatHistoryManager()
 
+        # Streaming state — tracks the in-progress AI bubble
+        self._current_ai_bubble: MessageBubble | None = None
+        self._ai_response_buffer: str = ""
+
         # --- Main layout: splitter with history panel | chat ---
         main_layout = QHBoxLayout()
         splitter = QSplitter(Qt.Horizontal)
-
-
 
         # LEFT: chat history sidebar
         self.history_panel = ChatHistoryPanel()
@@ -293,8 +404,7 @@ class ImageJAgentGUI(QWidget):
         chat_widget = QWidget()
         chat_layout = QVBoxLayout()
 
-        self.output_area = QTextEdit()
-        self.output_area.setReadOnly(True)
+        self.chat_scroll = ChatScrollArea()
 
         self.attachment_status = QLabel("No files attached")
         self.attachment_status.setStyleSheet(
@@ -302,17 +412,17 @@ class ImageJAgentGUI(QWidget):
         )
 
         self.input_line = QTextEdit()
-        self.input_line.setFixedHeight(120)  # increase input height
+        self.input_line.setFixedHeight(120)
 
         self.send_button = QPushButton("Send")
         self.send_button.setStyleSheet(
-            "background-color: #3498db; color: white; font-weight: bold; padding: 8px;"
+            "background-color: #3498db; color: white; font-weight: bold; padding: 8px; border:none;"
         )
 
         self.stop_button = QPushButton("Stop")
         self.stop_button.setEnabled(False)
         self.stop_button.setStyleSheet(
-            "background-color: #bdc3c7; color: #7f8c8d; font-weight: bold; padding: 8px;"
+            "background-color: #bdc3c7; color: #7f8c8d; font-weight: bold; padding: 8px; border:none;"
         )
         self.stop_button.clicked.connect(self.on_stop)
 
@@ -323,7 +433,7 @@ class ImageJAgentGUI(QWidget):
         button_layout.addWidget(self.send_button, stretch=4)
         button_layout.addWidget(self.stop_button, stretch=1)
 
-        chat_layout.addWidget(self.output_area, stretch=3)
+        chat_layout.addWidget(self.chat_scroll, stretch=3)
         chat_layout.addWidget(self.attachment_status, stretch=0)
         chat_layout.addWidget(self.input_line, stretch=1)
         chat_layout.addLayout(button_layout)
@@ -332,9 +442,8 @@ class ImageJAgentGUI(QWidget):
 
         splitter.addWidget(self.history_panel)
         splitter.addWidget(chat_widget)
-        splitter.setStretchFactor(0, 0)   # history panel: fixed / minimal
-        splitter.setStretchFactor(1, 1)   # chat area: takes remaining space
-        #splitter.setSizes([220, 1000])
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
 
         main_layout.addWidget(splitter)
         self.setLayout(main_layout)
@@ -343,19 +452,16 @@ class ImageJAgentGUI(QWidget):
         self.send_button.clicked.connect(self.on_send)
         self.input_line.installEventFilter(self)
 
-
         # ----- Initialize ImageJ & Agent -----
         self.ij = get_ij()
         self.ij.ui().showUI()
         self.supervisor, self.checkpointer = init_agent()
 
         # ----- Worker thread -----
-        # current_thread_id is set in _init_session() below
         self.current_thread_id: str = ""
         self._is_new_thread: bool = True
 
         self.thread = QThread()
-        # Placeholder thread_id — will be set properly in _init_session()
         self.worker = AgentWorker(self.supervisor, "")
         self.worker.moveToThread(self.thread)
 
@@ -379,11 +485,9 @@ class ImageJAgentGUI(QWidget):
         self.history_panel.populate(threads)
 
         if threads:
-            # Restore the most-recent thread
             most_recent_id, _ = threads[0]
             self._load_thread(most_recent_id)
         else:
-            # First ever launch — create a blank thread
             self._start_new_thread()
 
     def _start_new_thread(self):
@@ -392,30 +496,39 @@ class ImageJAgentGUI(QWidget):
         self.current_thread_id = thread_id
         self.worker.thread_id = thread_id
         self._is_new_thread = True
+        self._current_ai_bubble = None
+        self._ai_response_buffer = ""
 
-        self.output_area.clear()
-        self.output_area.append(intro_message)
+        self.chat_scroll.clear_messages()
+        self.chat_scroll.add_message('ai', intro_message)
 
-        # Refresh sidebar and highlight new entry
         self.history_panel.populate(self.history_manager.list_threads())
         self.history_panel.set_active(thread_id)
 
     def _load_thread(self, thread_id: str):
-        """Set the active thread and replay its saved messages into the chat area."""
+        """Set the active thread and replay its saved messages as bubbles."""
         self.current_thread_id = thread_id
         self.worker.thread_id = thread_id
         self._is_new_thread = False
+        self._current_ai_bubble = None
+        self._ai_response_buffer = ""
 
-        self.output_area.clear()
+        self.chat_scroll.clear_messages()
 
         messages = self.history_manager.get_messages_for_display(self.supervisor, thread_id)
         if not messages:
-            self.output_area.append(intro_message)
+            self.chat_scroll.add_message('ai', intro_message)
         else:
-            html = self.history_manager.format_messages_as_html(messages)
-            self.output_area.setHtml(html)
-            # Scroll to bottom
-            self.output_area.moveCursor(QTextCursor.End)
+            for msg in messages:
+                msg_type = getattr(msg, 'type', '') or ''
+                content = _extract_text(getattr(msg, 'content', ''))
+                tool_calls = getattr(msg, 'tool_calls', None) or []
+
+                if msg_type == 'human' and content:
+                    self.chat_scroll.add_message('user', content)
+                elif msg_type == 'ai' and content and not tool_calls:
+                    self.chat_scroll.add_message('ai', content)
+                # tool / system messages are intentionally omitted
 
         self.history_panel.set_active(thread_id)
 
@@ -424,14 +537,12 @@ class ImageJAgentGUI(QWidget):
     # ------------------------------------------------------------------
 
     def new_chat(self):
-        """Triggered by the '+ New Chat' button."""
         if self._agent_is_busy():
             QMessageBox.warning(self, "Agent Busy", "Please wait for the current task to finish.")
             return
         self._start_new_thread()
 
     def switch_thread(self, thread_id: str):
-        """Triggered when the user clicks a session in the sidebar."""
         if thread_id == self.current_thread_id:
             return
         if self._agent_is_busy():
@@ -440,19 +551,8 @@ class ImageJAgentGUI(QWidget):
         self._load_thread(thread_id)
 
     # ------------------------------------------------------------------
-    # Drag-and-drop
+    # Drag-and-drop / attachments
     # ------------------------------------------------------------------
-
-    # def dragEnterEvent(self, event):
-    #     if event.mimeData().hasUrls():
-    #         event.acceptProposedAction()
-
-    # def dropEvent(self, event):
-    #     for url in event.mimeData().urls():
-    #         file_path = url.toLocalFile()
-    #         if file_path not in self.attached_files:
-    #             self.attached_files.append(file_path)
-    #     self._update_attachment_ui()
 
     def _update_attachment_ui(self):
         if not self.attached_files:
@@ -462,18 +562,16 @@ class ImageJAgentGUI(QWidget):
             )
         else:
             names = [os.path.basename(p) for p in self.attached_files]
-            self.attachment_status.setText(f"📎 Attached ({len(names)}): {', '.join(names)}")
+            self.attachment_status.setText(f"Attached ({len(names)}): {', '.join(names)}")
             self.attachment_status.setStyleSheet("color: #2980b9; font-weight: bold;")
 
     # ------------------------------------------------------------------
     # Status helpers
     # ------------------------------------------------------------------
 
-
     def eventFilter(self, obj, event):
         if obj == self.input_line and event.type() == QEvent.KeyPress:
             if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-                # Send only if NO modifiers (plain Enter)
                 if event.modifiers() == Qt.KeyboardModifier.NoModifier:
                     self.on_send()
                     return True  # block newline
@@ -481,9 +579,6 @@ class ImageJAgentGUI(QWidget):
 
     def _agent_is_busy(self) -> bool:
         return self.send_button.isEnabled() is False
-
-    def append_output(self, text: str):
-        self.output_area.append(text)
 
     def set_status(self, text: str):
         self.status_label.setText(text)
@@ -499,7 +594,6 @@ class ImageJAgentGUI(QWidget):
         self.stop_button.setEnabled(busy)
         self.send_button.setDisabled(busy)
         self.input_line.setDisabled(busy)
-        # Also disable history panel while agent runs to prevent mid-stream switch
         self.history_panel.setEnabled(not busy)
 
         if busy:
@@ -523,18 +617,20 @@ class ImageJAgentGUI(QWidget):
 
     def on_stop(self):
         if hasattr(self, 'worker') and self.worker:
-            self.append_output("\n<i style='color: #e74c3c;'>🛑 Stopping agent...</i>")
+            self.chat_scroll.add_message('system', "Stopping agent...")
             self.worker.request_stop()
             self.set_status("Stopping...")
 
     def on_agent_finished(self):
         if hasattr(self, 'worker') and self.worker._stop_requested:
-            self.append_output("\n<b style='color: green;'>✓ Agent is ready to help</b>")
+            self.chat_scroll.add_message('system', "Agent stopped.")
+        self._current_ai_bubble = None
+        self._ai_response_buffer = ""
         self.set_status("Ready")
         self.set_ui_busy(False)
 
     def on_agent_error(self, msg: str):
-        self.append_output(f"[Agent error]\n{msg}")
+        self.chat_scroll.add_message('error', f"Agent error:\n{msg}")
         self.status_label.setText("Error")
         self.set_ui_busy(False)
         self.status_label.setStyleSheet("color: red;")
@@ -547,7 +643,7 @@ class ImageJAgentGUI(QWidget):
     # ------------------------------------------------------------------
     # Send
     # ------------------------------------------------------------------
-        
+
     def on_send(self):
         user_input = self.input_line.toPlainText().strip()
         if not user_input and not self.attached_files:
@@ -558,18 +654,22 @@ class ImageJAgentGUI(QWidget):
             file_list_str = "\n".join([f"- {p}" for p in self.attached_files])
             full_prompt += f"\n\n[SYSTEM: The user has attached the following files/folders]:\n{file_list_str}"
 
-        self.append_output(f"\n<b>You:</b> {user_input if user_input else '[Attached Files]'}")
+        # Show user bubble
+        display_text = user_input if user_input else '[Attached Files]'
+        self.chat_scroll.add_message('user', display_text)
         if self.attached_files:
             display_names = ", ".join([os.path.basename(p) for p in self.attached_files])
-            self.append_output(f"<i style='color: #2980b9;'>📎 Sent with: {display_names}</i>")
+            self.chat_scroll.add_message('system', f"Sent with: {display_names}")
 
-        self.append_output("AI: ...")
         self.input_line.clear()
+
+        # Reset streaming state (new AI response expected)
+        self._current_ai_bubble = None
+        self._ai_response_buffer = ""
 
         # --- Update history metadata ---
         current_title = self.history_manager._index.get(self.current_thread_id, {}).get("title", "New Chat")
         if current_title == "New Chat" and user_input:
-            # Thread not yet titled: set a human-readable title from the first message
             self.history_manager.update_title(self.current_thread_id, user_input)
             self.history_panel.populate(self.history_manager.list_threads())
             self.history_panel.set_active(self.current_thread_id)
@@ -581,32 +681,6 @@ class ImageJAgentGUI(QWidget):
 
         self.attached_files = []
         self._update_attachment_ui()
-
-
-
-    # ------------------------------------------------------------------
-    # Script library integration
-    # ------------------------------------------------------------------
-
-    # def run_saved_script(self, language: str, code: str):
-    #     if self._agent_is_busy():
-    #         QMessageBox.warning(self, "Agent Busy", "Please wait for the current task to finish.")
-    #         return
-    #     prompt = (
-    #         f"SYSTEM REQUEST: The user wants to run a saved {language} script from the library.\n"
-    #         f"Please execute the following code immediately using the 'run_script_safe' tool.\n"
-    #         f"Do not change the code unless it fails.\n\n"
-    #         f"CODE:\n```{language}\n{code}\n```"
-    #     )
-    #     self.output_area.append(f"\n<b>⚙️ Recall Script:</b> Sending to Agent...")
-    #     self._execute_agent_query(prompt)
-
-    # def on_saved_script_finished(self, result: str):
-    #     self.output_area.append(f"<pre>{result}</pre>")
-    #     self.set_status("Ready")
-    #     self.set_ui_busy(False)
-    #     self.status_label.setStyleSheet("color: black;")
-    #     self.output_area.append("✅ <b>Execution complete.</b>")
 
     # ------------------------------------------------------------------
     # Event handler (streaming from agent)
@@ -628,26 +702,32 @@ class ImageJAgentGUI(QWidget):
                             agent_type = args.get("subagent_type", "Specialist")
                             desc = args.get("description", "")
                             short_desc = (desc[:120] + '...') if len(desc) > 120 else desc
-                            self.append_output(
-                                f"\n<div style='color: #e67e22;'><b>🚀 Routing to {agent_type}:</b></div>"
+                            self.chat_scroll.add_message(
+                                'system',
+                                f"Routing to {agent_type}: {short_desc}",
                             )
-                            self.append_output(f"<i style='color: #7f8c8d;'>{short_desc}</i>")
                         else:
-                            self.append_output(f"\n<i>[System] Calling tool: {name}...</i>")
+                            self.chat_scroll.add_message('system', f"Calling tool: {name}...")
 
             if node_name == "model":
                 for msg in node_data.get("messages", []):
                     content = getattr(msg, "content", "")
                     if content and not getattr(msg, "tool_calls", None):
-                        self.append_output(content)
+                        # Stream into the AI bubble, creating it on first chunk
+                        if self._current_ai_bubble is None:
+                            self._ai_response_buffer = content
+                            self._current_ai_bubble = self.chat_scroll.add_message('ai', content)
+                        else:
+                            self._ai_response_buffer += content
+                            self._current_ai_bubble.update_text(self._ai_response_buffer)
 
         if "tools" in event:
             for tool_msg in event["tools"].get("messages", []):
                 name = getattr(tool_msg, "name", "Tool")
                 if name == "task":
-                    self.append_output("\n✅ <b>Sub-agent task completed.</b>")
+                    self.chat_scroll.add_message('system', "Sub-agent task completed.")
                 else:
-                    self.append_output(f"\n> 🛠️ <b>{name}</b> finished.")
+                    self.chat_scroll.add_message('system', f"{name} finished.")
 
 
 # ---------------------------------------------------------------------------
@@ -655,8 +735,6 @@ class ImageJAgentGUI(QWidget):
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    # QApplication.setAttribute(Qt.AA_EnableHighDpiScaling)
-    # QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps)
     app = QApplication(sys.argv)
     window = ImageJAgentGUI()
     window.show()

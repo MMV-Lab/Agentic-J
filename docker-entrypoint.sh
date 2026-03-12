@@ -15,8 +15,10 @@ FIJI_JARS=/opt/Fiji.app/jars
 REQUIRED_PROTOBUF="protobuf-java-3.6.1.jar"
 if [ ! -f "$FIJI_JARS/$REQUIRED_PROTOBUF" ]; then
     echo "[entrypoint] Fixing protobuf JAR for CSBDeep/StarDist compatibility..."
-    # Remove any protobuf JAR that would conflict
+    # Remove any protobuf JAR that would conflict (including the util sibling,
+    # which targets 4.x and would cause Updater "locally modified" warnings)
     rm -f "$FIJI_JARS"/protobuf-java-*.jar
+    rm -f "$FIJI_JARS"/protobuf-java-util-*.jar
     wget -q "https://repo1.maven.org/maven2/com/google/protobuf/protobuf-java/3.6.1/protobuf-java-3.6.1.jar" \
          -O "$FIJI_JARS/$REQUIRED_PROTOBUF" \
     && echo "[entrypoint] protobuf-java-3.6.1.jar installed" \
@@ -88,12 +90,17 @@ fi
 mkdir -p /tmp/.X11-unix
 mkdir -p /home/imagentj/.fluxbox
 
+# Single workspace so the user can't accidentally switch away from Fiji
+cat > /home/imagentj/.fluxbox/init << 'EOF'
+session.screen0.workspaces: 1
+session.screen0.workspaceNames: Fiji
+EOF
+
 # ── Start virtual display ────────────────────────────────────────────────────
-echo "[entrypoint] Starting Xvfb on display :1 (1280x800x24)..."
-Xvfb :1 -screen 0 1280x800x24 -ac +extension GLX +render -noreset &
+echo "[entrypoint] Starting Xvfb on display :1..."
+Xvfb :1 -screen 0 1840x1020x24 -ac +extension GLX +render -noreset &
 
 export DISPLAY=:1
-
 # echo "[entrypoint] Enabling keyboard repeat..."
 # xset r on
 # xset r rate 300 50
