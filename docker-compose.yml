@@ -27,9 +27,8 @@ services:
       # Saved scripts persistence
       - saved_scripts:/app/scripts/saved_scripts
       # Qdrant vector database for plugin search and RAG
-      # Named volume avoids host-ownership mismatch (bind mount is created as root,
-      # but the container runs as the non-root imagentj user)
-      - qdrant_data:/app/qdrant_data
+      # Use bind mount (./qdrant_data on host) instead of named volume to preserve host permissions
+      - ./qdrant_data:/app/qdrant_data
       # Image data directory (place images in ./data on host, access as /mnt/data in container)
       - ${IMAGE_DATA_DIR:-./data}:/data
       # Entrypoint script (contains security features like VNC password support)
@@ -39,8 +38,6 @@ services:
       - ./gui_runner.py:/app/gui_runner.py:ro
       # Folder to save data
       - ./data:/app/data
-      # Extra pip packages installed on host (avoids image rebuild for small packages)
-      - ./extra_packages:/app/extra_packages:ro
       # Folder for skills
       - ./skills:/app/skills:ro
     env_file:
@@ -74,7 +71,6 @@ volumes:
   fiji_plugins:
   fiji_jars:
   saved_scripts:
-  qdrant_data:
 
 networks:
   imagent_net:

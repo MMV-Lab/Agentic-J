@@ -10,8 +10,7 @@ from langchain_core.output_parsers import StrOutputParser
 gpt_key = os.getenv("OPENAI_API_KEY")
 __all__ = ['rag_retrieve_docs', 'rag_retrieve_mistakes', 'save_coding_experience']
 
-
-# Initialize a fast model for expansion
+# Initialize a fast model for query expansion
 llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, api_key=gpt_key)
 
 def get_expanded_queries(query: str) -> list[str]:
@@ -34,7 +33,7 @@ def rag_retrieve_docs(query: str) -> list:
     Retrieve relevant context from the document RAG using Hybrid Search + Query Expansion.
     """
     if not is_rag_available():
-       return is_rag_available()
+        return is_rag_available()
 
     from ..rag.RAG import hybrid_search_with_rrf, apply_rrf, DOCS_COLLECTION_NAME
 

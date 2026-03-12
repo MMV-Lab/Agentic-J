@@ -6,6 +6,11 @@ from langgraph.checkpoint.memory import MemorySaver
 from .prompts import imagej_coder_prompt, imagej_debugger_prompt, supervisor_prompt, python_analyst_prompt, qa_reporter_prompt
 from .tools import internet_search, inspect_all_ui_windows, run_script_safe, rag_retrieve_docs, inspect_java_class, save_coding_experience, rag_retrieve_mistakes, save_reusable_script, inspect_folder_tree, smart_file_reader, run_python_code, inspect_csv_header, extract_image_metadata, search_fiji_plugins, install_fiji_plugin, check_plugin_installed, get_plugin_docs, mkdir_copy, save_script, execute_script, get_script_info
 from .tools import load_script, get_script_history, setup_analysis_workspace, save_markdown
+from imagentj.tracker import UsageMetrics, MetricsSignalBridge, UsageTrackerCallback
+
+shared_metrics = UsageMetrics()
+shared_bridge = MetricsSignalBridge()
+shared_tracker = UsageTrackerCallback(shared_metrics, shared_bridge)
 
 gpt_key = os.getenv("OPENAI_API_KEY")
 
@@ -29,25 +34,21 @@ checkpointer_imagej_debugger = MemorySaver()
 checkpointer_python_analyst = MemorySaver()
 checkpointer_qa_reporter = MemorySaver() 
 
-
-
-
 llm_gpt5 = ChatOpenAI(
-    model = "gpt-5.2",
+    model="gpt-4o",
     verbose=True,
     api_key=gpt_key,
     temperature=0.,
-    reasoning_effort="low",
+    callbacks=[shared_tracker],
 )
 
 llm_gpt5_nano = ChatOpenAI(
-    model = "gpt-5.2",
+    model="gpt-4o-mini",
     verbose=True,
     api_key=gpt_key,
     temperature=0.,
-    reasoning_effort="low",
+    callbacks=[shared_tracker],
 )
-
 imagej_coder = {
     "name": "imagej_coder",
 
@@ -152,4 +153,4 @@ def init_agent():
     checkpointer=checkpointer_supervisor,
     skills = ["/app/skills/"]
 )
-    return supervisor, checkpointer_supervisor
+    return supervisor, checkpointer_supervisor, shared_metrics, shared_bridge, shared_tracker

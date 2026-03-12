@@ -64,9 +64,10 @@ COPY . /app
 # Use keys_template.py as keys.py (keys.py is .dockerignored since it has real secrets)
 RUN cp /app/src/config/keys_template.py /app/src/config/keys.py
 
-# Ensure the app user owns everything it needs to write to,
-# and has write permission (Fiji zip may contain read-only files like config/fiji.py)
-RUN chown -R imagentj:imagentj /app /home/imagentj \
+# Ensure the app user owns everything it needs to write to (including qdrant_data directory)
+# chmod -R u+w /opt/Fiji.app handles read-only files that Fiji ships in its zip
+RUN mkdir -p /app/qdrant_data \
+    && chown -R imagentj:imagentj /app /home/imagentj /app/qdrant_data \
     && chown -R imagentj:imagentj /opt/Fiji.app \
     && chmod -R u+w /opt/Fiji.app
 
