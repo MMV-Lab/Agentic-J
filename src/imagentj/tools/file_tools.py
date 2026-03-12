@@ -24,7 +24,7 @@ import platform
 SCRIPTS_DIR = os.path.join(os.path.dirname(__file__), "../../scripts/saved_scripts")
 
 # Limits for CPU-optimized performance
-MAX_CONTEXT_CHARS = 15000  # ~3,000 to 4,000 tokens
+MAX_CONTEXT_CHARS = 30000  # ~6,000 to 8,000 tokens
 MAX_CONTEXT_PDF_PAGES = 3  # Small enough for immediate reading
 
 def shadow_ingest_upgrade(file_path: str, vector_store, file_hash: str):
