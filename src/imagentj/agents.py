@@ -168,6 +168,7 @@ llm_analyst = ChatOpenAI(
     api_key=open_router_key,
     base_url="https://openrouter.ai/api/v1",
     temperature=0.,
+    reasoning_effort="low",
     verbose=True,
     callbacks=[shared_tracker],
 )
@@ -190,62 +191,36 @@ llm_nano = ChatOpenAI(
 # ContextEditingMiddleware trims their internal tool history if a single
 # call grows large (e.g. a coder writing many scripts in one invocation).
 
-_coder_agent = create_agent(
-    llm_worker,
-    tools=[
-        internet_search,
-        inspect_java_class,
-        save_script,
-        load_script,
-        get_script_history,
-        rag_retrieve_mistakes,  # mandatory: check past mistakes before writing
-    ],
-    system_prompt=imagej_coder_prompt,
-    response_format=ScriptHandoff,
-    name="imagej_coder",
-    middleware=[
-        ContextEditingMiddleware(
-            edits=[
-                ClearToolUsesEdit(
-                    trigger=50000,
-                    keep=10,
-                    clear_tool_inputs=False,
-                    exclude_tools=[],
-                    placeholder="[cleared]",
-                ),
-            ],
-        ),
-    ],
-)
+def _make_coder_agent(model, name, system_prompt):
+    return create_agent(
+        model,
+        tools=[
+            internet_search,
+            inspect_java_class,
+            save_script,
+            load_script,
+            get_script_history,
+            rag_retrieve_mistakes,  # mandatory: check past mistakes before writing
+        ],
+        system_prompt=system_prompt,
+        response_format=ScriptHandoff,
+        name=name,
+        middleware=[
+            ContextEditingMiddleware(
+                edits=[
+                    ClearToolUsesEdit(
+                        trigger=50000,
+                        keep=10,
+                        clear_tool_inputs=False,
+                        exclude_tools=[],
+                        placeholder="[cleared]",
+                    ),
+                ],
+            ),
+        ],
+    )
 
-_debugger_agent = create_agent(
-    llm_worker,
-    tools=[
-        internet_search,
-        inspect_java_class,
-        rag_retrieve_mistakes,
-        save_script,
-        load_script,
-        get_script_history,
-        get_script_info,
-    ],
-    system_prompt=imagej_debugger_prompt,
-    response_format=ScriptHandoff,
-    name="imagej_debugger",
-    middleware=[
-        ContextEditingMiddleware(
-            edits=[
-                ClearToolUsesEdit(
-                    trigger=50000,
-                    keep=10,
-                    clear_tool_inputs=False,
-                    exclude_tools=[],
-                    placeholder="[cleared]",
-                ),
-            ],
-        ),
-    ],
-)
+
 
 _analyst_agent = create_agent(
     llm_analyst,
@@ -322,8 +297,10 @@ _qa_agent = create_agent(
 # ---------------------------------------------------------------------------
 
 @tool
-def imagej_coder(task: str, project_root: str) -> ScriptHandoff:
+def imagej_coder(task: str, project_root: str, complexity: str) -> ScriptHandoff:
     """
+    complexity: 'simple' for IO checks, file copies, metadata reads.
+                'complex' for segmentation, registration, multi-channel processing.
     Generate and save a production-ready ImageJ/Fiji Groovy script.
 
     Use for: IO checks, preprocessing, segmentation, measurement scripts.
@@ -332,7 +309,15 @@ def imagej_coder(task: str, project_root: str) -> ScriptHandoff:
     If requires_user_approval=True, show the user the result before batch processing.
     If success=False, pass script_path + error_message to imagej_debugger.
     """
-    result = _coder_agent.invoke({
+
+    if complexity == "simple":
+        model = llm_nano
+    elif complexity == "complex":
+        model = llm_worker
+
+    agent = _make_coder_agent(model, "imagej_coder", imagej_coder_prompt)
+
+    result = agent.invoke({
         "messages": [{
             "role": "user",
             "content": f"PROJECT ROOT: {project_root}\n\nTASK: {task}",
@@ -350,7 +335,9 @@ def imagej_debugger(script_path: str, error_message: str) -> ScriptHandoff:
     Returns a ScriptHandoff with the repaired script_path and a lesson field.
     After success, pass lesson to save_coding_experience.
     """
-    result = _debugger_agent.invoke({
+    agent = _make_coder_agent(llm_worker, "imagej_debugger", imagej_debugger_prompt)
+
+    result = agent.invoke({
         "messages": [{
             "role": "user",
             "content": f"FAULTY SCRIPT: {script_path}\n\nERROR:\n{error_message}",
