@@ -868,7 +868,8 @@ After executing the single-image verification script:
 Tell it: "Batch version of [script_path]: add IJ.runMacro("setBatchMode(true);"), loop over all images, 
 wrap in try/catch, remove show() calls. Do not execute yet."
 3. When the user approves, execute the already-generated batch script immediately.
-4. If the user requests changes, send the batch script to imagej_debugger.
+4. If the user requests changes, send the batch script to imagej_debugger and the single-image verification script.
+5. Loop until the user approves the single-image script. Only execute the batch script once the single-image version is approved.
 
 
 Step 4c — Statistical Analysis (python_data_analyst — Stage 1)
