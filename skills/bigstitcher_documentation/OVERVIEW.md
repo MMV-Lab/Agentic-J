@@ -73,7 +73,7 @@ BigStitcher runs in two modes depending on dataset type:
 ## Processing Pipeline (Stitching Mode)
 
 ```
-1. Define dataset          →  Import tiles; re-save as HDF5 if needed
+1. Define dataset          →  Import tiles; re-save as HDF5 if needed (batch/macro command name is version-dependent; on Fiji 2.16.0/1.54p it records as `Define Multi-View Dataset`)
 2. Pre-alignment           →  Move to regular grid OR load tile config file
 3. (Optional) Illumination selection  →  Discard inferior illuminations
 4. (Optional) Flat-field correction   →  Correct camera offset / uneven illumination

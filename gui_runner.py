@@ -214,6 +214,11 @@ class ChatScrollArea(QWidget):
         self._scroll.setWidget(self._container)
         outer.addWidget(self._scroll)
 
+        #  Auto-scroll whenever the scrollbar range grows (new content arrived)
+        self._scroll.verticalScrollBar().rangeChanged.connect(
+            lambda _min, _max: self._scroll.verticalScrollBar().setValue(_max)
+        )
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
         vp_w = self._scroll.viewport().width()
@@ -223,7 +228,6 @@ class ChatScrollArea(QWidget):
     def add_message(self, role: str, text: str) -> MessageBubble:
         bubble = MessageBubble(text, role)
         self._msg_layout.insertWidget(self._msg_layout.count() - 1, bubble)
-        self._scroll_to_bottom()
         return bubble
 
     def clear_messages(self):
@@ -232,12 +236,6 @@ class ChatScrollArea(QWidget):
             if item.widget():
                 item.widget().deleteLater()
 
-    def _scroll_to_bottom(self):
-        QTimer.singleShot(60, lambda: (
-            self._scroll.verticalScrollBar().setValue(
-                self._scroll.verticalScrollBar().maximum()
-            )
-        ))
 
 
 # ---------------------------------------------------------------------------

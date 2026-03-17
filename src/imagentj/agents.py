@@ -498,13 +498,13 @@ def init_agent():
         middleware=[
             SummarizationMiddleware(
                 model=llm_nano,
-                trigger=("tokens", 25000),
+                trigger=("tokens", 50000),
                 keep=("messages", 20),
             ),
             ContextEditingMiddleware(
                 edits=[
                     ClearToolUsesEdit(
-                        trigger=25000,
+                        trigger=50000,
                         keep=10,
                         clear_tool_inputs=False,
                         exclude_tools=[],

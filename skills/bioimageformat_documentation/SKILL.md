@@ -36,7 +36,6 @@ Zeiss, Nikon, Leica, Olympus, Olympus, PerkinElmer, and many others in Fiji/Imag
 |---------|-------------|----------|
 | **IJ Macro** (`IJ.run`) | Simple scripts inside Fiji; recording macros | ImageJ Macro |
 | **Groovy API** (`BF.openImagePlus`) | Complex scripts inside Fiji; series selection; virtual stacks | Groovy / Java |
-| **bftools** (`bfconvert`, `showinf`) | Headless server conversion; no Fiji required | Python subprocess |
 
 > **Headless warning**: Bio-Formats does NOT work with Fiji's `--headless` flag.
 > Use ImageJ Launcher with `-batch` flag for macro-based headless execution.
@@ -97,46 +96,6 @@ Crop: `opts.setCrop(true); opts.setCropRegion(0, new loci.common.Region(x, y, w,
 
 Virtual stack: `opts.setVirtual(true)`
 
----
-
-## bftools Quick Reference
-
-```bash
-# Inspect metadata only (no pixels loaded)
-showinf -nopix -no-upgrade /path/to/file.czi
-
-# Print OME-XML only
-showinf -omexml-only -novalid -no-upgrade /path/to/file.czi
-
-# Convert to OME-TIFF
-bfconvert -no-upgrade -overwrite input.czi output.ome.tiff
-
-# Convert to BigTIFF (no 4 GB limit)
-bfconvert -no-upgrade -overwrite input.czi output.ome.btf
-
-# Convert with LZW compression
-bfconvert -no-upgrade -overwrite -compression LZW input.czi output.ome.tiff
-
-# Convert only series 0 (0-indexed)
-bfconvert -no-upgrade -overwrite -series 0 input.lif output_s0.ome.tiff
-
-# One file per series/Z/channel/timepoint
-bfconvert -no-upgrade -overwrite input.lif output_s%s_z%z_c%c_t%t.tiff
-
-# Generate a tiled pyramid OME-TIFF (WSI)
-bfconvert -no-upgrade -overwrite -noflat -pyramid-resolutions 4 -pyramid-scale 2 \
-    input.svs output_pyramid.ome.tiff
-```
-
-Python subprocess pattern (always pass as list, not shell string):
-```python
-import subprocess, os
-env = {**os.environ, "BF_MAX_MEM": "4g"}
-result = subprocess.run(
-    ["bfconvert", "-no-upgrade", "-overwrite", "input.czi", "output.ome.tiff"],
-    env=env, text=True
-)
-```
 
 ---
 
