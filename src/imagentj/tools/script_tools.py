@@ -144,6 +144,150 @@ def _collect_new_frames(frames_before: dict, timeout: float = 0.5) -> list[str]:
 
     return messages
 
+# ── Popup dialog text extraction ──────────────────────────────────────────
+
+def _read_window_text(window) -> str:
+    """
+    Read text from any AWT Window. Tries in order:
+    1. getTextPanel()  — TextWindow, exception windows
+    2. MessageDialog field 'label' → MultiLineLabel field 'lines'
+       Required because MessageDialog does NOT add label to getComponents()
+       so component recursion never finds it.
+    3. Component recursion fallback
+    """
+    try:
+        text_panel = window.getTextPanel()
+        text = str(text_panel.getText()).strip()
+        if text:
+            return text
+    except Exception:
+        pass
+
+    try:
+        cls = window.getClass()
+        while cls is not None:
+            try:
+                label_field = cls.getDeclaredField("label")
+                label_field.setAccessible(True)
+                multi_label = label_field.get(window)
+                if multi_label is not None:
+                    lines_field = multi_label.getClass().getDeclaredField("lines")
+                    lines_field.setAccessible(True)
+                    lines = lines_field.get(multi_label)
+                    if lines is not None:
+                        text = " ".join(str(l) for l in lines).strip()
+                        if text:
+                            return text
+            except Exception:
+                pass
+            try:
+                cls = cls.getSuperclass()
+                if str(cls.getName()) == "java.lang.Object":
+                    break
+            except Exception:
+                break
+    except Exception:
+        pass
+
+    return "\n".join(_extract_component_text(window))
+
+
+# ── Background monitor for modal dialogs DURING execution ─────────────────
+
+_IGNORE_TITLES = {"ImageJ", "Fiji", "Log", "ROI Manager", "Results", ""}
+
+
+def _snapshot_all_windows() -> dict:
+    """
+    Snapshot {classname::title: window} for ALL visible AWT windows
+    (Frame + Dialog). Used by _WindowMonitor only — _get_open_frames
+    remains the source of truth for TextWindow exception detection.
+    """
+    Window = jimport("java.awt.Window")
+    result = {}
+    try:
+        for window in Window.getWindows():
+            if not window.isVisible():
+                continue
+            try:
+                title = str(window.getTitle())
+            except Exception:
+                title = str(window.getClass().getSimpleName())
+            key = f"{window.getClass().getSimpleName()}::{title}"
+            result[key] = window
+    except Exception:
+        pass
+    return result
+
+
+class _WindowMonitor:
+    """
+    Polls Window.getWindows() in a background thread while the script runs.
+
+    Catches modal dialogs (IJ.error(), "command not found") that BLOCK the
+    EDT during execution. These dialogs are already dismissed by the time
+    the script returns so neither _collect_new_frames nor any post-execution
+    check can see them. Only a concurrent thread can catch them in time.
+
+    Does NOT handle TextWindow exceptions — _collect_new_frames does that.
+    """
+
+    def __init__(self, snapshot_before: dict, poll_interval: float = 0.05):
+        self._seen         = dict(snapshot_before)
+        self._messages: list[str] = []
+        self._lock         = threading.Lock()
+        self._stop         = threading.Event()
+        self._thread       = threading.Thread(target=self._run, daemon=True)
+
+    def start(self) -> "_WindowMonitor":
+        self._thread.start()
+        return self
+
+    def _run(self):
+        while not self._stop.is_set():
+            self._poll()
+            time.sleep(0.05)
+
+    def _poll(self):
+        try:
+            Window = jimport("java.awt.Window")
+            for window in Window.getWindows():
+                if not window.isVisible():
+                    continue
+                try:
+                    title = str(window.getTitle())
+                except Exception:
+                    title = str(window.getClass().getSimpleName())
+
+                key = f"{window.getClass().getSimpleName()}::{title}"
+
+                if key in self._seen:
+                    continue
+                if title in _IGNORE_TITLES:
+                    self._seen[key] = window
+                    continue
+
+                # Read immediately while window is still open
+                text  = _read_window_text(window)
+                entry = f"[{title}]" if title else "[Window]"
+                if text:
+                    entry += f"\n{text}"
+
+                with self._lock:
+                    self._messages.append(entry)
+
+                self._seen[key] = window
+
+        except Exception:
+            pass
+
+    def stop(self) -> list[str]:
+        self._stop.set()
+        self._thread.join(timeout=2.0)
+        with self._lock:
+            return list(self._messages)
+
+
 # ── IJ Log capture ────────────────────────────────────────────────────────
 
 def get_ij_log_content() -> str:
@@ -174,9 +318,13 @@ def get_new_ij_log_entries(log_before: str) -> str:
 def run_groovy_script(script: str, ij) -> str:
     """
     Execute a Groovy script in ImageJ/Fiji capturing all output channels:
-      - System.out / System.err  via ByteArrayOutputStream redirect
-      - IJ.log()                 via Log window text delta
-      - Exception windows        via AWT Frame polling (Window menu)
+
+      Channel                    | Mechanism
+      ---------------------------|------------------------------------------
+      System.out / System.err    | ByteArrayOutputStream redirect
+      IJ.log()                   | Log TextWindow text delta
+      TextWindow exceptions      | _collect_new_frames via Frame.getFrames()
+      Modal dialogs DURING exec  | _WindowMonitor background thread
     """
     System                = jpype.JClass("java.lang.System")
     ByteArrayOutputStream = jpype.JClass("java.io.ByteArrayOutputStream")
@@ -189,9 +337,11 @@ def run_groovy_script(script: str, ij) -> str:
     System.setOut(PrintStream(out_stream))
     System.setErr(PrintStream(err_stream))
 
-    # Snapshots before execution
-    ij_log_before = get_ij_log_content()
-    frames_before = _get_open_frames()          # ← frame-based, not dialog-based
+    ij_log_before  = get_ij_log_content()
+    frames_before  = _get_open_frames()         # unchanged — for TextWindow detection
+    windows_before = _snapshot_all_windows()    # new — for modal dialog detection
+
+    monitor = _WindowMonitor(windows_before).start()
 
     try:
         result = ij.py.run_script("Groovy", script)
@@ -199,11 +349,13 @@ def run_groovy_script(script: str, ij) -> str:
         stderr = str(err_stream.toString())
 
         ij_log_new      = get_new_ij_log_entries(ij_log_before)
-        window_messages = _collect_new_frames(frames_before)   # ← renamed
+        dialog_messages = monitor.stop()                       # modal dialogs during exec
+        window_messages = _collect_new_frames(frames_before)  # TextWindows after exec
+        all_messages    = dialog_messages + window_messages
 
-        ij_log_has_error  = any(k in ij_log_new.lower()
-                                for k in ("error", "exception", "failed", "warning"))
-        window_has_error  = len(window_messages) > 0
+        ij_log_has_error = any(k in ij_log_new.lower()
+                               for k in ("error", "exception", "failed", "warning"))
+        window_has_error = len(all_messages) > 0
 
         if stderr.strip() or window_has_error:
             status = "ERROR"
@@ -218,13 +370,15 @@ def run_groovy_script(script: str, ij) -> str:
             f"STDOUT:\n{stdout}\n"
             f"STDERR:\n{stderr}\n"
             f"IJ_LOG:\n{ij_log_new}\n"
-            f"EXCEPTION_WINDOWS:\n{chr(10).join(window_messages)}\n"
+            f"EXCEPTION_WINDOWS:\n{chr(10).join(all_messages)}\n"
             f"RESULT:\n{result}"
         )
 
     except Exception as e:
         ij_log_new      = get_new_ij_log_entries(ij_log_before)
+        dialog_messages = monitor.stop()
         window_messages = _collect_new_frames(frames_before)
+        all_messages    = dialog_messages + window_messages
 
         return (
             "STATUS: ERROR\n"
@@ -232,14 +386,13 @@ def run_groovy_script(script: str, ij) -> str:
             "STDOUT:\n\n"
             f"STDERR:\n{str(e)}\n{str(err_stream.toString())}\n"
             f"IJ_LOG:\n{ij_log_new}\n"
-            f"EXCEPTION_WINDOWS:\n{chr(10).join(window_messages)}\n"
+            f"EXCEPTION_WINDOWS:\n{chr(10).join(all_messages)}\n"
             "RESULT:\nnull"
         )
 
     finally:
         System.setOut(original_out)
         System.setErr(original_err)
-
 
 def run_script_safe(language: str, code: str, max_retries: int = 3) -> str:
     """
