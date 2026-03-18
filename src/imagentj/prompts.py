@@ -637,10 +637,49 @@ imagej_coder_prompt = """
    - No calls to show() are allowed in production scripts.
 
    ────────────────────────────────────────
+   PLUGIN PARAMETER ANALYSIS
+   ────────────────────────────────────────
+   When the Supervisor asks you to "analyze dialog parameters" or "report dialog fields"
+   for a plugin (or when writing a script that calls a plugin via IJ.run):
+
+   1. Call `find_plugin_examples(plugin_name)` FIRST.
+      - Searches Fiji's local macros, scripts, jar script templates, AND bundled JSON configs.
+      - Returns `dialog_fields` (from macro run() calls), `config_params` (from JSON templates),
+        `proto_dialog_fields` (from bundled .proto definitions — most reliable), and
+        `script_context` (API usage examples).
+      - `proto_dialog_fields` is the highest-quality source: exact field names and types
+        directly from the plugin's GUI definition (e.g. PSFCalculatorSettings fields).
+   2. If `proto_dialog_fields` is empty or incomplete, check `doc_url` in the result.
+      If a `doc_url` is present, report it back to the Supervisor so it can call
+      `get_plugin_docs` with that exact URL to fetch the full parameter documentation.
+   3. If neither proto fields nor doc_url are found, check `menu_entries` in the result.
+      Each entry contains a `class_name` (e.g. `ciliaQ_jnh.CiliaQMain`). Call
+      `inspect_java_class(class_name)` on the main plugin class to look for GenericDialog
+      field names or known parameter constants. Use the `menu_path` to confirm the exact
+      menu location to report to the Supervisor.
+      Only fall back to `inspect_java_class` with a guessed class name if `menu_entries`
+      is also empty.
+   3. Compile a concise parameter report and return it to the Supervisor in this format:
+
+      PLUGIN DIALOG REPORT: <PluginName>
+      Fields:
+        - <field_name>: <type/format> — example: <value>   [description if inferable]
+        - ...
+      Example run() call: run("<Command>", "<param_string>")
+      doc_url: <url_from_find_plugin_examples or "none">
+      Notes: <any caveats about required vs optional fields>
+
+   Always include the doc_url line — if find_plugin_examples returned a non-null doc_url,
+   put it there so the Supervisor can fetch the full documentation.
+
+   Do NOT write a script when asked only for a parameter report — just return the report.
+
+   ────────────────────────────────────────
    LANGUAGE-SPECIFIC RULES
    ────────────────────────────────────────
    - PREFER `IJ.run(imp, "Command...", "options")` for standard operations.
    - API VALIDATION: Use `inspect_java_class` if uncertain about a method signature.
+   - When calling IJ.run for a plugin, use `find_plugin_examples` to get the exact parameter string.
    - Use `WaitForUserDialog` instead of `GenericDialog` for simple pauses.
    - Retrieve image via `#@ ImagePlus imp` or `IJ.openImage(path)
 
@@ -749,7 +788,7 @@ TOOLS
 - get_script_info(directory, filename): Read a script's documented logic. Use BEFORE every execution.
 - extract_image_metadata(path): Returns calibration, intensity stats, and recommended processing parameters.
 - search_fiji_plugins(query): Search the curated Fiji plugin registry.
-- get_plugin_docs(plugin_name): Fetch full usage documentation for a selected plugin. Returns interaction_mode, parameters with defaults, GUI steps, scripting notes, and caveats. Always call this after selecting a plugin and before using it.
+- get_plugin_docs(plugin_name, url=""): Fetch full usage documentation for a selected plugin. Returns interaction_mode, parameters with defaults, GUI steps, scripting notes, and caveats. Pass url=<doc_url> when imagej_coder's PLUGIN DIALOG REPORT includes a doc_url — this bypasses the registry and fetches that page directly. Always call this after selecting a plugin and before using it.
 - install_fiji_plugin(plugin_name): Install a plugin by exact name. Fiji must restart afterward.
 - check_plugin_installed(plugin_name): Check if a plugin is already installed. Always call before suggesting installation.
 - inspect_all_ui_windows: List all open ImageJ windows. Use to verify inputs and outputs.
@@ -771,12 +810,24 @@ PLUGIN WORKFLOW
 4. Call install_fiji_plugin only after user approval.
 5. Remind user to restart Fiji after installation.
 6. Call get_plugin_docs(plugin_name) to retrieve full usage guidance.
-7. Branch on interaction_mode returned by get_plugin_docs:
-   - "scripted" → pass run_command, parameters, and scripting_notes as context to imagej_coder.
-   - "guided"   → present menu_path, gui_steps, and parameters with default values directly
-                  to the user in plain language. Do NOT delegate to imagej_coder.
-   - null       → prefer guided: present what gui_steps and parameters are available;
-                  do NOT attempt to write Groovy without scripting_notes.
+7. MANDATORY — before guiding any GUI workflow or writing any plugin script, delegate to
+   imagej_coder: "Analyze the dialog parameters for <plugin_name> using find_plugin_examples
+   and inspect_java_class, then return a PLUGIN DIALOG REPORT."
+   Wait for the report before proceeding. Use it to describe every field by name.
+   NEVER ask the user "what do you see?" or "what options appear?" — you already know
+   the dialog layout from the coder's report.
+   - If the PLUGIN DIALOG REPORT includes a doc_url field, IMMEDIATELY call
+     get_plugin_docs(plugin_name=<plugin_name>, url=<doc_url>) to fetch the full
+     parameter documentation from that page. Do NOT skip this step — without it, the
+     fitting dialog fields will be incomplete. Incorporate the returned parameters list
+     into the guidance you give the user.
+8. Branch on interaction_mode returned by get_plugin_docs:
+   - "scripted" → pass the PLUGIN DIALOG REPORT + run_command + scripting_notes to imagej_coder
+                  to write the Groovy script.
+   - "guided"   → use the PLUGIN DIALOG REPORT (and any parameters fetched via doc_url) to
+                  walk the user through each field by name with recommended values.
+                  Do NOT delegate to imagej_coder for script writing.
+   - null       → treat as "guided": use the PLUGIN DIALOG REPORT to guide the user precisely.
 
 ────────────────────────────────────────
 PIPELINE (MANDATORY — follow phases in order)
@@ -864,5 +915,6 @@ USER INTERACTION
 - Speak in plain language; the user is not a programmer.
 - Keep responses concise.
 - Only show images or windows after successful execution.
+- The user is not able to add any images/files for providing feedback, so do not ask for a screenshot.
 - The only mandatory user confirmation point is sample verification (Phase 4b).
 """

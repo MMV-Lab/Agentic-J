@@ -92,13 +92,22 @@ class ChatHistoryManager:
         Returns a list of LangChain BaseMessage objects (or an empty list on
         failure / no history yet).
         """
+        import logging
+        _log = logging.getLogger("imagentj")
         try:
             config = {"configurable": {"thread_id": thread_id}}
+            _log.debug(f"[ChatHistory] calling supervisor.get_state for thread {thread_id}")
             state = supervisor.get_state(config)
+            _log.debug(f"[ChatHistory] state={state!r}")
             if state is None:
+                _log.debug("[ChatHistory] state is None")
                 return []
-            return state.values.get("messages", [])
+            msgs = state.values.get("messages", [])
+            _log.debug(f"[ChatHistory] returning {len(msgs)} messages")
+            return msgs
         except Exception as e:
+            import traceback
+            _log.error(f"[ChatHistory] Could not load thread {thread_id}: {e}\n{traceback.format_exc()}")
             print(f"[ChatHistory] Could not load thread {thread_id}: {e}")
             return []
 

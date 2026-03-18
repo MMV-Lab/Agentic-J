@@ -4,7 +4,7 @@ from deepagents.backends import FilesystemBackend
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import MemorySaver
 from .prompts import imagej_coder_prompt, imagej_debugger_prompt, supervisor_prompt, python_analyst_prompt, qa_reporter_prompt
-from .tools import internet_search, inspect_all_ui_windows, run_script_safe, rag_retrieve_docs, inspect_java_class, save_coding_experience, rag_retrieve_mistakes, save_reusable_script, inspect_folder_tree, smart_file_reader, run_python_code, inspect_csv_header, extract_image_metadata, search_fiji_plugins, install_fiji_plugin, check_plugin_installed, get_plugin_docs, mkdir_copy, save_script, execute_script, get_script_info
+from .tools import internet_search, inspect_all_ui_windows, run_script_safe, rag_retrieve_docs, inspect_java_class, save_coding_experience, rag_retrieve_mistakes, save_reusable_script, inspect_folder_tree, smart_file_reader, run_python_code, inspect_csv_header, extract_image_metadata, search_fiji_plugins, install_fiji_plugin, check_plugin_installed, get_plugin_docs, find_plugin_examples, mkdir_copy, save_script, execute_script, get_script_info
 from .tools import load_script, get_script_history, setup_analysis_workspace, save_markdown
 from imagentj.tracker import UsageMetrics, MetricsSignalBridge, UsageTrackerCallback
 
@@ -59,7 +59,7 @@ imagej_coder = {
 
     "system_prompt": imagej_coder_prompt,
     "middleware":[],
-    "tools": [internet_search, inspect_java_class, save_script, load_script, get_script_history],
+    "tools": [internet_search, inspect_java_class, find_plugin_examples, save_script, load_script, get_script_history],
     "model":llm_gpt5_nano,
     "checkpointer":checkpointer_imagej_coder,
 }

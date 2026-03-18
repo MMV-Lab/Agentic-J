@@ -11,19 +11,62 @@ rm -f /tmp/.X11-unix/X1
 # The makeExtensionsImmutable() NoSuchMethodError is caused by a newer protobuf
 # JAR shadowing the version TF was compiled against. Replace it at startup since
 # fiji_jars is a named volume that survives image rebuilds.
-FIJI_JARS=/opt/Fiji.app/jars
-REQUIRED_PROTOBUF="protobuf-java-3.6.1.jar"
-if [ ! -f "$FIJI_JARS/$REQUIRED_PROTOBUF" ]; then
-    echo "[entrypoint] Fixing protobuf JAR for CSBDeep/StarDist compatibility..."
-    # Remove any protobuf JAR that would conflict (including the util sibling,
-    # which targets 4.x and would cause Updater "locally modified" warnings)
-    rm -f "$FIJI_JARS"/protobuf-java-*.jar
-    rm -f "$FIJI_JARS"/protobuf-java-util-*.jar
-    wget -q "https://repo1.maven.org/maven2/com/google/protobuf/protobuf-java/3.6.1/protobuf-java-3.6.1.jar" \
-         -O "$FIJI_JARS/$REQUIRED_PROTOBUF" \
-    && echo "[entrypoint] protobuf-java-3.6.1.jar installed" \
-    || echo "[entrypoint] WARNING: failed to download protobuf JAR — StarDist may not work"
-fi
+# FIJI_JARS=/opt/Fiji.app/jars
+# REQUIRED_PROTOBUF="protobuf-java-3.6.1.jar"
+# if [ ! -f "$FIJI_JARS/$REQUIRED_PROTOBUF" ]; then
+#     echo "[entrypoint] Fixing protobuf JAR for CSBDeep/StarDist compatibility..."
+#     # Remove any protobuf JAR that would conflict (including the util sibling,
+#     # which targets 4.x and would cause Updater "locally modified" warnings)
+#     rm -f "$FIJI_JARS"/protobuf-java-*.jar
+#     rm -f "$FIJI_JARS"/protobuf-java-util-*.jar
+#     wget -q "https://repo1.maven.org/maven2/com/google/protobuf/protobuf-java/3.6.1/protobuf-java-3.6.1.jar" \
+#          -O "$FIJI_JARS/$REQUIRED_PROTOBUF" \
+#     && echo "[entrypoint] protobuf-java-3.6.1.jar installed" \
+#     || echo "[entrypoint] WARNING: failed to download protobuf JAR — StarDist may not work"
+# fi
+
+# ── Fix protobuf-java version mismatch (GDSC-SMLM needs 3.25+) ───────────────
+# The fiji_jars volume may contain an old protobuf-java-3.6.1.jar left over from
+# a previous StarDist workaround. GDSC-SMLM 2.1 requires RuntimeVersion$RuntimeDomain
+# which was introduced in protobuf 3.25. This block upgrades protobuf-java to match
+# the protobuf-java-util version already present in the jars directory.
+python3 -c "
+import re, subprocess
+from pathlib import Path
+
+jars_dir = Path('/opt/Fiji.app/jars')
+
+# Find what version of protobuf-java-util is installed (e.g. 4.28.2)
+util_jars = sorted(jars_dir.glob('protobuf-java-util-*.jar'))
+core_jars = sorted(jars_dir.glob('protobuf-java-[0-9]*.jar'))  # excludes -util
+
+if not util_jars:
+    print('[entrypoint] No protobuf-java-util jar found, skipping protobuf fix')
+    exit(0)
+
+util_version = re.search(r'protobuf-java-util-(.+)\.jar', util_jars[-1].name).group(1)
+target_jar = jars_dir / f'protobuf-java-{util_version}.jar'
+
+if target_jar.exists():
+    print(f'[entrypoint] protobuf-java-{util_version}.jar already present, no fix needed')
+    exit(0)
+
+print(f'[entrypoint] Upgrading protobuf-java to {util_version} (to match protobuf-java-util)...')
+url = f'https://repo1.maven.org/maven2/com/google/protobuf/protobuf-java/{util_version}/protobuf-java-{util_version}.jar'
+result = subprocess.run(['wget', '-q', url, '-O', str(target_jar)], capture_output=True)
+if result.returncode != 0:
+    print(f'[entrypoint] WARNING: failed to download protobuf-java-{util_version}.jar')
+    target_jar.unlink(missing_ok=True)
+    exit(0)
+
+# Remove old incompatible versions
+for old in core_jars:
+    if old != target_jar:
+        print(f'[entrypoint] Removing old protobuf JAR: {old.name}')
+        old.unlink()
+
+print(f'[entrypoint] protobuf-java-{util_version}.jar installed')
+" 2>&1 || echo "[entrypoint] WARNING: protobuf fix skipped"
 
 # ── Remove duplicate JAR versions from fiji_jars ─────────────────────────────
 # Fiji's updater throws "multiple existing versions" critical errors when both
@@ -98,7 +141,7 @@ EOF
 
 # ── Start virtual display ────────────────────────────────────────────────────
 echo "[entrypoint] Starting Xvfb on display :1..."
-Xvfb :1 -screen 0 1840x1020x24 -ac +extension GLX +render -noreset &
+Xvfb :1 -screen 0 2480x1200x24 -ac +extension GLX +render -noreset &
 
 export DISPLAY=:1
 # echo "[entrypoint] Enabling keyboard repeat..."
@@ -145,6 +188,13 @@ websockify --web /usr/share/novnc 6080 localhost:5900 &
 sleep 1
 
 echo "[entrypoint] noVNC is listening on http://localhost:6080"
+
+# ── Ensure langgraph-checkpoint-sqlite is installed (needed for chat persistence) ──
+python3 -c "import langgraph.checkpoint.sqlite" 2>/dev/null || {
+    echo "[entrypoint] Installing langgraph-checkpoint-sqlite..."
+    pip install langgraph-checkpoint-sqlite -q
+    echo "[entrypoint] langgraph-checkpoint-sqlite installed"
+}
 
 # ── Validate API key ─────────────────────────────────────────────────────────
 if [ -z "$OPENAI_API_KEY" ]; then

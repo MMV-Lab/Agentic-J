@@ -104,7 +104,7 @@ def _md_to_html(text: str) -> str:
             continue
         # Horizontal rules → dropped
         if re.fullmatch(r'[-*_]{3,}', line.strip()):
-            continue
+            continue_
 
         # Inline code
         line = re.sub(
@@ -471,7 +471,6 @@ class ImageJAgentGUI(QWidget):
         self.setWindowTitle("ImagentJ - AI Supervisor & Script Library")
         self.resize(1100, 680)
         self.setAcceptDrops(True)
-        self.attached_files: list[str] = []
 
         self.history_manager = ChatHistoryManager()
 
@@ -501,11 +500,6 @@ class ImageJAgentGUI(QWidget):
 
         self.chat_scroll = ChatScrollArea()
 
-        self.attachment_status = QLabel("No files attached")
-        self.attachment_status.setStyleSheet(
-            "color: #7f8c8d; font-style: italic; padding-left: 5px;"
-        )
-
         self.input_line = QTextEdit()
         self.input_line.setFixedHeight(120)
 
@@ -529,7 +523,6 @@ class ImageJAgentGUI(QWidget):
         btn_row.addWidget(self.stop_button, stretch=1)
 
         chat_layout.addWidget(self.chat_scroll,        stretch=3)
-        chat_layout.addWidget(self.attachment_status,  stretch=0)
         chat_layout.addWidget(self.input_line,         stretch=1)
         chat_layout.addLayout(btn_row)
         chat_layout.addWidget(self.status_label,       stretch=0)
@@ -604,23 +597,36 @@ class ImageJAgentGUI(QWidget):
         self.history_panel.set_active(thread_id)
 
     def _load_thread(self, thread_id: str):
+        log.debug(f"[_load_thread] START thread_id={thread_id}")
         self.current_thread_id = thread_id
         self.worker.thread_id  = thread_id
         self._is_new_thread    = False
         self._current_ai_bubble  = None
         self._ai_response_buffer = ""
-        self._tracker_cb.switch_thread(thread_id)
+        try:
+            self._tracker_cb.switch_thread(thread_id)
+            log.debug(f"[_load_thread] switch_thread OK")
+        except Exception as e:
+            log.exception(f"[_load_thread] switch_thread FAILED: {e}")
 
         self.chat_scroll.clear_messages()
 
-        messages = self.history_manager.get_messages_for_display(self.supervisor, thread_id)
+        try:
+            messages = self.history_manager.get_messages_for_display(self.supervisor, thread_id)
+            log.debug(f"[_load_thread] got {len(messages)} messages")
+        except Exception as e:
+            log.exception(f"[_load_thread] get_messages_for_display FAILED: {e}")
+            messages = []
+
         if not messages:
+            log.debug("[_load_thread] no messages — showing intro")
             self.chat_scroll.add_message('ai', intro_message)
         else:
             for msg in messages:
                 msg_type   = getattr(msg, 'type', '') or ''
                 content    = _extract_text(getattr(msg, 'content', ''))
                 tool_calls = getattr(msg, 'tool_calls', None) or []
+                log.debug(f"[_load_thread] msg type={msg_type!r} has_content={bool(content)} has_tool_calls={bool(tool_calls)}")
 
                 if msg_type == 'human' and content:
                     self.chat_scroll.add_message('user', content)
@@ -628,6 +634,7 @@ class ImageJAgentGUI(QWidget):
                     self.chat_scroll.add_message('ai', content)
 
         self.history_panel.set_active(thread_id)
+        log.debug(f"[_load_thread] END")
 
     # ------------------------------------------------------------------
     # History panel slots
@@ -667,32 +674,6 @@ class ImageJAgentGUI(QWidget):
         except Exception as e:
             log.exception(f"Failed to save report: {e}")
             QMessageBox.warning(self, "Save Failed", str(e))
-
-    # ------------------------------------------------------------------
-    # Drag-and-drop / attachments
-    # ------------------------------------------------------------------
-
-    def dragEnterEvent(self, event):
-        if event.mimeData().hasUrls():
-            event.acceptProposedAction()
-
-    def dropEvent(self, event):
-        for url in event.mimeData().urls():
-            p = url.toLocalFile()
-            if p not in self.attached_files:
-                self.attached_files.append(p)
-        self._update_attachment_ui()
-
-    def _update_attachment_ui(self):
-        if not self.attached_files:
-            self.attachment_status.setText("No files attached")
-            self.attachment_status.setStyleSheet(
-                "color: #7f8c8d; font-style: italic; padding-left: 5px;"
-            )
-        else:
-            names = [os.path.basename(p) for p in self.attached_files]
-            self.attachment_status.setText(f"Attached ({len(names)}): {', '.join(names)}")
-            self.attachment_status.setStyleSheet("color: #2980b9; font-weight: bold;")
 
     # ------------------------------------------------------------------
     # Status / UI helpers
@@ -778,19 +759,10 @@ class ImageJAgentGUI(QWidget):
 
     def on_send(self):
         user_input = self.input_line.toPlainText().strip()
-        if not user_input and not self.attached_files:
-            return
 
         full_prompt = user_input
-        if self.attached_files:
-            file_list_str = "\n".join([f"- {p}" for p in self.attached_files])
-            full_prompt  += f"\n\n[SYSTEM: The user has attached the following files/folders]:\n{file_list_str}"
-
         display_text = user_input if user_input else '[Attached Files]'
         self.chat_scroll.add_message('user', display_text)
-        if self.attached_files:
-            display_names = ", ".join([os.path.basename(p) for p in self.attached_files])
-            self.chat_scroll.add_message('system', f"Sent with: {display_names}")
 
         self.input_line.clear()
 
@@ -809,8 +781,6 @@ class ImageJAgentGUI(QWidget):
         self._is_new_thread = False
 
         self._execute_agent_query(full_prompt)
-        self.attached_files = []
-        self._update_attachment_ui()
 
     # ------------------------------------------------------------------
     # Event handler (streaming from agent)
