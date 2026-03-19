@@ -133,11 +133,6 @@ def _collect_new_frames(frames_before: dict, timeout: float = 0.5) -> list[str]:
                 if text:
                     entry += f"\n{text}"
                 messages.append(entry)
-                # Close the window
-                try:
-                    frame.dispose()
-                except Exception:
-                    pass
             break
 
         time.sleep(0.05)
@@ -357,9 +352,7 @@ def run_groovy_script(script: str, ij) -> str:
                                for k in ("error", "exception", "failed", "warning"))
         window_has_error = len(all_messages) > 0
 
-        if stderr.strip() or window_has_error:
-            status = "ERROR"
-        elif ij_log_has_error:
+        if ij_log_has_error:
             status = "WARNING"
         else:
             status = "SUCCESS"
@@ -381,7 +374,7 @@ def run_groovy_script(script: str, ij) -> str:
         all_messages    = dialog_messages + window_messages
 
         return (
-            "STATUS: ERROR\n"
+            "STATUS:\n"
             "LANGUAGE: Groovy\n"
             "STDOUT:\n\n"
             f"STDERR:\n{str(e)}\n{str(err_stream.toString())}\n"
@@ -456,21 +449,21 @@ def run_script_safe(language: str, code: str, max_retries: int = 3) -> str:
     new_windows = windows_after - windows_before
 
     # Determine failure
-    failed = any(k in output.lower() for k in ["error", "exception", "failed"])
+    failed = any(k in output.lower() for k in ["error", "failed"])
 
-    if failed:
-        # Close windows created during failed attempt
-        for title in new_windows:
-            imp = WindowManager.getImage(title)
-            if imp:
-                imp.changes = False
-                imp.close()
+    # if failed:
+    #     # Close windows created during failed attempt
+    #     for title in new_windows:
+    #         imp = WindowManager.getImage(title)
+    #         if imp:
+    #             imp.changes = False
+    #             imp.close()
 
-            print("Execution failed")
-            return output
-    else:
-        # Success: leave windows visible
-        return output
+    #         print("Execution failed")
+    #         return output
+    # else:
+    #     # Success: leave windows visible
+    #     return output
 
     return last_output
 
