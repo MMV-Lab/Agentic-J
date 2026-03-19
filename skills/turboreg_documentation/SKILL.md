@@ -4,6 +4,7 @@ description: An ImageJ plugin for Registration from EPFL BIG that automatically 
  or stack to a fixed **target** image using intensity-based pyramid optimisation.
  Achieves sub-pixel accuracy via cubic-spline interpolation. Standard tool for
  motion correction, channel alignment, and time-lapse stabilisation in Fiji.
+ Read the files listed at the end of this SKILL for verified commands, GUI walkthroughs, scripting examples, and common pitfalls. 
 ---
 
 

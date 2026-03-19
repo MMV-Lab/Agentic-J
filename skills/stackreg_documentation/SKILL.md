@@ -4,6 +4,7 @@ description: An ImageJ plugin from EPFL BIG that aligns all slices of a stack by
  **sequential propagation** — each slice is registered to the previous one,
  starting from the current anchor slice. Uses TurboReg internally for each pairwise registration.
  Primary use cases are time-lapse drift correction, serial section alignment, Z-stack stabilisation.
+ Read the files listed at the end of this SKILL for verified commands, GUI walkthroughs, scripting examples, and common pitfalls. 
 ---
 
 ## StackReg vs TurboReg — Key Differences

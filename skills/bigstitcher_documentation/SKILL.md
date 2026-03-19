@@ -1,6 +1,6 @@
 ---
 name: bigstitcher_documentation
-description: A Fiji plugin for stitching and fusing multi-tile, multi-angle, multi-TB microscopy datasets.Stores all state in an XML project file; uses BigDataViewer for interactive display. Primary use cases are cleared-tissue lightsheet stitching, tiled confocal reconstruction, multi-view lightsheet registration.
+description: A Fiji plugin for stitching and fusing multi-tile, multi-angle, multi-TB microscopy datasets.Stores all state in an XML project file; uses BigDataViewer for interactive display. Primary use cases are cleared-tissue lightsheet stitching, tiled confocal reconstruction, multi-view lightsheet registration. Read the files listed at the end of this SKILL for verified commands, GUI walkthroughs, scripting examples, and common pitfalls. 
 ---
 
 

@@ -4,7 +4,7 @@ description: Bio-Formats is a Fiji plugin for **reading and writing microscopy i
  Reads and writes **150+ proprietary microscopy image formats** (.czi, .nd2, .lif, .oif,
  .ims, .stk, …) and converts them to open formats, primarily OME-TIFF. Preserves full
  acquisition metadata via the OME data model. The definitive tool for opening files from
- Zeiss, Nikon, Leica, Olympus, Olympus, PerkinElmer, and many others in Fiji/ImageJ.
+ Zeiss, Nikon, Leica, Olympus, Olympus, PerkinElmer, and many others in Fiji/ImageJ. Read the files listed at the end of this SKILL for verified commands, GUI walkthroughs, scripting examples, and common pitfalls. 
 ---
 
 
