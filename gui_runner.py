@@ -192,50 +192,58 @@ class MessageBubble(QFrame):
 
 class ChatScrollArea(QWidget):
     """Scrollable container for MessageBubble widgets."""
-
+ 
     def __init__(self, parent=None):
         super().__init__(parent)
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
-
+ 
         self._scroll = QScrollArea()
         self._scroll.setWidgetResizable(True)
         self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self._scroll.setStyleSheet("QScrollArea { border: none; background: white; }")
-
+ 
         self._container = QWidget()
         self._container.setStyleSheet("background: white;")
         self._msg_layout = QVBoxLayout(self._container)
         self._msg_layout.setContentsMargins(8, 8, 8, 8)
         self._msg_layout.setSpacing(6)
-        self._msg_layout.addStretch()
-
+ 
         self._scroll.setWidget(self._container)
         outer.addWidget(self._scroll)
-
-        #  Auto-scroll whenever the scrollbar range grows (new content arrived)
-        self._scroll.verticalScrollBar().rangeChanged.connect(
-            lambda _min, _max: self._scroll.verticalScrollBar().setValue(_max)
-        )
-
+ 
     def resizeEvent(self, event):
         super().resizeEvent(event)
         vp_w = self._scroll.viewport().width()
         if vp_w > 0:
             self._container.setMaximumWidth(vp_w)
-
+ 
+    def scroll_to_bottom(self):
+        """Scroll to the bottom after the current event loop iteration completes.
+ 
+        Using a zero-delay QTimer ensures Qt has finished its layout pass before
+        we read the new scrollbar maximum. Without this, in-place bubble updates
+        (update_text) don't move the scroll position because the layout hasn't
+        recalculated yet when the call is made.
+        """
+        QTimer.singleShot(0, lambda: (
+            self._scroll.verticalScrollBar().setValue(
+                self._scroll.verticalScrollBar().maximum()
+            )
+        ))
+ 
     def add_message(self, role: str, text: str) -> MessageBubble:
         bubble = MessageBubble(text, role)
-        self._msg_layout.insertWidget(self._msg_layout.count() - 1, bubble)
+        self._msg_layout.addWidget(bubble)   # ← addWidget (not insertWidget) — no stretch to jump over
+        self.scroll_to_bottom()
         return bubble
-
+ 
     def clear_messages(self):
-        while self._msg_layout.count() > 1:
+        while self._msg_layout.count() > 0:
             item = self._msg_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
-
 
 
 # ---------------------------------------------------------------------------
@@ -577,6 +585,9 @@ class ImageJAgentGUI(QWidget):
         self.worker.error.connect(self.on_agent_error)
         self.thread.start()
 
+        self._current_status_bubble = None
+        self._active_tasks = {} # Tracks tool_id -> status_text
+
         self._init_session()
 
     # ------------------------------------------------------------------
@@ -818,52 +829,108 @@ class ImageJAgentGUI(QWidget):
     # ------------------------------------------------------------------
     # Event handler (streaming from agent)
     # ------------------------------------------------------------------
+    
 
-    def handle_event(self, event: dict):
+    def handle_event(self, event: dict):  # method of ImageJAgentGUI
+ 
+        # ── Helper: upsert the single status line ────────────────────────────────
+        def set_status(text: str):
+            if self._status_bubble is None:
+                self._status_bubble = self.chat_scroll.add_message('system', text)
+            else:
+                self._status_bubble.update_text(text)
+                self.chat_scroll.scroll_to_bottom()   # ← in-place update needs manual scroll
+    
+        # ── Helper: richer tool-start messages ───────────────────────────────────
+        _TOOL_START = {
+            "imagej_coder":              "Bio-Imaging Specialist is writing your ImageJ script…",
+            "imagej_debugger":           "Debugger is repairing the script…",
+            "python_data_analyst":       "Data Scientist is running statistics & building plots…",
+            "execute_script":            "Executing script on your images (may take a minute)…",
+            "qa_reporter":               "QA Agent is auditing the project and generating the report…",
+            "vlm_judge":                 "Vision AI is inspecting the image windows…",
+            "rag_retrieve_docs":         "Searching ImageJ documentation…",
+            "rag_retrieve_mistakes":     "Checking past lessons learned…",
+            "inspect_all_ui_windows":    "Listing open ImageJ windows…",
+            "extract_image_metadata":    "Reading image metadata & calibration…",
+            "setup_analysis_workspace":  "Creating project workspace…",
+            "search_fiji_plugins":       "Searching Fiji plugin registry…",
+            "install_fiji_plugin":       "Installing Fiji plugin…",
+            "internet_search":           "Searching the web…",
+            "inspect_folder_tree":       "Inspecting project folder…",
+            "smart_file_reader":         "Reading file…",
+            "inspect_csv_header":        "Reading CSV structure…",
+            "save_coding_experience":    "Saving lesson to experience database…",
+            "save_markdown":             "Writing markdown document…",
+            "save_reusable_script":      "Saving reusable script to library…",
+        }
+    
+        _TOOL_DONE = {
+            "imagej_coder":              "Bio-Imaging Specialist finished writing the script.",
+            "imagej_debugger":           "Debugger finished — script repaired.",
+            "python_data_analyst":       "Data Scientist finished analysis.",
+            "execute_script":            "Script execution complete.",
+            "qa_reporter":               "QA report generated.",
+            "vlm_judge":                 "Vision AI inspection complete.",
+            "setup_analysis_workspace":  "Project workspace ready.",
+            "install_fiji_plugin":       "Plugin installed — please restart Fiji.",
+        }
+    
         for node_name, node_data in event.items():
             if "Middleware" in node_name:
                 continue
-
+    
+            # ── Supervisor routing announcements ─────────────────────────────────
             if node_name in ("supervisor", "model"):
                 for msg in node_data.get("messages", []):
-                    tool_calls = getattr(msg, "tool_calls", [])
-                    for tc in tool_calls:
+                    for tc in (getattr(msg, "tool_calls", None) or []):
                         name = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", "")
                         args = tc.get("args") if isinstance(tc, dict) else getattr(tc, "args", {})
                         if name == "task":
                             agent_type = args.get("subagent_type", "Specialist")
                             desc       = args.get("description", "")
-                            short_desc = (desc[:120] + "...") if len(desc) > 120 else desc
-                            self.chat_scroll.add_message(
-                                'system', f"Routing to {agent_type}: {short_desc}"
-                            )
-                        else:
-                            self.chat_scroll.add_message('system', f"Calling tool: {name}...")
-
+                            short_desc = (desc[:120] + "…") if len(desc) > 120 else desc
+                            set_status(f"Routing to {agent_type}: {short_desc}")
+    
+            # ── AI text streaming ─────────────────────────────────────────────────
             if node_name == "model":
                 for msg in node_data.get("messages", []):
                     content = getattr(msg, "content", "")
-                    if content and not getattr(msg, "tool_calls", None):
+                    if content:
+                        # AI is speaking → clear the status line so it doesn't
+                        # get overwritten by the next tool's set_status call
+                        self._status_bubble = None
+    
                         if self._current_ai_bubble is None:
                             self._ai_response_buffer = content
                             self._current_ai_bubble  = self.chat_scroll.add_message('ai', content)
                         else:
                             self._ai_response_buffer += content
                             self._current_ai_bubble.update_text(self._ai_response_buffer)
-
+                            self.chat_scroll.scroll_to_bottom()
+    
+                    # ── Tool start announcement ───────────────────────────────────
+                    if getattr(msg, "tool_calls", None):
+                        self._current_ai_bubble = None  # next AI text starts a new bubble
+                        for tc in msg.tool_calls:
+                            name   = tc.get("name", "") if isinstance(tc, dict) else getattr(tc, "name", "")
+                            status = _TOOL_START.get(name) or f"Running {name.replace('_', ' ').title()}…"
+                            set_status(status)
+    
+        # ── Tool completion ───────────────────────────────────────────────────────
         if "tools" in event:
             for tool_msg in event["tools"].get("messages", []):
-                name    = getattr(tool_msg, "name", "Tool")
+                name    = getattr(tool_msg, "name", "")
                 content = getattr(tool_msg, "content", "")
-
-                # Notify tracker when a project workspace is created
+    
                 if name == "setup_analysis_workspace":
                     self._tracker_cb.notify_workspace_created(str(content))
-
-                if name == "task":
-                    self.chat_scroll.add_message('system', "Sub-agent task completed.")
-                else:
-                    self.chat_scroll.add_message('system', f"{name} finished.")
+    
+                done_text = _TOOL_DONE.get(name)
+                if done_text:
+                    set_status(done_text)
+                elif name and name != "task":
+                    set_status(f"{name.replace('_', ' ').title()} — done.")
 
 
 # ---------------------------------------------------------------------------
