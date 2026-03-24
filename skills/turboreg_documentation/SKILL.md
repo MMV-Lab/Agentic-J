@@ -26,7 +26,8 @@ IJ.run("TurboReg ", "...")  // CORRECT — trailing space is mandatory
 ## Command Structure
 
 ```
-IJ.run("TurboReg ", "-align|-transform  <SOURCE> <CROP>  <TARGET> <CROP>  <TRANSFORMATION> <LANDMARKS>  [-showOutput]")
+IJ.run("TurboReg ", "-align <SOURCE> <CROP> <TARGET> <CROP> <TRANSFORMATION> <LANDMARKS> (-showOutput | -hideOutput)")
+IJ.run("TurboReg ", "-transform <SOURCE> <OUT_W> <OUT_H> <TRANSFORMATION> <LANDMARKS> (-showOutput | -hideOutput)")
 ```
 
 | Token | Options |
@@ -35,8 +36,7 @@ IJ.run("TurboReg ", "-align|-transform  <SOURCE> <CROP>  <TARGET> <CROP>  <TRANS
 | Source/Target | `-window "Title"` (open image) or `-file "/path/file.tif"` |
 | Crop | `left top right bottom` — use `0 0 (W-1) (H-1)` for no crop |
 | Transformation | `-translation` · `-rigidBody` · `-scaledRotation` · `-affine` · `-bilinear` |
-| Output | `-showOutput` to display result as new window |
-
+|Output | MUST end with exactly one: -showOutput OR -hideOutput
 ---
 
 ## Transformations and Landmark Counts

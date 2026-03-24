@@ -34,10 +34,9 @@ IJ.run("TurboReg", "...")    // WRONG — plugin not found, call silently fails
 
 ```
 -transform
-  <SOURCE_REF> <sourceCropLeft> <sourceCropTop> <sourceCropRight> <sourceCropBottom>
-  <TARGET_REF> <targetCropLeft> <targetCropTop> <targetCropRight> <targetCropBottom>
-  <TRANSFORMATION> <LANDMARKS>
-  [-showOutput]
+<SOURCE_REF> <outputWidth> <outputHeight>
+<TRANSFORMATION> <LANDMARKS>
+(-showOutput | -hideOutput)
 ```
 
 ---
@@ -78,6 +77,13 @@ the ImagePlus dimensions at runtime — see the Groovy examples below.
 ```
 -translation  sourceX1 sourceY1  targetX1 targetY1
 ```
+
+Landmark ordering note:
+TurboReg's parser expects the landmark coordinates as grouped axis arrays:
+`sourcePointsX[...] sourcePointsY[...] targetPointsX[...] targetPointsY[...]`.
+For Translation (1 point), the common interleaved form looks identical.
+For multi-point transforms (Rigid Body, Affine, Bilinear), prefer grouped ordering:
+`srcX1 srcX2 srcX3 srcY1 srcY2 srcY3 tgtX1 tgtX2 tgtX3 tgtY1 tgtY2 tgtY3`
 
 ### Rigid Body (3 landmark pairs)
 
@@ -126,7 +132,8 @@ matter for the computation.
 | Flag | Effect |
 |---|---|
 | `-showOutput` | The registered (warped) image is displayed in a new window |
-| *(omitted)* | Registration runs silently; result is not shown automatically |
+| `-hideOutput` | Registration runs without showing the result window |
+| *(omitted)* | INVALID SYNTAX on many TurboReg builds ? always provide -showOutput or -hideOutput |
 
 When using `-showOutput`, the result appears as the frontmost window immediately
 after `IJ.run()` returns. Retrieve it with `IJ.getImage()` or
