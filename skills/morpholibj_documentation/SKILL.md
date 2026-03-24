@@ -1,16 +1,6 @@
 ---
 name: morpholibj_documentation
-description: MorphoLibJ is a Fiji/ImageJ plugin for mathematical morphology. It adds morphological filtering, watershed segmentation, and quantitative region analysis not available in core ImageJ.
----
-
-
-# MorphoLibJ — SKILL SUMMARY (LLM Reference Card)
-
-## What It Is
-MorphoLibJ is a Fiji/ImageJ plugin for mathematical morphology. It adds morphological
-filtering, watershed segmentation, and quantitative region analysis not available in
-core ImageJ. Install via Fiji update site **IJPB-plugins**.
-
+description: MorphoLibJ is a Fiji/ImageJ plugin for mathematical morphology. It adds morphological filtering, watershed segmentation, and quantitative region analysis not available in core ImageJ. Read the files listed at the end of this SKILL for verified commands, GUI walkthroughs, scripting examples, and common pitfalls. 
 ---
 
 ## Primary Use Case in This Skill Set

@@ -78,12 +78,7 @@ the ImagePlus dimensions at runtime — see the Groovy examples below.
 -translation  sourceX1 sourceY1  targetX1 targetY1
 ```
 
-Landmark ordering note:
-TurboReg's parser expects the landmark coordinates as grouped axis arrays:
-`sourcePointsX[...] sourcePointsY[...] targetPointsX[...] targetPointsY[...]`.
-For Translation (1 point), the common interleaved form looks identical.
-For multi-point transforms (Rigid Body, Affine, Bilinear), prefer grouped ordering:
-`srcX1 srcX2 srcX3 srcY1 srcY2 srcY3 tgtX1 tgtX2 tgtX3 tgtY1 tgtY2 tgtY3`
+
 
 ### Rigid Body (3 landmark pairs)
 
@@ -124,6 +119,13 @@ matter for the computation.
   sourceX3 sourceY3  targetX3 targetY3
   sourceX4 sourceY4  targetX4 targetY4
 ```
+
+Landmark ordering note:
+TurboReg's parser expects the landmark coordinates as grouped axis arrays:
+`sourcePointsX[...] sourcePointsY[...] targetPointsX[...] targetPointsY[...]`.
+For Translation (1 point), the common interleaved form looks identical.
+For multi-point transforms (Rigid Body, Affine, Bilinear), prefer grouped ordering:
+`srcX1 srcX2 srcX3 srcY1 srcY2 srcY3 tgtX1 tgtX2 tgtX3 tgtY1 tgtY2 tgtY3`
 
 ---
 
