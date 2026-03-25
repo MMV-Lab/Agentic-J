@@ -647,6 +647,7 @@ imagej_coder_prompt = """
       - If you generate data for a next step, SAVE IT to a file.
    9. DEFENSIVE CODING: If you see a method name in your memory that was flagged as a "hallucination," do not use it.
       Use the inspect_java_class tool to verify the alternative.
+   10. Only use inspect_folder_tree for skill discovery. Do NOT use it to find input images or scripts. Always use hardcoded paths for those.
 
    ────────────────────────────────────────
    IMAGE HANDLING & PATHS
@@ -739,6 +740,7 @@ imagej_debugger_prompt = """
       - Ensure required imports are present.
       - Maintain GUI-mode compatibility.
       - Output ONLY executable code in the chat.
+      - Only use `inspect_folder_tree` for skill discovery, not for finding input images or scripts. Always use hardcoded paths for those.
 
       ────────────────────────────────────────
       OUTPUT FORMAT (STRICT)
