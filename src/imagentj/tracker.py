@@ -361,224 +361,6 @@ class ConversationLogger:
 
 
 # ---------------------------------------------------------------------------
-# Raw conversation logger — captures EVERYTHING sent to / from the LLM
-# ---------------------------------------------------------------------------
-
-class RawConversationLogger(BaseCallbackHandler):
-    """
-    Writes a JSONL file per conversation thread at:
-        /app/data/chats/<thread_id>/raw_log.jsonl
-
-    Every event is one JSON line with keys:
-        ts       – ISO-8601 timestamp
-        event    – one of: user_input | llm_request | llm_response |
-                           tool_call  | tool_result | tool_error   |
-                           chain_start | chain_end
-        **data   – event-specific payload (raw strings, full dicts, etc.)
-
-    Also mirrors into the active project folder when one is set.
-    """
-    raise_error = False          # never let logging crash the agent
-
-    def __init__(self, chats_dir: Path = CHATS_DIR):
-        super().__init__()
-        self._chats_dir    = chats_dir
-        self._thread_id    = ""
-        self._project_root: Path | None = None
-        self._lock         = threading.Lock()
-        self._run_models:  dict[str, str] = {}     # run_id → model name
-
-    # ── thread / project management ──────────────────────────────────────
-
-    def set_thread(self, thread_id: str):
-        self._thread_id    = thread_id
-        self._project_root = None
-
-    def set_project_path(self, project_root: Path):
-        self._project_root = project_root
-
-    # ── low-level append ─────────────────────────────────────────────────
-
-    def _append(self, event_type: str, **payload):
-        if not self._thread_id:
-            return
-        entry = {
-            "ts":    time.strftime("%Y-%m-%dT%H:%M:%S"),
-            "event": event_type,
-            **payload,
-        }
-        line = json.dumps(entry, ensure_ascii=False, default=str) + "\n"
-        with self._lock:
-            self._write_line(
-                self._chats_dir / self._thread_id / "raw_log.jsonl", line
-            )
-            if self._project_root:
-                self._write_line(
-                    self._project_root / "logs" / "raw_log.jsonl", line
-                )
-
-    @staticmethod
-    def _write_line(path: Path, line: str):
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            with open(path, "a", encoding="utf-8") as f:
-                f.write(line)
-        except Exception:
-            pass       # never crash the agent
-
-    # ── public: log user input (called from GUI) ─────────────────────────
-
-    def log_user_input(self, text: str):
-        self._append("user_input", content=text)
-
-    # ── LLM callbacks ────────────────────────────────────────────────────
-
-    def on_llm_start(self, serialized: dict, prompts: list, **kwargs):
-        run_id = str(kwargs.get("run_id", ""))
-        kw     = serialized.get("kwargs") or {}
-        model  = (kw.get("model_name") or kw.get("model") or
-                  serialized.get("name") or "unknown")
-        if run_id:
-            self._run_models[run_id] = model
-
-        # `prompts` is the raw list of strings sent to the LLM
-        self._append(
-            "llm_request",
-            model=model,
-            run_id=run_id,
-            parent_run_id=str(kwargs.get("parent_run_id", "")),
-            prompts=prompts,
-            invocation_params=kw,
-        )
-
-    def on_chat_model_start(self, serialized: dict, messages: list, **kwargs):
-        """Captures the full message dicts for chat-style models."""
-        run_id = str(kwargs.get("run_id", ""))
-        kw     = serialized.get("kwargs") or {}
-        model  = (kw.get("model_name") or kw.get("model") or
-                  serialized.get("name") or "unknown")
-        if run_id:
-            self._run_models[run_id] = model
-
-        # Serialize BaseMessage objects → dicts
-        def _ser(msg):
-            if hasattr(msg, "dict"):
-                return msg.dict()
-            if hasattr(msg, "to_json"):
-                return msg.to_json()
-            return str(msg)
-
-        serialized_msgs = [[_ser(m) for m in batch] for batch in messages]
-
-        self._append(
-            "llm_request",
-            model=model,
-            run_id=run_id,
-            parent_run_id=str(kwargs.get("parent_run_id", "")),
-            messages=serialized_msgs,
-            invocation_params=kw,
-        )
-
-    def on_llm_end(self, response: LLMResult, **kwargs):
-        run_id = str(kwargs.get("run_id", ""))
-        model  = self._run_models.pop(run_id, "unknown")
-
-        # Extract full text output + any tool calls
-        generations_raw = []
-        for gen_list in response.generations:
-            for gen in gen_list:
-                entry: dict[str, Any] = {"text": gen.text}
-                msg = getattr(gen, "message", None)
-                if msg:
-                    entry["content"] = getattr(msg, "content", "")
-                    tc = getattr(msg, "tool_calls", None)
-                    if tc:
-                        entry["tool_calls"] = [
-                            t.dict() if hasattr(t, "dict") else t
-                            for t in tc
-                        ]
-                    entry["usage_metadata"] = getattr(msg, "usage_metadata", None)
-                    entry["response_metadata"] = getattr(msg, "response_metadata", None)
-                generations_raw.append(entry)
-
-        self._append(
-            "llm_response",
-            model=model,
-            run_id=run_id,
-            parent_run_id=str(kwargs.get("parent_run_id", "")),
-            llm_output=response.llm_output,
-            generations=generations_raw,
-        )
-
-    def on_llm_error(self, error, **kwargs):
-        run_id = str(kwargs.get("run_id", ""))
-        model  = self._run_models.pop(run_id, "unknown")
-        self._append("llm_error", model=model, run_id=run_id,
-                      parent_run_id=str(kwargs.get("parent_run_id", "")),
-                      error=str(error))
-
-    # ── Tool callbacks ───────────────────────────────────────────────────
-
-    def on_tool_start(self, serialized: dict, input_str: str, **kwargs):
-        tool_name = (serialized or {}).get("name", "unknown")
-        self._append(
-            "tool_call",
-            tool=tool_name,
-            input=input_str,
-            run_id=str(kwargs.get("run_id", "")),
-            parent_run_id=str(kwargs.get("parent_run_id", "")),
-            tags=kwargs.get("tags", []),
-            metadata=kwargs.get("metadata", {}),
-        )
-
-    def on_tool_end(self, output: Any, **kwargs):
-        tool_name = (
-            kwargs.get("name") or kwargs.get("tool") or
-            (kwargs.get("serialized") or {}).get("name") or "unknown"
-        )
-        self._append(
-            "tool_result",
-            tool=tool_name,
-            output=str(output),
-            run_id=str(kwargs.get("run_id", "")),
-            parent_run_id=str(kwargs.get("parent_run_id", "")),
-        )
-
-    def on_tool_error(self, error, **kwargs):
-        tool_name = (
-            kwargs.get("name") or
-            (kwargs.get("serialized") or {}).get("name") or "unknown"
-        )
-        self._append(
-            "tool_error",
-            tool=tool_name,
-            error=str(error),
-            run_id=str(kwargs.get("run_id", "")),
-            parent_run_id=str(kwargs.get("parent_run_id", "")),
-        )
-
-    # ── Chain callbacks (agent reasoning steps) ──────────────────────────
-
-    def on_chain_start(self, serialized: dict, inputs: dict, **kwargs):
-        name = serialized.get("name") or serialized.get("id", [""])[-1] or "chain"
-        self._append(
-            "chain_start",
-            chain=name,
-            run_id=str(kwargs.get("run_id", "")),
-            parent_run_id=str(kwargs.get("parent_run_id", "")),
-            inputs=inputs,
-        )
-
-    def on_chain_end(self, outputs: dict, **kwargs):
-        self._append(
-            "chain_end",
-            run_id=str(kwargs.get("run_id", "")),
-            parent_run_id=str(kwargs.get("parent_run_id", "")),
-            outputs=outputs,
-        )
-
-
-# ---------------------------------------------------------------------------
 # LangChain callback handler
 # ---------------------------------------------------------------------------
 
@@ -589,12 +371,11 @@ class UsageTrackerCallback(BaseCallbackHandler):
     """
     raise_error = False
 
-    def __init__(self, metrics, bridge, logger=None, raw_logger=None):
+    def __init__(self, metrics, bridge, logger=None):
         super().__init__()
         self._m      = metrics
         self._bridge = bridge
         self._logger = logger or ConversationLogger()
-        self._raw    = raw_logger or RawConversationLogger()
 
         self._thread_id  = ""
         self._prompt     = ""
@@ -608,18 +389,12 @@ class UsageTrackerCallback(BaseCallbackHandler):
         self._q_tool_log: list[dict] = []
         # [{"tool": str, "status": "ok"|"error"|"soft_error"}]
 
-    @property
-    def raw_logger(self) -> RawConversationLogger:
-        """Expose the raw logger so the GUI can call log_user_input directly."""
-        return self._raw
-
     def notify_workspace_created(self, output_str: str):
         """Called by the GUI from handle_event when setup_analysis_workspace completes."""
         for line in output_str.splitlines():
             if line.strip().startswith("Location:"):
                 root_path = Path(line.split("Location:", 1)[1].strip())
                 self._logger.set_project_path(root_path, root_path.name)
-                self._raw.set_project_path(root_path)
                 log.debug(f"Project log path set to: {root_path}")
                 break
 
@@ -633,7 +408,6 @@ class UsageTrackerCallback(BaseCallbackHandler):
         """
         self._thread_id = thread_id
         self._logger.set_thread(thread_id)
-        self._raw.set_thread(thread_id)
         totals = self._logger.load_totals(thread_id)
         self._m.reset()
         if totals:
