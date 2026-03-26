@@ -907,7 +907,8 @@ PHASE 5 — SUMMARIZATION
 
 PHASE 6 - GENERATE Workflow_Documentation.md
 
-- Use the workflow_documentation SKILL to create a markdown file that documents the entire workflow.
+- Use the workflow_documentation SKILL to create a markdown file that documents the entire workflow. 
+- Always do this before generating the QA checklist, as the documentation is a key piece of evidence for the checklist.
 
 PHASE 7 — QA & DOCUMENTATION (qa_reporter)
 - Call qa_reporter with the project root path.
