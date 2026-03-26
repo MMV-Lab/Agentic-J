@@ -35,17 +35,16 @@ from .tools import (
     setup_analysis_workspace, save_markdown,
     capture_ij_window, build_compilation, analyze_image,
 )
-from imagentj.tracker import UsageMetrics, MetricsSignalBridge, UsageTrackerCallback, RawConversationLogger
+from imagentj.tracker import UsageMetrics, MetricsSignalBridge, UsageTrackerCallback
 
 
 # ---------------------------------------------------------------------------
 # Shared tracker
 # ---------------------------------------------------------------------------
 
-shared_metrics    = UsageMetrics()
-shared_bridge     = MetricsSignalBridge()
-shared_raw_logger = RawConversationLogger()
-shared_tracker    = UsageTrackerCallback(shared_metrics, shared_bridge, raw_logger=shared_raw_logger)
+shared_metrics = UsageMetrics()
+shared_bridge  = MetricsSignalBridge()
+shared_tracker = UsageTrackerCallback(shared_metrics, shared_bridge)
 
 open_router_key = os.getenv("OPEN_ROUTER_API_KEY")
 
@@ -167,7 +166,7 @@ llm_supervisor = ChatOpenAI(
     temperature=0.,
     reasoning_effort="low",
     verbose=True,
-    callbacks=[shared_tracker, shared_raw_logger],
+    callbacks=[shared_tracker],
 )
 
 llm_worker = ChatOpenAI(
@@ -177,7 +176,7 @@ llm_worker = ChatOpenAI(
     temperature=0.,
     reasoning_effort="low",
     verbose=True,
-    callbacks=[shared_tracker, shared_raw_logger],
+    callbacks=[shared_tracker],
 )
 
 llm_analyst = ChatOpenAI(
@@ -187,7 +186,7 @@ llm_analyst = ChatOpenAI(
     temperature=0.,
     reasoning_effort="low",
     verbose=True,
-    callbacks=[shared_tracker, shared_raw_logger],
+    callbacks=[shared_tracker],
 )
 
 llm_nano = ChatOpenAI(
@@ -196,7 +195,7 @@ llm_nano = ChatOpenAI(
     base_url="https://openrouter.ai/api/v1",
     temperature=0.,
     verbose=True,
-    callbacks=[shared_tracker, shared_raw_logger],
+    callbacks=[shared_tracker],
 )
 
 llm_vlm = ChatOpenAI(
@@ -205,7 +204,7 @@ llm_vlm = ChatOpenAI(
     base_url="https://openrouter.ai/api/v1",
     temperature=0.,
     verbose=True,
-    callbacks=[shared_tracker, shared_raw_logger],
+    callbacks=[shared_tracker],
 )
 
 
@@ -297,15 +296,6 @@ _vlm_agent = create_agent(
 
 
 
-# ---------------------------------------------------------------------------
-# Shared config for subagent invocations — ensures tool events are captured
-# ---------------------------------------------------------------------------
-
-def _subagent_config() -> dict:
-    """Return a config dict that propagates both loggers into subagent runs."""
-    return {"callbacks": [shared_tracker, shared_raw_logger]}
-
-
 @tool
 def imagej_coder(task: str, project_root: str) -> ScriptHandoff:
     """
@@ -325,11 +315,12 @@ def imagej_coder(task: str, project_root: str) -> ScriptHandoff:
 
     agent = _make_coder_agent(model, "imagej_coder", imagej_coder_prompt)
 
-    result = agent.invoke(
-        {"messages": [{"role": "user",
-                       "content": f"PROJECT ROOT: {project_root}\n\nTASK: {task}"}]},
-        config=_subagent_config(),
-    )
+    result = agent.invoke({
+        "messages": [{
+            "role": "user",
+            "content": f"PROJECT ROOT: {project_root}\n\nTASK: {task}",
+        }]
+    })
     return result["structured_response"]
 
 
@@ -344,11 +335,12 @@ def imagej_debugger(script_path: str, error_message: str) -> ScriptHandoff:
     """
     agent = _make_coder_agent(llm_worker, "imagej_debugger", imagej_debugger_prompt)
 
-    result = agent.invoke(
-        {"messages": [{"role": "user",
-                       "content": f"FAULTY SCRIPT: {script_path}\n\nERROR:\n{error_message}"}]},
-        config=_subagent_config(),
-    )
+    result = agent.invoke({
+        "messages": [{
+            "role": "user",
+            "content": f"FAULTY SCRIPT: {script_path}\n\nERROR:\n{error_message}",
+        }]
+    })
     return result["structured_response"]
 
 
@@ -362,13 +354,16 @@ def python_data_analyst(task: str, input_csv: str, output_dir: str) -> AnalystHa
       Stage 2 (plotting):   task describes plot types. Call only after Stage 1 CSV exists.
     Returns an AnalystHandoff with script_path, outputs, stats_csv_path or figure_paths.
     """
-    result = _analyst_agent.invoke(
-        {"messages": [{"role": "user",
-                       "content": (f"INPUT CSV: {input_csv}\n"
-                                   f"OUTPUT DIR: {output_dir}\n\n"
-                                   f"TASK: {task}")}]},
-        config=_subagent_config(),
-    )
+    result = _analyst_agent.invoke({
+        "messages": [{
+            "role": "user",
+            "content": (
+                f"INPUT CSV: {input_csv}\n"
+                f"OUTPUT DIR: {output_dir}\n\n"
+                f"TASK: {task}"
+            ),
+        }]
+    })
     return result["structured_response"]
 
 
@@ -382,11 +377,12 @@ def qa_reporter(project_root: str) -> QAHandoff:
     Returns a QAHandoff with checklist_path, pass/fail counts, and critical_failures.
     Relay critical_failures to the user verbatim.
     """
-    result = _qa_agent.invoke(
-        {"messages": [{"role": "user",
-                       "content": f"PROJECT ROOT: {project_root}"}]},
-        config=_subagent_config(),
-    )
+    result = _qa_agent.invoke({
+        "messages": [{
+            "role": "user",
+            "content": f"PROJECT ROOT: {project_root}",
+        }]
+    })
     return result["structured_response"]
 
 @tool
@@ -450,10 +446,7 @@ def vlm_judge(
         f"TASK: {task}"
     )
  
-    result = _vlm_agent.invoke(
-        {"messages": [{"role": "user", "content": content}]},
-        config=_subagent_config(),
-    )
+    result = _vlm_agent.invoke({"messages": [{"role": "user", "content": content}]})
     return result["structured_response"]
 
 # ---------------------------------------------------------------------------
