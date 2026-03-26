@@ -465,7 +465,7 @@ class AgentWorker(QObject):
         try:
             config = {
                 "configurable": {"thread_id": self.thread_id},
-                "callbacks":    [self.tracker_callback],
+                "callbacks":    [self.tracker_callback, self.tracker_callback.raw_logger],
             }
             for event in self.supervisor.stream(
                 {"messages": [{"role": "user", "content": user_input}]},
@@ -876,6 +876,7 @@ class ImageJAgentGUI(QWidget):
 
     def _execute_agent_query(self, prompt: str):
         self._tracker_cb.start_query(prompt, thread_id=self.current_thread_id)
+        self._tracker_cb.raw_logger.log_user_input(prompt)
         self.set_status("Thinking...")
         self.set_ui_busy(True)
         self.worker.submit(prompt)
