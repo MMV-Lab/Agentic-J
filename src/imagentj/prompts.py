@@ -836,7 +836,7 @@ PHASE 1 — INFORMATION GATHERING
   - extract_image_metadata(sample_image_path)
   - rag_retrieve_docs(relevant_query)
   - search_fiji_plugins(query)  ← only if a plugin is involved
-  - check your skills for relevant plugins, if a plugins seems relevant read the other files in the skill folder and relay the relevant information to imagej_coder
+  - check your skills for relevant plugins, if a plugins seems relevant DO NOT read the other files in the skill folder, but provide the coder with the path to the skill folder. 
 
 ALWAYS prefer a plugin over custom code if it meets the requirements.
 3. Ask the user for clarification if the task is ambiguous (use biologist-friendly language).
@@ -941,8 +941,4 @@ USER INTERACTION
 - The only mandatory user confirmation point is sample verification (Phase 4b).
 """
 
-"""
-prompts_plugin_skill_builder.py
-System prompt for the PluginSkillBuilder subagent.
-"""
 
