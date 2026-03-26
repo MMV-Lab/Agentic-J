@@ -42,32 +42,34 @@ from PySide6.QtCore import QTimer
 _log = logging.getLogger("benchmark_hooks")
 
 # ---------------------------------------------------------------------------
-# Qdrant stale lock cleanup (runs at import time)
+# Qdrant stale lock cleanup
 # ---------------------------------------------------------------------------
 # When the container exits via os._exit(0), Qdrant doesn't get to clean up
 # its lock file. The next docker compose run inherits the same bind mount
 # (./qdrant_data:/app/qdrant_data) and Qdrant refuses to start.
-# Remove the lock file before the agent initialises.
 
+def _cleanup_qdrant_locks():
+    """Remove all Qdrant lock files. Called at startup and before shutdown."""
+    qdrant_path = Path(os.environ.get("QDRANT_DATA_PATH", "/app/qdrant_data"))
+    if not qdrant_path.exists():
+        return
+    for lock in qdrant_path.rglob("*.lock"):
+        try:
+            lock.unlink()
+            _log.info("Removed Qdrant lock: %s", lock)
+        except Exception:
+            pass
+    bare_lock = qdrant_path / ".lock"
+    if bare_lock.exists():
+        try:
+            bare_lock.unlink()
+            _log.info("Removed Qdrant lock: %s", bare_lock)
+        except Exception:
+            pass
+
+# Clean up stale locks from previous runs at import time
 if os.environ.get("BENCHMARK_MODE", "").lower() == "true":
-    _qdrant_path = Path(os.environ.get("QDRANT_DATA_PATH", "/app/qdrant_data"))
-    if _qdrant_path.exists():
-        # Remove ALL lock files — Qdrant uses several inside subdirectories
-        for _lock in _qdrant_path.rglob("*.lock"):
-            try:
-                _lock.unlink()
-                logging.getLogger("benchmark_hooks").info(
-                    "Removed stale Qdrant lock: %s", _lock
-                )
-            except Exception:
-                pass
-        # Also check for a bare .lock file
-        _lock_file = _qdrant_path / ".lock"
-        if _lock_file.exists():
-            try:
-                _lock_file.unlink()
-            except Exception:
-                pass
+    _cleanup_qdrant_locks()
 
 # ---------------------------------------------------------------------------
 # Environment helpers
@@ -109,6 +111,19 @@ _AUTO_APPROVE = (
     "- If you would normally ask for clarification, make a reasonable "
     "default choice and continue.\n"
     "- Proceed through all pipeline phases without pausing.\n"
+)
+
+_INTERACTIVE_DIRECTIVE = (
+    "\n\n[SYSTEM — BENCHMARK INTERACTIVE MODE]\n"
+    "This is a benchmark run, but a real user is present and interacting "
+    "with you through the GUI.\n"
+    "- Follow your normal pipeline: ask clarifying questions when the task "
+    "is ambiguous, present multiple pipeline approaches for the user to "
+    "choose from, and request approval at every verification step.\n"
+    "- Do NOT skip any user interaction steps. The user expects to be "
+    "consulted on decisions — this is NOT auto-pilot.\n"
+    "- Behave exactly as you would in a normal session.\n"
+    "- Save all outputs to the project folder as usual.\n"
 )
 
 
@@ -310,11 +325,14 @@ def _do_finish_in_background(gui, message: str = "", shutdown: bool = False) -> 
 
         if shutdown:
             # Wait for result.json to flush to host filesystem, then
-            # force-kill the entire process. We do this from the
-            # background thread — no dependency on the Qt event loop.
+            # clean up Qdrant locks and force-kill the process.
             import os as _os
             _log.info("Shutdown scheduled — waiting 5 s for filesystem flush …")
             time.sleep(5)
+
+            # Clean up Qdrant lock files so the next run doesn't fail
+            _cleanup_qdrant_locks()
+
             _log.info("Exiting process.")
             _os._exit(0)
 
@@ -407,6 +425,8 @@ def _auto_send(gui) -> None:
     # In auto-pilot mode, append the auto-approve directive
     if is_autopilot():
         prompt += _AUTO_APPROVE
+    else:
+        prompt += _INTERACTIVE_DIRECTIVE
 
     mode_label = "AUTO-PILOT" if is_autopilot() else "INTERACTIVE"
     gui.chat_scroll.add_message(
