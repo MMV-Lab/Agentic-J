@@ -20,6 +20,9 @@ Follow the structure below, using information from script descriptions, result f
 [Describe what biological question this workflow addresses, inferred from script descriptions and result files]
 
 ## 2. Software Components & Versions
+
+You can find software versions in the [project_root]/logs/environment_metadata.log file. 
+
 | Component | Version | Role |
 |-----------|---------|------|
 | ImageJ/Fiji | [extract if found, else TO BE FILLED] | Image processing |

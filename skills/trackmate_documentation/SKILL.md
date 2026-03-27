@@ -1,6 +1,6 @@
 ---
 name: trackmate_documentation
-description: TrackMate is a Fiji/ImageJ plugin for single-particle tracking (SPT). It detects objects in 2D/3D timelapses and links them into tracks over time.
+description: TrackMate is a Fiji/ImageJ plugin for single-particle tracking (SPT). It detects objects in 2D/3D timelapses and links them into tracks over time. Read the files listed at the end of this SKILL for verified commands, GUI walkthroughs, scripting examples, and common pitfalls. 
 ---
 
 # TrackMate — SKILL SUMMARY (LLM Reference Card)

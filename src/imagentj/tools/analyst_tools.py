@@ -25,7 +25,7 @@ def inspect_csv_header(file_path: str):
         df.info(buf=buffer)
         info_str = buffer.getvalue()
         
-        return f"Structure of {os.path.basename(file_path)}:\n{info_str}\nData Preview:\n{df.to_string()}"
+        return f"Structure of {os.path.basename(file_path)}:\n{info_str}\nData Preview of only first 5 rows:\n{df.to_string()}"
     except Exception as e:
         return f"Error reading file at {file_path}: {str(e)}"
 

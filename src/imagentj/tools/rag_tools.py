@@ -7,14 +7,21 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
 
-gpt_key = os.getenv("OPENAI_API_KEY")
 __all__ = ['rag_retrieve_docs', 'rag_retrieve_mistakes', 'save_coding_experience']
 
-# Initialize a fast model for query expansion
-llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, api_key=gpt_key)
+gpt_key = os.getenv("OPENAI_API_KEY")
+
 
 def get_expanded_queries(query: str) -> list[str]:
     """Generates 3-4 variations of the query to improve retrieval."""
+    # Lazy import to avoid circular dependency (agents imports tools)
+    from ..agents import shared_tracker
+    llm = ChatOpenAI(
+        model="gpt-4o-mini",
+        api_key=gpt_key,
+        temperature=0,
+        callbacks=[shared_tracker],
+    )
     prompt = ChatPromptTemplate.from_template(
         "You are an ImageJ/Fiji expert. Generate 3 search query variations for: {question}\n"
         "Focus on technical API terms, alternative function names, and common library methods.\n"
@@ -24,7 +31,6 @@ def get_expanded_queries(query: str) -> list[str]:
     variants = chain.invoke({"question": query}).strip().split("\n")
     # Clean and return unique queries including the original
     return list(set([query] + [v.strip("- ").strip() for v in variants]))
-
 
 
 @tool("rag_retrieve")
@@ -94,7 +100,7 @@ def save_coding_experience(language: str, error_description: str, failed_code: s
     Saves a successful fix to the persistent Memory RAG.
     Use this after the debugger fixes a script to prevent the error from happening again.
 
-    Args:   
+    Args:
 
     language: Programming language of the code (e.g., "Groovy", "Python").
     error_description: A brief description of the error encountered.

@@ -1,16 +1,6 @@
 ---
 name: morpholibj_documentation
-description: MorphoLibJ is a Fiji/ImageJ plugin for mathematical morphology. It adds morphological filtering, watershed segmentation, and quantitative region analysis not available in core ImageJ.
----
-
-
-# MorphoLibJ — SKILL SUMMARY (LLM Reference Card)
-
-## What It Is
-MorphoLibJ is a Fiji/ImageJ plugin for mathematical morphology. It adds morphological
-filtering, watershed segmentation, and quantitative region analysis not available in
-core ImageJ. Install via Fiji update site **IJPB-plugins**.
-
+description: MorphoLibJ is a Fiji/ImageJ plugin for mathematical morphology. It adds morphological filtering, watershed segmentation, and quantitative region analysis not available in core ImageJ. Read the files listed at the end of this SKILL for verified commands, GUI walkthroughs, scripting examples, and common pitfalls. 
 ---
 
 ## Primary Use Case in This Skill Set
@@ -38,7 +28,6 @@ Each step uses a separate, verified MorphoLibJ command. This pipeline is fully s
 | Threshold (Standard IJ) | `IJ.setAutoThreshold(imp, "Default dark")` then `IJ.run(imp, "Convert to Mask", "")` | Standard ImageJ; not MorphoLibJ |
 | Chamfer Distance Map | `"Chamfer Distance Map", "distances=[Borgefors (3,4)] output=[32 bits] normalize"` | Input must be 8-bit binary |
 | Regional Maxima | `"Regional Min & Max", "operation=[Regional Maxima] connectivity=4"` | Output: binary image |
-| Extended Maxima (noise-robust alternative) | `"Extended Min & Max", "operation=[Extended Maxima] connectivity=4 dynamic=10"` | Use instead of Regional Maxima for noisy images |
 | Connected Components | `"Connected Components Labeling", "connectivity=4 type=[16 bits]"` | Labels the maxima as seeds |
 | Invert (Standard IJ) | `IJ.run(distImp, "Invert", "")` | Converts distance map to watershed landscape; standard ImageJ |
 | Marker-controlled Watershed | `"Marker-controlled Watershed", "input=[dist-inv] marker=[maxima-lbl] mask=[binary] calculate"` | `calculate` = include dams; omit `use` for 4-connectivity |
@@ -51,7 +40,6 @@ Each step uses a separate, verified MorphoLibJ command. This pipeline is fully s
 | Remove border objects | `IJ.run(imp, "Remove Border Labels", "")` |
 | Remove small objects | `IJ.run(imp, "Label Size Opening", "min=50")` |
 | Renumber labels 1…N | `IJ.run(imp, "Remap Labels", "")` |
-| Colour overlay | `IJ.run(imp, "Labels to RGB", "colormap=Golden_angle background=Black shuffle")` |
 
 ### Analysis Commands
 

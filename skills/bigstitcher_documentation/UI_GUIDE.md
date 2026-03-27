@@ -9,7 +9,7 @@ parameter names (with underscores and lowercase).
 ## Define Dataset Dialog
 
 **Menu:** Plugins › BigStitcher › BigStitcher → (first run) or
-Plugins › BigStitcher › Batch Processing › Define dataset…
+Plugins › BigStitcher › Batch Processing › Define dataset… *(command name may be version-dependent; verify with Macro Recorder if scripting)*
 
 | Parameter | Values / Notes |
 |---|---|
@@ -85,7 +85,7 @@ Plugins › BigStitcher › Batch Processing › Define dataset…
 | **process_angle / channel / illumination / tile / timepoint** | As in Pairwise Shifts dialog |
 | **relative** | Relative error threshold for iterative link removal (default: `2.5`) |
 | **absolute** | Absolute error threshold in pixels (default: `3.5`) |
-| **global_optimization_strategy** | `Simple One-Round` or `Two-Round using Metadata to align unconnected Tiles` (recommended when sparse empty-tile regions exist) |
+| **global_optimization_strategy** | **Version-dependent strings**. In Fiji 2.16.0/1.54p (Java 21) we observed: `One-Round`; `One-Round with iterative dropping of bad links`; `Two-Round using metadata to align unconnected Tiles`; `Two-Round using Metadata to align unconnected Tiles and iterative dropping of bad links`; `NO global optimization, just store the corresponding interest points`. **Copy from Macro Recorder** (case/spacing sensitive). |
 | **fix_group_0-0** | Fix the first tile group (group 0-0) as the reference; append additional fixed groups as `fix_group_X-Y` |
 
 ---
@@ -122,7 +122,8 @@ Plugins › BigStitcher › Batch Processing › Define dataset…
 ## Fusion Dialog
 
 **Menu:** BigStitcher window → Fuse Dataset  
-**Batch:** Plugins › BigStitcher › Batch Processing › Fuse dataset…
+**Batch:** command name is **version-dependent**. In some installs it appears as `Fuse dataset…`, in others the macro-recorded command is `Image Fusion`.
+Use **Plugins › Macros › Record…** to confirm what your Fiji records.
 
 | Parameter | Values / Notes |
 |---|---|

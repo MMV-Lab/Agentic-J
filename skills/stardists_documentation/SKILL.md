@@ -1,6 +1,6 @@
 ---
 name: stardists_documentation
-description: StarDist is a Fiji/ImageJ plugin for cell and nuclei detection using deep-learning star-convex polygon models. Apply pre-trained or custom models to 2D microscopy images. **2D only** — the Fiji plugin has no 3D stack support.
+description: StarDist is a Fiji/ImageJ plugin for cell and nuclei detection using deep-learning star-convex polygon models. Apply pre-trained or custom models to 2D microscopy images. **2D only** — the Fiji plugin has no 3D stack support. Default models only for NUCLEI in fluorescence or H&E histology images. Custom models must be in CSBDeep `.zip` format and compatible with StarDist 2D. See the full documentation for installation, scripting, parameter tuning, and troubleshooting.Read the files listed at the end of this SKILL for verified commands, GUI walkthroughs, scripting examples, and common pitfalls. 
 ---
 
 Install via Fiji update sites: **CSBDeep** + **StarDist** + **TensorFlow** (all three required).

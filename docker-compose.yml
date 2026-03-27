@@ -24,6 +24,7 @@ services:
       # Fiji plugin persistence across container rebuilds
       - fiji_plugins:/opt/Fiji.app/plugins
       - fiji_jars:/opt/Fiji.app/jars
+      - fiji_update:/opt/Fiji.app/update
       # Saved scripts persistence
       - saved_scripts:/app/scripts/saved_scripts
       # Qdrant vector database for plugin search and RAG
@@ -39,7 +40,7 @@ services:
       # Folder to save data
       - ./data:/app/data
       # Folder for skills
-      - ./skills:/app/skills:ro
+      - ./skills:/app/skills
     env_file:
       - path: .env
         required: false
@@ -70,6 +71,7 @@ services:
 volumes:
   fiji_plugins:
   fiji_jars:
+  fiji_update:
   saved_scripts:
 
 networks:

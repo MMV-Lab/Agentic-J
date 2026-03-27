@@ -1,3 +1,4 @@
+import os
 import numpy as np
 from pathlib import Path
 import warnings
@@ -16,98 +17,272 @@ except ImportError:
     AICSImage = None
 
 
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+# Files whose uncompressed size exceeds this will be refused entirely.
+# Set conservatively so even compressed stacks that expand 2–4× on load are safe.
+LARGE_FILE_THRESHOLD_BYTES: int = 1 * 1024 ** 3  # 1 GB
+
+_DTYPE_BYTES: Dict[str, int] = {
+    'uint8': 1,  'int8': 1,
+    'uint16': 2, 'int16': 2, 'float16': 2,
+    'uint32': 4, 'int32': 4, 'float32': 4,
+    'uint64': 8, 'int64': 8, 'float64': 8,
+}
+
+
+# ---------------------------------------------------------------------------
+# Size estimation  (reads only headers / IFDs — zero pixel data)
+# ---------------------------------------------------------------------------
+
+def _file_size_bytes(file_path: str) -> int:
+    """
+    Return the file size in bytes using os.stat — no file I/O, no parsing,
+    never crashes regardless of format or compression.
+    Returns 0 only if the OS call itself fails (e.g. permission error).
+    """
+    try:
+        return os.stat(file_path).st_size
+    except Exception:
+        return 0
+
+
+# FIX 1 ─────────────────────────────────────────────────────────────────────
+def _estimate_tiff_uncompressed_bytes(file_path: str) -> int:
+    """
+    Estimate the fully-decompressed in-memory size of a TIFF stack by reading
+    only IFD headers — zero pixel data is touched.
+
+    This is the correct guard for compressed TIFFs: a 300 MB LZW-compressed
+    stack can expand to 8 GB on tifffile.imread, sailing right past an
+    os.stat-based threshold check.
+
+    Returns 0 on any error so the caller treats it as "unknown / unsafe".
+    """
+    try:
+        with tifffile.TiffFile(file_path) as tif:
+            page     = tif.pages[0]
+            dtype_sz = np.dtype(page.dtype).itemsize
+            page_px  = int(np.prod(page.shape))   # (H, W) or (H, W, C)
+            n_pages  = len(tif.pages)
+            return page_px * dtype_sz * n_pages
+    except Exception:
+        return 0
+# ────────────────────────────────────────────────────────────────────────────
+
+
+def _estimate_dataset_bytes(dataset) -> int:
+    """Estimate in-memory size of an ImageJ2 Dataset without touching pixels."""
+    try:
+        n_pixels = 1
+        for i in range(dataset.numDimensions()):
+            n_pixels *= int(dataset.dimension(i))
+        try:
+            type_name = str(dataset.getType().getClass().getSimpleName()).lower()
+        except Exception:
+            type_name = ''
+        bpp = 2  # default: 16-bit
+        for key, val in _DTYPE_BYTES.items():
+            if key in type_name:
+                bpp = val
+                break
+        return n_pixels * bpp
+    except Exception:
+        return 0
+
+
+# ---------------------------------------------------------------------------
+# Public exception used by both the class and the standalone function
+# ---------------------------------------------------------------------------
+
+class DatasetTooLargeError(RuntimeError):
+    """
+    Raised when a dataset or file exceeds the memory-safety threshold.
+    The message is intentionally descriptive so an agent/supervisor can
+    relay it directly to the user.
+    """
+    pass
+
+
+# ---------------------------------------------------------------------------
+# Main class
+# ---------------------------------------------------------------------------
+
 class ImageMetadataAnalyzer:
     """
     Analyze metadata and intensity statistics for PyImageJ datasets.
-    Compatible with images loaded in ImageJ/Fiji via PyImageJ.
+
+    Memory safety
+    -------------
+    ``analyze()`` estimates the dataset size before touching any pixel data.
+    If the estimate exceeds ``large_dataset_threshold_bytes`` (default 1 GB)
+    a ``DatasetTooLargeError`` is raised immediately so that ImageJ is never
+    pushed out of memory.  The caller / supervisor should catch this and
+    inform the user.
+
+    FIX 2 — pre-load file guard
+    ---------------------------
+    If ``source_path`` is supplied (or discoverable from the dataset source
+    attribute), the constructor validates the uncompressed size **before**
+    the caller passes the dataset to ImageJ for loading.  Call the class
+    method ``check_path_before_load()`` as an even earlier gate if you
+    control the load call.
     """
-    
-    def __init__(self, ij, dataset=None):
-        """
-        Initialize analyzer with PyImageJ instance and optional dataset.
-        
-        Args:
-            ij: PyImageJ instance
-            dataset: ImageJ Dataset object (if None, uses active dataset)
-        """
+
+    def __init__(self, ij, dataset=None,
+                 large_dataset_threshold_bytes: int = LARGE_FILE_THRESHOLD_BYTES):
         self.ij = ij
         self.dataset = dataset if dataset is not None else ij.py.active_dataset()
-        
+
         if self.dataset is None:
             raise ValueError("No dataset provided and no active image in ImageJ GUI")
-        
-        self.metadata = {}
-        self.calibration = {}
-        self.intensity_stats = {}
-        self.structure = {}
-        self.dicom_metadata = {}
+
+        self.large_dataset_threshold_bytes = large_dataset_threshold_bytes
+        self.metadata: Dict[str, Any] = {}
+        self.calibration: Dict[str, Any] = {}
+        self.intensity_stats: Dict[str, Any] = {}
+        self.structure: Dict[str, int] = {}
+        self.dicom_metadata: Dict[str, Any] = {}
         self._lif_dims = None
 
-    def analyze(self, compute_histogram: bool = True, n_bins: int = 256, 
+    # FIX 2 ──────────────────────────────────────────────────────────────────
+    @classmethod
+    def check_path_before_load(
+        cls,
+        file_path: str,
+        threshold_bytes: int = LARGE_FILE_THRESHOLD_BYTES,
+    ) -> None:
+        """
+        **Call this BEFORE handing a file to ImageJ for loading.**
+
+        Inspects only the file header / IFD metadata — never reads pixel data.
+        Raises ``DatasetTooLargeError`` with a descriptive message if the
+        estimated uncompressed size exceeds *threshold_bytes*.
+
+        Usage::
+
+            ImageMetadataAnalyzer.check_path_before_load(path)
+            dataset = ij.io().open(path)          # safe to call now
+            analyzer = ImageMetadataAnalyzer(ij, dataset)
+
+        Raises
+        ------
+        FileNotFoundError
+        DatasetTooLargeError
+        """
+        p = Path(file_path)
+        if not p.exists():
+            raise FileNotFoundError(f"File not found: {file_path}")
+
+        suffix     = p.suffix.lower()
+        name_lower = p.name.lower()
+        is_ome     = '.ome.' in name_lower
+
+        if suffix in ['.tif', '.tiff'] and not is_ome:
+            estimated = _estimate_tiff_uncompressed_bytes(file_path)
+        else:
+            # For other formats fall back to on-disk size as a lower bound.
+            estimated = _file_size_bytes(file_path)
+
+        if estimated == 0 or estimated > threshold_bytes:
+            gb_str = f"{estimated / 1024**3:.2f} GB" if estimated else "unknown size"
+            raise DatasetTooLargeError(
+                f"File '{p.name}' is too large to load safely "
+                f"(estimated uncompressed {gb_str}; "
+                f"limit is {threshold_bytes / 1024**3:.1f} GB). "
+                f"To open it without crashing, use "
+                f"File › Import › TIFF Virtual Stack (TIFFs) or Bio-Formats "
+                f"with the 'Use virtual stack' option."
+            )
+    # ─────────────────────────────────────────────────────────────────────────
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def analyze(self, compute_histogram: bool = True, n_bins: int = 256,
                 compute_percentiles: bool = True) -> Dict[str, Any]:
         """
-        Main analysis function that extracts all metadata and statistics.
-        
-        Args:
-            compute_histogram: Whether to compute intensity histogram
-            n_bins: Number of bins for histogram
-            compute_percentiles: Whether to compute percentile statistics
-            
-        Returns:
-            Dictionary containing all metadata and statistics
+        Extract all metadata and intensity statistics.
+
+        Raises
+        ------
+        DatasetTooLargeError
+            If the dataset exceeds the configured memory threshold.
+            Caught upstream; never crashes ImageJ.
         """
-        # Extract metadata and calibration
         self._extract_metadata()
         self._extract_calibration()
-        
-        # Compute statistics using ImageJ Ops
+
+        # ---- Hard size gate — before any pixel access ----
+        estimated_bytes = _estimate_dataset_bytes(self.dataset)
+        threshold = self.large_dataset_threshold_bytes
+
+        # estimated_bytes == 0 means we failed to determine size — refuse it too.
+        if estimated_bytes == 0 or estimated_bytes > threshold:
+            gb_str = f"{estimated_bytes / 1024**3:.2f} GB" if estimated_bytes else "unknown size"
+            return {
+                'filename':    self.metadata.get('name', '?'),
+                'source':      self.metadata.get('source'),
+                'structure':   self.structure,
+                'calibration': self.calibration,
+                'error':       'dataset_too_large',
+                'message': (
+                    f"Dataset '{self.metadata.get('name', '?')}' is too large to analyse "
+                    f"safely ({gb_str}; limit is {threshold / 1024**3:.1f} GB). "
+                    f"Intensity statistics were not computed. "
+                    f"Metadata and calibration are available above."
+                ),
+            }
+
         self._compute_statistics_via_ops(compute_percentiles)
-        
-        # Optionally compute histogram
         if compute_histogram:
             self._compute_histogram(n_bins)
-        
+
         return self._compile_results()
-    
+
+    # ------------------------------------------------------------------
+    # Metadata / calibration
+    # ------------------------------------------------------------------
+
     def _extract_metadata(self):
-        """Extract basic metadata from dataset."""
         self.metadata['name'] = str(self.dataset.getName())
-        self.metadata['source'] = str(self.dataset.getSource()) if hasattr(self.dataset, 'getSource') else None
-        
-        # Get pixel type
+        self.metadata['source'] = (
+            str(self.dataset.getSource())
+            if hasattr(self.dataset, 'getSource') else None
+        )
         try:
-            self.metadata['pixel_type'] = str(self.dataset.getType().getClass().getSimpleName())
-        except:
+            self.metadata['pixel_type'] = str(
+                self.dataset.getType().getClass().getSimpleName()
+            )
+        except Exception:
             self.metadata['pixel_type'] = 'unknown'
-        
-        # Extract dimensional structure
+
         for i in range(self.dataset.numDimensions()):
             axis = self.dataset.axis(i)
             label = str(axis.type().getLabel())
             size = int(self.dataset.dimension(i))
             self.structure[label] = size
-        
+
         self.metadata['structure'] = self.structure
         self.metadata['n_dimensions'] = self.dataset.numDimensions()
         self.metadata['is_3d'] = 'Z' in self.structure
         self.metadata['is_time_series'] = 'Time' in self.structure
         self.metadata['is_multichannel'] = 'Channel' in self.structure
-    
-    def _extract_calibration(self):
-        """Extract spatial calibration using ImageJ and format-specific fallbacks."""
-        scales = {}
 
-        # --- ImageJ2 axis-based
+    def _extract_calibration(self):
+        scales: Dict[str, Any] = {}
+
         for i in range(self.dataset.numDimensions()):
             axis = self.dataset.axis(i)
             label = str(axis.type().getLabel())
-
             if label in ['X', 'Y', 'Z']:
                 scale = float(axis.averageScale(0, 1))
                 unit = axis.unit()
                 scales[label] = {'scale': scale, 'unit': str(unit) if unit else None}
 
-        # --- File-based fallback for DICOM/TIFF/LIF/OME-TIFF
         src_path = self.metadata.get('source')
         if src_path and Path(src_path).exists():
             p = Path(src_path)
@@ -116,38 +291,20 @@ class ImageMetadataAnalyzer:
             is_ome = '.ome.' in name_lower
             try:
                 if suffix in ['.tif', '.tiff'] and not is_ome:
-                    # --- Standard TIFF: use rational XResolution/YResolution
                     with tifffile.TiffFile(src_path) as tif:
                         tags = tif.pages[0].tags
                         x_res_tag = tags.get('XResolution')
                         y_res_tag = tags.get('YResolution')
                         res_unit_tag = tags.get('ResolutionUnit')
-
                         if x_res_tag and y_res_tag:
-                            # Rational value: (numerator, denominator)
                             x_num, x_den = x_res_tag.value
                             y_num, y_den = y_res_tag.value
-                            x_pixels_per_unit = x_num / x_den if x_den else 0
-                            y_pixels_per_unit = y_num / y_den if y_den else 0
-
-                            res_unit_value = res_unit_tag.value if res_unit_tag else 1
-
-                            if x_pixels_per_unit > 0:
-                                x_scale = 1.0 / x_pixels_per_unit
-                            else:
-                                x_scale = 1.0
-                            if y_pixels_per_unit > 0:
-                                y_scale = 1.0 / y_pixels_per_unit
-                            else:
-                                y_scale = 1.0
-
-                            if res_unit_value == 2:
-                                tiff_unit = 'inch'
-                            elif res_unit_value == 3:
-                                tiff_unit = 'cm'
-                            else:
-                                tiff_unit = 'pixel'
-
+                            x_ppu = x_num / x_den if x_den else 0
+                            y_ppu = y_num / y_den if y_den else 0
+                            rv = res_unit_tag.value if res_unit_tag else 1
+                            x_scale = 1.0 / x_ppu if x_ppu > 0 else 1.0
+                            y_scale = 1.0 / y_ppu if y_ppu > 0 else 1.0
+                            tiff_unit = {2: 'inch', 3: 'cm'}.get(rv, 'pixel')
                             for ax, sc in [('X', x_scale), ('Y', y_scale)]:
                                 scales.setdefault(ax, {'scale': 1.0, 'unit': None})
                                 scales[ax]['scale'] = sc
@@ -155,7 +312,6 @@ class ImageMetadataAnalyzer:
                                     scales[ax]['unit'] = tiff_unit
 
                 elif is_ome or suffix in ['.ome.tif', '.ome.tiff']:
-                    # --- OME-TIFF: parse OME XML for PhysicalSize attributes
                     with tifffile.TiffFile(src_path) as tif:
                         ome_xml = tif.ome_metadata
                         if ome_xml:
@@ -167,7 +323,6 @@ class ImageMetadataAnalyzer:
                                 py = float(pixels.attrib['PhysicalSizeY'])
                                 pz = float(pixels.attrib.get('PhysicalSizeZ', 0))
                                 unit = pixels.attrib.get('PhysicalSizeXUnit', 'µm')
-
                                 for ax, val in [('X', px), ('Y', py), ('Z', pz)]:
                                     if val > 0:
                                         scales.setdefault(ax, {'scale': 1.0, 'unit': None})
@@ -176,14 +331,11 @@ class ImageMetadataAnalyzer:
                                             scales[ax]['unit'] = unit
 
                 elif suffix == '.lif':
-                    # --- LIF: try readlif first, then AICSImage fallback
                     try:
                         lif = LifFile(src_path)
-                        # Use first series for calibration
                         img = lif.get_image(0)
                         scale_n = img.info.get("scale_n")
                         if scale_n:
-                            # scale_n contains px-per-micron values; invert to get µm-per-px
                             for idx, ax in enumerate(['X', 'Y', 'Z']):
                                 if idx < len(scale_n) and scale_n[idx] and scale_n[idx] > 0:
                                     scales.setdefault(ax, {'scale': 1.0, 'unit': None})
@@ -192,7 +344,6 @@ class ImageMetadataAnalyzer:
                                         scales[ax]['unit'] = 'µm'
                         self._lif_dims = img.info.get("dims")
                     except Exception:
-                        # Fallback to AICSImage for LIF
                         if AICSImage is not None:
                             img = AICSImage(src_path)
                             phys = img.physical_pixel_sizes
@@ -205,7 +356,6 @@ class ImageMetadataAnalyzer:
                                         scales[ax]['unit'] = 'µm'
 
                 elif suffix in ['.dcm', '.dicom']:
-                    # --- DICOM: spatial calibration + full imaging metadata
                     ds = pydicom.dcmread(src_path)
                     if hasattr(ds, 'PixelSpacing'):
                         for ax, idx in [('X', 1), ('Y', 0)]:
@@ -213,18 +363,14 @@ class ImageMetadataAnalyzer:
                             scales[ax]['scale'] = float(ds.PixelSpacing[idx])
                             if not scales[ax]['unit'] or scales[ax]['unit'] == 'pixel':
                                 scales[ax]['unit'] = 'mm'
-
                     if hasattr(ds, 'SliceThickness'):
                         scales.setdefault('Z', {'scale': 1.0, 'unit': None})
                         scales['Z']['scale'] = float(ds.SliceThickness)
                         if not scales['Z']['unit'] or scales['Z']['unit'] == 'pixel':
                             scales['Z']['unit'] = 'mm'
-
-                    # Extract full DICOM imaging metadata
                     self.dicom_metadata = self._extract_dicom_imaging_metadata(src_path)
 
                 elif AICSImage is not None:
-                    # --- Generic OME fallback via AICSImage
                     try:
                         img = AICSImage(src_path)
                         phys = img.physical_pixel_sizes
@@ -239,21 +385,17 @@ class ImageMetadataAnalyzer:
                         pass
 
             except Exception as e:
-                warnings.warn(f"Could not read physical pixel size from file {src_path}: {e}")
+                warnings.warn(f"Could not read physical pixel size from {src_path}: {e}")
 
-        # --- Final fallback
         for ax in scales:
             if not scales[ax]['unit']:
-                scales[ax]['unit'] = "pixel"
+                scales[ax]['unit'] = 'pixel'
 
         self.calibration = scales
 
     def _extract_dicom_imaging_metadata(self, src_path: str) -> Dict[str, Any]:
-        """Extract comprehensive DICOM imaging metadata beyond spatial calibration."""
         ds = pydicom.dcmread(src_path)
-        meta = {}
-
-        # Spatial
+        meta: Dict[str, Any] = {}
         if hasattr(ds, 'PixelSpacing'):
             meta['PixelSpacing'] = [float(v) for v in ds.PixelSpacing]
         if hasattr(ds, 'SliceThickness'):
@@ -264,265 +406,168 @@ class ImageMetadataAnalyzer:
             meta['ImageOrientationPatient'] = [float(v) for v in ds.ImageOrientationPatient]
         if hasattr(ds, 'ImagePositionPatient'):
             meta['ImagePositionPatient'] = [float(v) for v in ds.ImagePositionPatient]
-
-        # Pixel characteristics
         for attr in ['Rows', 'Columns', 'BitsAllocated', 'BitsStored',
                      'PixelRepresentation', 'SamplesPerPixel']:
             if hasattr(ds, attr):
                 meta[attr] = int(getattr(ds, attr))
         if hasattr(ds, 'PhotometricInterpretation'):
             meta['PhotometricInterpretation'] = str(ds.PhotometricInterpretation)
-
-        # Display
         for attr in ['WindowCenter', 'WindowWidth', 'RescaleSlope', 'RescaleIntercept']:
             if hasattr(ds, attr):
                 val = getattr(ds, attr)
-                # These can be multi-valued
-                if isinstance(val, pydicom.multival.MultiValue):
-                    meta[attr] = [float(v) for v in val]
-                else:
-                    meta[attr] = float(val)
-
-        # General
+                meta[attr] = (
+                    [float(v) for v in val]
+                    if isinstance(val, pydicom.multival.MultiValue)
+                    else float(val)
+                )
         if hasattr(ds, 'Modality'):
             meta['Modality'] = str(ds.Modality)
-
         return meta
-        
+
+    # ------------------------------------------------------------------
+    # Statistics / histogram  (only reached for small datasets)
+    # ------------------------------------------------------------------
+
     def _compute_statistics_via_ops(self, compute_percentiles: bool = True):
-        """Compute intensity statistics using ImageJ Ops for efficiency."""
         try:
             ops = self.ij.op()
-            
-            # Basic statistics via Ops (fast, no array conversion needed)
-            self.intensity_stats['min'] = float(ops.stats().min(self.dataset).getRealDouble())
-            self.intensity_stats['max'] = float(ops.stats().max(self.dataset).getRealDouble())
+            self.intensity_stats['min']  = float(ops.stats().min(self.dataset).getRealDouble())
+            self.intensity_stats['max']  = float(ops.stats().max(self.dataset).getRealDouble())
             self.intensity_stats['mean'] = float(ops.stats().mean(self.dataset).getRealDouble())
-            self.intensity_stats['std'] = float(ops.stats().stdDev(self.dataset).getRealDouble())
-            
-            # Derived statistics
+            self.intensity_stats['std']  = float(ops.stats().stdDev(self.dataset).getRealDouble())
             self.intensity_stats['dynamic_range'] = (
                 self.intensity_stats['max'] - self.intensity_stats['min']
             )
-            
-            # Compute percentiles if requested (requires array conversion)
-            if compute_percentiles:
-                try:
-                    # Convert to numpy array for percentile computation
-                    img_array = self.ij.py.from_java(self.dataset)
-                    data = np.asarray(img_array).flatten()
-                    
-                    self.intensity_stats['median'] = float(np.median(data))
-                    self.intensity_stats['q1'] = float(np.percentile(data, 25))
-                    self.intensity_stats['q3'] = float(np.percentile(data, 75))
-                    self.intensity_stats['q95'] = float(np.percentile(data, 95))
-                    self.intensity_stats['q99'] = float(np.percentile(data, 99))
-                    
-                except Exception as e:
-                    warnings.warn(f"Could not compute percentiles: {e}")
-                    self.intensity_stats['median'] = None
-            
         except Exception as e:
             raise RuntimeError(f"Error computing statistics via ImageJ Ops: {e}")
-    
+
+        if compute_percentiles:
+            try:
+                img_array = self.ij.py.from_java(self.dataset)
+                data = np.asarray(img_array).flatten()
+                self.intensity_stats['median'] = float(np.median(data))
+                self.intensity_stats['q1']     = float(np.percentile(data, 25))
+                self.intensity_stats['q3']     = float(np.percentile(data, 75))
+                self.intensity_stats['q95']    = float(np.percentile(data, 95))
+                self.intensity_stats['q99']    = float(np.percentile(data, 99))
+            except Exception as e:
+                warnings.warn(f"Could not compute percentiles: {e}")
+                self.intensity_stats['median'] = None
+
     def _compute_histogram(self, n_bins: int = 256):
-        """Compute intensity histogram using ImageJ Ops or NumPy."""
         try:
-            # Try to use ImageJ histogram op first (faster)
-            ops = self.ij.op()
-            
-            # Convert to numpy for histogram (ImageJ histogram ops can be complex)
             img_array = self.ij.py.from_java(self.dataset)
             data = np.asarray(img_array).flatten()
-            
             hist, bins = np.histogram(data, bins=n_bins)
-            
-            self.intensity_stats['histogram'] = hist.tolist()
+            self.intensity_stats['histogram']      = hist.tolist()
             self.intensity_stats['histogram_bins'] = bins.tolist()
-            
         except Exception as e:
             warnings.warn(f"Could not compute histogram: {e}")
-    
+
+    # ------------------------------------------------------------------
+    # Result compilation and reporting
+    # ------------------------------------------------------------------
+
     def _compile_results(self) -> Dict[str, Any]:
-        """Compile all results into single dictionary."""
         result = {
-            'filename': self.metadata['name'],
-            'source': self.metadata.get('source'),
-            'structure': self.structure,
-            'metadata': self.metadata,
-            'calibration': self.calibration,
-            'statistics': self.intensity_stats,
-            'is_3d': self.metadata['is_3d'],
-            'is_time_series': self.metadata['is_time_series'],
-            'is_multichannel': self.metadata['is_multichannel']
+            'filename':        self.metadata['name'],
+            'source':          self.metadata.get('source'),
+            'structure':       self.structure,
+            'metadata':        self.metadata,
+            'calibration':     self.calibration,
+            'statistics':      self.intensity_stats,
+            'is_3d':           self.metadata['is_3d'],
+            'is_time_series':  self.metadata['is_time_series'],
+            'is_multichannel': self.metadata['is_multichannel'],
         }
         if self.dicom_metadata:
             result['dicom_imaging_metadata'] = self.dicom_metadata
         return result
-    
+
     def get_pixel_size(self, axis: str = 'X') -> Tuple[float, str]:
         info = self.calibration.get(axis, {'scale': 1.0, 'unit': 'pixel'})
         return info['scale'], info['unit']
 
-        
     def get_voxel_volume(self) -> Tuple[float, str]:
         x = self.calibration.get('X')
         y = self.calibration.get('Y')
         z = self.calibration.get('Z')
-
         if not (x and y and z):
             return 1.0, "pixel³"
-
         volume = x['scale'] * y['scale'] * z['scale']
         units = {x['unit'], y['unit'], z['unit']}
         unit = units.pop() if len(units) == 1 else "mixed"
-
         return volume, f"{unit}³"
 
-    
     def suggest_threshold_params(self) -> Dict[str, Any]:
-        """Suggest parameters for thresholding based on intensity statistics."""
         if not self.intensity_stats:
             return {}
-        
-        suggestions = {}
-        
-        # Otsu-like suggestion (between mean and max)
+        suggestions: Dict[str, Any] = {}
         suggestions['otsu_like_estimate'] = self.intensity_stats['mean'] + self.intensity_stats['std']
-        
-        # Percentile-based thresholds (if available)
-        if 'q75' in self.intensity_stats and self.intensity_stats['q75'] is not None:
+        if self.intensity_stats.get('q3') is not None:
             suggestions['threshold_conservative'] = self.intensity_stats['q95']
-            suggestions['threshold_moderate'] = self.intensity_stats['q75']
-            suggestions['threshold_aggressive'] = self.intensity_stats.get('median', self.intensity_stats['mean'])
-        
-        # Min-max normalization range
-        suggestions['normalization_range'] = (
-            self.intensity_stats['min'], 
-            self.intensity_stats['max']
-        )
-        
-        # Robust normalization (if percentiles available)
-        if 'q99' in self.intensity_stats and self.intensity_stats['q99'] is not None:
-            suggestions['robust_normalization_range'] = (
-                self.intensity_stats['min'], 
-                self.intensity_stats['q99']
-            )
-        
-        # Calibration-aware suggestions for filters
+            suggestions['threshold_moderate']     = self.intensity_stats['q3']
+            suggestions['threshold_aggressive']   = self.intensity_stats.get('median', self.intensity_stats['mean'])
+        suggestions['normalization_range'] = (self.intensity_stats['min'], self.intensity_stats['max'])
+        if self.intensity_stats.get('q99') is not None:
+            suggestions['robust_normalization_range'] = (self.intensity_stats['min'], self.intensity_stats['q99'])
         x_info = self.calibration.get('X')
         if x_info and x_info['unit'] != 'pixel':
             x_scale = x_info['scale']
-            unit = x_info['unit']
+            unit    = x_info['unit']
             suggestions['pixel_size'] = f"{x_scale:.4f} {unit}/pixel"
-            
-            # Suggest filter sizes in physical units
-            # Target features at 0.5, 1.0, and 2.0 units
-            small_feature_pixels = max(2, int(0.5 / x_scale))
-            medium_feature_pixels = max(3, int(1.0 / x_scale))
-            large_feature_pixels = max(5, int(2.0 / x_scale))
-            
-            suggestions['gaussian_sigma_small'] = {
-                'pixels': small_feature_pixels,
-                'physical': f"~0.5 {unit}"
-            }
-            suggestions['gaussian_sigma_medium'] = {
-                'pixels': medium_feature_pixels,
-                'physical': f"~1.0 {unit}"
-            }
-            suggestions['gaussian_sigma_large'] = {
-                'pixels': large_feature_pixels,
-                'physical': f"~2.0 {unit}"
-            }
-            
-            # Morphological operation suggestions
-            suggestions['morphology_kernel_small'] = {
-                'pixels': max(3, int(0.3 / x_scale)),
-                'physical': f"~0.3 {unit}"
-            }
-            suggestions['morphology_kernel_medium'] = {
-                'pixels': max(5, int(0.5 / x_scale)),
-                'physical': f"~0.5 {unit}"
-            }
-        
+            suggestions['gaussian_sigma_small']       = {'pixels': max(2, int(0.5 / x_scale)), 'physical': f"~0.5 {unit}"}
+            suggestions['gaussian_sigma_medium']      = {'pixels': max(3, int(1.0 / x_scale)), 'physical': f"~1.0 {unit}"}
+            suggestions['gaussian_sigma_large']       = {'pixels': max(5, int(2.0 / x_scale)), 'physical': f"~2.0 {unit}"}
+            suggestions['morphology_kernel_small']    = {'pixels': max(3, int(0.3 / x_scale)), 'physical': f"~0.3 {unit}"}
+            suggestions['morphology_kernel_medium']   = {'pixels': max(5, int(0.5 / x_scale)), 'physical': f"~0.5 {unit}"}
         return suggestions
-    
+
     def suggest_filter_params(self) -> Dict[str, Any]:
-        """Suggest filtering parameters based on noise characteristics."""
         if not self.intensity_stats:
             return {}
-        
-        suggestions = {}
-        
-        # Estimate SNR (simple approach)
         mean = self.intensity_stats['mean']
-        std = self.intensity_stats['std']
-        snr = mean / std if std > 0 else float('inf')
-        
-        suggestions['estimated_snr'] = snr
-        
-        # Suggest filtering strategy based on SNR
+        std  = self.intensity_stats['std']
+        snr  = mean / std if std > 0 else float('inf')
+        base = {'estimated_snr': snr}
         if snr < 2:
-            suggestions['noise_level'] = 'high'
-            suggestions['recommended_filter'] = 'median or bilateral'
-            suggestions['median_radius'] = 2
+            return {**base, 'noise_level': 'high',     'recommended_filter': 'median or bilateral', 'median_radius': 2}
         elif snr < 5:
-            suggestions['noise_level'] = 'moderate'
-            suggestions['recommended_filter'] = 'gaussian'
-            suggestions['gaussian_sigma'] = 1.5
+            return {**base, 'noise_level': 'moderate', 'recommended_filter': 'gaussian',            'gaussian_sigma': 1.5}
         else:
-            suggestions['noise_level'] = 'low'
-            suggestions['recommended_filter'] = 'mild gaussian or none'
-            suggestions['gaussian_sigma'] = 0.5
-        
-        return suggestions
-    
+            return {**base, 'noise_level': 'low',      'recommended_filter': 'mild gaussian or none', 'gaussian_sigma': 0.5}
+
     def plot_intensity_distribution(self, figsize: Tuple[int, int] = (12, 4)):
-        """Plot intensity distribution and cumulative histogram."""
         if 'histogram' not in self.intensity_stats:
-            print("No histogram data available. Run analyze() with compute_histogram=True")
+            print("No histogram data. Run analyze() with compute_histogram=True")
             return
-        
         fig, axes = plt.subplots(1, 2, figsize=figsize)
-        
         hist = np.array(self.intensity_stats['histogram'])
         bins = np.array(self.intensity_stats['histogram_bins'])
         bin_centers = (bins[:-1] + bins[1:]) / 2
-        
-        # Histogram
         axes[0].bar(bin_centers, hist, width=np.diff(bins)[0], edgecolor='black', alpha=0.7)
-        axes[0].axvline(self.intensity_stats['mean'], color='r', linestyle='--', 
-                       label=f"Mean: {self.intensity_stats['mean']:.1f}")
-        if 'median' in self.intensity_stats and self.intensity_stats['median'] is not None:
-            axes[0].axvline(self.intensity_stats['median'], color='g', linestyle='--', 
-                           label=f"Median: {self.intensity_stats['median']:.1f}")
-        axes[0].set_xlabel('Intensity')
-        axes[0].set_ylabel('Frequency')
-        axes[0].set_title(f'Intensity Distribution - {self.metadata["name"]}')
-        axes[0].legend()
-        axes[0].grid(alpha=0.3)
-        
-        # Cumulative histogram
+        axes[0].axvline(self.intensity_stats['mean'], color='r', linestyle='--',
+                        label=f"Mean: {self.intensity_stats['mean']:.1f}")
+        if self.intensity_stats.get('median') is not None:
+            axes[0].axvline(self.intensity_stats['median'], color='g', linestyle='--',
+                            label=f"Median: {self.intensity_stats['median']:.1f}")
+        axes[0].set_xlabel('Intensity'); axes[0].set_ylabel('Frequency')
+        axes[0].set_title(f'Intensity Distribution — {self.metadata["name"]}')
+        axes[0].legend(); axes[0].grid(alpha=0.3)
         cumsum = np.cumsum(hist) / np.sum(hist)
         axes[1].plot(bin_centers, cumsum, linewidth=2)
-        if 'q95' in self.intensity_stats and self.intensity_stats['q95'] is not None:
+        if self.intensity_stats.get('q95') is not None:
             axes[1].axhline(0.95, color='r', linestyle='--', alpha=0.5, label='95th percentile')
             axes[1].axvline(self.intensity_stats['q95'], color='r', linestyle='--', alpha=0.5)
-        axes[1].set_xlabel('Intensity')
-        axes[1].set_ylabel('Cumulative Probability')
+        axes[1].set_xlabel('Intensity'); axes[1].set_ylabel('Cumulative Probability')
         axes[1].set_title('Cumulative Distribution')
-        axes[1].legend()
-        axes[1].grid(alpha=0.3)
-        
-        plt.tight_layout()
-        plt.show()
-    
+        axes[1].legend(); axes[1].grid(alpha=0.3)
+        plt.tight_layout(); plt.show()
+
     def print_report(self):
-        """Print a formatted analysis report."""
         print("=" * 70)
         print(f"IMAGE ANALYSIS REPORT: {self.metadata['name']}")
         print("=" * 70)
-        
         print("\nSTRUCTURE:")
         print("-" * 70)
         for axis, size in self.structure.items():
@@ -531,277 +576,271 @@ class ImageMetadataAnalyzer:
         print(f"  3D: {self.metadata['is_3d']}")
         print(f"  Time series: {self.metadata['is_time_series']}")
         print(f"  Multi-channel: {self.metadata['is_multichannel']}")
-        
         print("\nCALIBRATION / PIXEL SCALE:")
         print("-" * 70)
         for axis in ['X', 'Y', 'Z']:
             if axis in self.calibration:
                 info = self.calibration[axis]
                 print(f"  {axis}: {info['scale']:.6f} {info['unit']}/pixel")
-        
         if self.metadata['is_3d'] and 'Z' in self.calibration:
             volume, vol_unit = self.get_voxel_volume()
             print(f"  Voxel Volume: {volume:.6f} {vol_unit}")
-        
         if self.intensity_stats:
             print("\nINTENSITY STATISTICS:")
             print("-" * 70)
             print(f"  Range: [{self.intensity_stats['min']:.2f}, {self.intensity_stats['max']:.2f}]")
-            print(f"  Mean: {self.intensity_stats['mean']:.2f}")
-            if 'median' in self.intensity_stats and self.intensity_stats['median'] is not None:
-                print(f"  Median: {self.intensity_stats['median']:.2f}")
-            print(f"  Std Dev: {self.intensity_stats['std']:.2f}")
-            if 'q1' in self.intensity_stats and self.intensity_stats['q1'] is not None:
-                print(f"  Q1 (25%): {self.intensity_stats['q1']:.2f}")
-                print(f"  Q3 (75%): {self.intensity_stats['q3']:.2f}")
-                print(f"  Q95 (95%): {self.intensity_stats['q95']:.2f}")
-            print(f"  Dynamic Range: {self.intensity_stats['dynamic_range']:.2f}")
-            
+            print(f"  Mean:  {self.intensity_stats['mean']:.2f}")
+            if self.intensity_stats.get('median') is not None:
+                print(f"  Median:{self.intensity_stats['median']:.2f}")
+            print(f"  Std:   {self.intensity_stats['std']:.2f}")
+            if self.intensity_stats.get('q1') is not None:
+                print(f"  Q1:    {self.intensity_stats['q1']:.2f}")
+                print(f"  Q3:    {self.intensity_stats['q3']:.2f}")
+                print(f"  Q95:   {self.intensity_stats['q95']:.2f}")
+            print(f"  Dyn range: {self.intensity_stats['dynamic_range']:.2f}")
             print("\nSUGGESTED THRESHOLDING PARAMETERS:")
             print("-" * 70)
-            suggestions = self.suggest_threshold_params()
-            for key, value in suggestions.items():
+            for key, value in self.suggest_threshold_params().items():
                 if isinstance(value, dict):
                     print(f"  {key}:")
                     for k, v in value.items():
                         print(f"    {k}: {v}")
                 else:
                     print(f"  {key}: {value}")
-            
             print("\nSUGGESTED FILTERING PARAMETERS:")
             print("-" * 70)
-            filter_suggestions = self.suggest_filter_params()
-            for key, value in filter_suggestions.items():
+            for key, value in self.suggest_filter_params().items():
                 print(f"  {key}: {value}")
-        
         print("=" * 70)
 
 
-# Convenience function for quick analysis
-def quick_analyze(ij, dataset=None, show_plot=True):
+# ---------------------------------------------------------------------------
+# Convenience function
+# ---------------------------------------------------------------------------
+
+def quick_analyze(ij, dataset=None, show_plot: bool = True,
+                  large_dataset_threshold_bytes: int = LARGE_FILE_THRESHOLD_BYTES):
     """
     Quick analysis with default settings.
-    
-    Args:
-        ij: PyImageJ instance
-        dataset: Optional dataset (uses active if None)
-        show_plot: Whether to display histogram plots
-        
-    Returns:
-        ImageMetadataAnalyzer instance
+
+    Raises DatasetTooLargeError if the dataset exceeds the memory threshold.
     """
-    analyzer = ImageMetadataAnalyzer(ij, dataset)
+    analyzer = ImageMetadataAnalyzer(
+        ij, dataset,
+        large_dataset_threshold_bytes=large_dataset_threshold_bytes
+    )
     analyzer.analyze(compute_histogram=True, compute_percentiles=True)
     analyzer.print_report()
-    
     if show_plot:
         analyzer.plot_intensity_distribution()
-    
     return analyzer
 
 
-def _compute_standalone_stats(file_path: str, suffix: str, is_ome: bool) -> Dict[str, Any]:
-    """
-    Read pixel data directly (no ImageJ instance) and compute intensity
-    statistics.  Returns a dict with min, max, mean, std, median, q1, q3,
-    q95, q99, dynamic_range — or an empty dict on failure.
-    """
-    try:
-        data: Optional[np.ndarray] = None
-
-        if suffix in ['.tif', '.tiff']:
-            data = tifffile.imread(file_path)
-
-        elif suffix == '.lif':
-            lif = LifFile(file_path)
-            img = lif.get_image(0)
-            frames = []
-            for c in range(img.channels):
-                try:
-                    frame = img.get_frame(z=0, t=0, c=c)
-                    frames.append(np.array(frame))
-                except Exception:
-                    pass
-            if frames:
-                data = np.stack(frames)
-
-        elif suffix in ['.dcm', '.dicom']:
-            ds = pydicom.dcmread(file_path)
-            if hasattr(ds, 'pixel_array'):
-                data = ds.pixel_array
-
-        if data is None:
-            return {}
-
-        flat = data.astype(np.float64).ravel()
-        return {
-            'min': float(np.min(flat)),
-            'max': float(np.max(flat)),
-            'mean': float(np.mean(flat)),
-            'std': float(np.std(flat)),
-            'median': float(np.median(flat)),
-            'q1': float(np.percentile(flat, 25)),
-            'q3': float(np.percentile(flat, 75)),
-            'q95': float(np.percentile(flat, 95)),
-            'q99': float(np.percentile(flat, 99)),
-            'dynamic_range': float(np.max(flat) - np.min(flat)),
-        }
-    except Exception as e:
-        warnings.warn(f"Could not compute standalone pixel statistics for {file_path}: {e}")
-        return {}
-
+# ---------------------------------------------------------------------------
+# Standalone file metadata extraction (no ImageJ needed)
+# ---------------------------------------------------------------------------
 
 def _suggest_threshold_from_stats(stats: Dict[str, Any],
                                    calibration: Dict[str, Any]) -> Dict[str, Any]:
-    """Derive threshold / normalisation suggestions from intensity stats."""
-    if not stats:
+    if not stats or 'error' in stats:
         return {}
-
-    suggestions: Dict[str, Any] = {}
-
-    # Otsu-like estimate
-    suggestions['otsu_like_estimate'] = stats['mean'] + stats['std']
-
-    # Percentile-based thresholds
-    suggestions['threshold_conservative'] = stats['q95']
-    suggestions['threshold_moderate'] = stats['q3']
-    suggestions['threshold_aggressive'] = stats['median']
-
-    # Normalisation ranges
-    suggestions['normalization_range'] = [stats['min'], stats['max']]
-    suggestions['robust_normalization_range'] = [stats['min'], stats['q99']]
-
-    # Calibration-aware filter / morphology sizes
+    suggestions: Dict[str, Any] = {
+        'otsu_like_estimate':         stats['mean'] + stats['std'],
+        'threshold_conservative':     stats['q95'],
+        'threshold_moderate':         stats['q3'],
+        'threshold_aggressive':       stats['median'],
+        'normalization_range':        [stats['min'], stats['max']],
+        'robust_normalization_range': [stats['min'], stats['q99']],
+    }
     x_info = calibration.get('X')
     if x_info and x_info.get('unit') not in (None, 'pixel'):
         x_scale = x_info['scale']
-        unit = x_info['unit']
+        unit    = x_info['unit']
         suggestions['pixel_size'] = f"{x_scale:.4f} {unit}/pixel"
-
-        small_px = max(2, int(0.5 / x_scale))
-        medium_px = max(3, int(1.0 / x_scale))
-        large_px = max(5, int(2.0 / x_scale))
-
-        suggestions['gaussian_sigma_small'] = {'pixels': small_px, 'physical': f"~0.5 {unit}"}
-        suggestions['gaussian_sigma_medium'] = {'pixels': medium_px, 'physical': f"~1.0 {unit}"}
-        suggestions['gaussian_sigma_large'] = {'pixels': large_px, 'physical': f"~2.0 {unit}"}
-
+        suggestions['gaussian_sigma_small']    = {'pixels': max(2, int(0.5 / x_scale)), 'physical': f"~0.5 {unit}"}
+        suggestions['gaussian_sigma_medium']   = {'pixels': max(3, int(1.0 / x_scale)), 'physical': f"~1.0 {unit}"}
+        suggestions['gaussian_sigma_large']    = {'pixels': max(5, int(2.0 / x_scale)), 'physical': f"~2.0 {unit}"}
         suggestions['morphology_kernel_small'] = {'pixels': max(3, int(0.3 / x_scale)), 'physical': f"~0.3 {unit}"}
-        suggestions['morphology_kernel_medium'] = {'pixels': max(5, int(0.5 / x_scale)), 'physical': f"~0.5 {unit}"}
-
+        suggestions['morphology_kernel_medium']= {'pixels': max(5, int(0.5 / x_scale)), 'physical': f"~0.5 {unit}"}
     return suggestions
 
 
 def _suggest_filter_from_stats(stats: Dict[str, Any]) -> Dict[str, Any]:
-    """Derive filter / denoising suggestions from intensity stats."""
-    if not stats:
+    if not stats or 'error' in stats:
+        return {}
+    mean = stats['mean']
+    std  = stats['std']
+    snr  = mean / std if std > 0 else float('inf')
+    base = {'estimated_snr': snr}
+    if snr < 2:
+        return {**base, 'noise_level': 'high',     'recommended_filter': 'median or bilateral', 'median_radius': 2}
+    elif snr < 5:
+        return {**base, 'noise_level': 'moderate', 'recommended_filter': 'gaussian',            'gaussian_sigma': 1.5}
+    else:
+        return {**base, 'noise_level': 'low',      'recommended_filter': 'mild gaussian or none', 'gaussian_sigma': 0.5}
+
+
+def _compute_standalone_stats(file_path: str, suffix: str) -> Dict[str, Any]:
+    """
+    Compute pixel statistics for small files only.
+
+    For TIFFs the guard uses the *uncompressed* size estimated from IFD
+    headers — a heavily-compressed TIFF can expand 10–20× on load and would
+    otherwise sail past an os.stat-based size check.
+    For other formats the on-disk size is used as a conservative lower bound.
+    Returns an error dict without touching pixel data if the file is too large.
+    """
+    # --- format-aware size gate (no pixel data read) ---
+    if suffix in ['.tif', '.tiff']:
+        estimated = _estimate_tiff_uncompressed_bytes(file_path)
+        guard_size = estimated if estimated > 0 else _file_size_bytes(file_path)
+    else:
+        guard_size = _file_size_bytes(file_path)
+
+    if guard_size == 0 or guard_size > LARGE_FILE_THRESHOLD_BYTES:
+        gb_str = f"{guard_size / 1024**3:.2f} GB" if guard_size else "unknown size"
+        return {
+            'error':   'file_too_large',
+            'message': (
+                f"File '{Path(file_path).name}' is too large for pixel statistics "
+                f"(estimated uncompressed {gb_str}; "
+                f"limit is {LARGE_FILE_THRESHOLD_BYTES / 1024**3:.1f} GB). "
+                f"Metadata and calibration were extracted successfully."
+            ),
+        }
+
+    if suffix in ['.tif', '.tiff']:
+        data = tifffile.imread(file_path)
+        flat = data.astype(np.float64).ravel()
+        del data
+
+    elif suffix == '.lif':
+        lif = LifFile(file_path)
+        img = lif.get_image(0)
+        frames = []
+        for c in range(img.channels):
+            try:
+                frames.append(np.array(img.get_frame(z=0, t=0, c=c), dtype=np.float64))
+            except Exception:
+                pass
+        if not frames:
+            return {}
+        flat = np.concatenate([f.ravel() for f in frames])
+
+    elif suffix in ['.dcm', '.dicom']:
+        ds = pydicom.dcmread(file_path)
+        if not hasattr(ds, 'pixel_array'):
+            return {}
+        flat = ds.pixel_array.astype(np.float64).ravel()
+
+    else:
         return {}
 
-    suggestions: Dict[str, Any] = {}
-    mean = stats['mean']
-    std = stats['std']
-    snr = mean / std if std > 0 else float('inf')
-    suggestions['estimated_snr'] = snr
-
-    if snr < 2:
-        suggestions['noise_level'] = 'high'
-        suggestions['recommended_filter'] = 'median or bilateral'
-        suggestions['median_radius'] = 2
-    elif snr < 5:
-        suggestions['noise_level'] = 'moderate'
-        suggestions['recommended_filter'] = 'gaussian'
-        suggestions['gaussian_sigma'] = 1.5
-    else:
-        suggestions['noise_level'] = 'low'
-        suggestions['recommended_filter'] = 'mild gaussian or none'
-        suggestions['gaussian_sigma'] = 0.5
-
-    return suggestions
+    return {
+        'min':           float(np.min(flat)),
+        'max':           float(np.max(flat)),
+        'mean':          float(np.mean(flat)),
+        'std':           float(np.std(flat)),
+        'median':        float(np.median(flat)),
+        'q1':            float(np.percentile(flat, 25)),
+        'q3':            float(np.percentile(flat, 75)),
+        'q95':           float(np.percentile(flat, 95)),
+        'q99':           float(np.percentile(flat, 99)),
+        'dynamic_range': float(np.max(flat) - np.min(flat)),
+    }
 
 
 def extract_file_metadata(file_path: str) -> Dict[str, Any]:
     """
-    Extract format-specific metadata from a file without requiring an ImageJ
-    instance or open dataset.  Returns a JSON-serializable dict with:
-      - file_path, file_format
-      - calibration (pixel scale / unit per axis)
-      - dimensions (image dimensions)
-      - dicom_imaging (only for DICOM files)
+    Extract format-specific metadata from a file without an ImageJ instance.
 
-    This can be called by the agent before or after loading an image to get
-    metadata for threshold / filter guidance.
+    Returns a JSON-serializable dict containing calibration, dimensions,
+    and (for small files) intensity statistics and processing suggestions.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the file does not exist.
+    DatasetTooLargeError
+        If the file exceeds the memory-safety threshold.  The error message
+        is descriptive and safe to relay directly to the user / supervisor.
+        This is raised BEFORE any pixel data is read — the process will not
+        crash or run out of memory.
     """
     p = Path(file_path)
     if not p.exists():
         raise FileNotFoundError(f"File not found: {file_path}")
 
-    suffix = p.suffix.lower()
+    suffix     = p.suffix.lower()
     name_lower = p.name.lower()
-    is_ome = '.ome.' in name_lower
+    is_ome     = '.ome.' in name_lower
+
+    # ---- Hard size gate — fires before ANY file reading ----
+    size = _file_size_bytes(file_path)
+    if size == 0 or size > LARGE_FILE_THRESHOLD_BYTES:
+        gb_str = f"{size / 1024**3:.2f} GB" if size else "unknown size"
+        return {
+            'file_path':   str(p),
+            'file_format': suffix.lstrip('.'),
+            'error':       'file_too_large',
+            'message': (
+                f"File '{p.name}' is too large to analyse safely "
+                f"({gb_str}; limit is {LARGE_FILE_THRESHOLD_BYTES / 1024**3:.1f} GB). "
+                f"Pixel statistics were not computed. "
+                f"To open this file in ImageJ without crashing, use "
+                f"File > Import > TIFF Virtual Stack."
+            ),
+        }
 
     result: Dict[str, Any] = {
-        'file_path': str(p),
+        'file_path':   str(p),
         'file_format': suffix.lstrip('.'),
         'calibration': {},
-        'dimensions': {},
+        'dimensions':  {},
     }
-
     scales = result['calibration']
-    dims = result['dimensions']
+    dims   = result['dimensions']
 
+    # ---- Metadata / calibration (header reads only — no pixel data) ----
     try:
         if suffix in ['.tif', '.tiff'] and not is_ome:
-            # --- Standard TIFF
             with tifffile.TiffFile(file_path) as tif:
-                tags = tif.pages[0].tags
-                x_res_tag = tags.get('XResolution')
-                y_res_tag = tags.get('YResolution')
+                tags         = tif.pages[0].tags
+                x_res_tag    = tags.get('XResolution')
+                y_res_tag    = tags.get('YResolution')
                 res_unit_tag = tags.get('ResolutionUnit')
-
                 if x_res_tag and y_res_tag:
                     x_num, x_den = x_res_tag.value
                     y_num, y_den = y_res_tag.value
                     x_ppu = x_num / x_den if x_den else 0
                     y_ppu = y_num / y_den if y_den else 0
-                    res_unit_value = res_unit_tag.value if res_unit_tag else 1
-
-                    x_scale = 1.0 / x_ppu if x_ppu > 0 else 1.0
-                    y_scale = 1.0 / y_ppu if y_ppu > 0 else 1.0
-
-                    if res_unit_value == 2:
-                        tiff_unit = 'inch'
-                    elif res_unit_value == 3:
-                        tiff_unit = 'cm'
-                    else:
-                        tiff_unit = 'pixel'
-
+                    rv    = res_unit_tag.value if res_unit_tag else 1
+                    x_scale   = 1.0 / x_ppu if x_ppu > 0 else 1.0
+                    y_scale   = 1.0 / y_ppu if y_ppu > 0 else 1.0
+                    tiff_unit = {2: 'inch', 3: 'cm'}.get(rv, 'pixel')
                     scales['X'] = {'scale': x_scale, 'unit': tiff_unit}
                     scales['Y'] = {'scale': y_scale, 'unit': tiff_unit}
-
-                # Dimensions from shape
                 shape = tif.pages[0].shape
                 dims['height'] = shape[0]
-                dims['width'] = shape[1] if len(shape) > 1 else 1
-                dims['pages'] = len(tif.pages)
+                dims['width']  = shape[1] if len(shape) > 1 else 1
+                dims['pages']  = len(tif.pages)
 
         elif is_ome or suffix in ['.ome.tif', '.ome.tiff']:
-            # --- OME-TIFF
             with tifffile.TiffFile(file_path) as tif:
                 ome_xml = tif.ome_metadata
                 if ome_xml:
-                    root = ET.fromstring(ome_xml)
-                    ns = {'ome': 'http://www.openmicroscopy.org/Schemas/OME/2016-06'}
+                    root   = ET.fromstring(ome_xml)
+                    ns     = {'ome': 'http://www.openmicroscopy.org/Schemas/OME/2016-06'}
                     pixels = root.find('.//ome:Pixels', ns)
                     if pixels is not None:
                         for attr in ['SizeX', 'SizeY', 'SizeZ', 'SizeC', 'SizeT']:
                             val = pixels.attrib.get(attr)
                             if val:
                                 dims[attr] = int(val)
-
                         if 'PhysicalSizeX' in pixels.attrib:
-                            px = float(pixels.attrib['PhysicalSizeX'])
-                            py = float(pixels.attrib['PhysicalSizeY'])
-                            pz = float(pixels.attrib.get('PhysicalSizeZ', 0))
+                            px   = float(pixels.attrib['PhysicalSizeX'])
+                            py   = float(pixels.attrib['PhysicalSizeY'])
+                            pz   = float(pixels.attrib.get('PhysicalSizeZ', 0))
                             unit = pixels.attrib.get('PhysicalSizeXUnit', 'µm')
                             scales['X'] = {'scale': px, 'unit': unit}
                             scales['Y'] = {'scale': py, 'unit': unit}
@@ -809,10 +848,9 @@ def extract_file_metadata(file_path: str) -> Dict[str, Any]:
                                 scales['Z'] = {'scale': pz, 'unit': unit}
 
         elif suffix == '.lif':
-            # --- LIF via readlif
             try:
-                lif = LifFile(file_path)
-                img = lif.get_image(0)
+                lif     = LifFile(file_path)
+                img     = lif.get_image(0)
                 scale_n = img.info.get("scale_n")
                 if scale_n:
                     for idx, ax in enumerate(['X', 'Y', 'Z']):
@@ -822,9 +860,8 @@ def extract_file_metadata(file_path: str) -> Dict[str, Any]:
                 if lif_dims:
                     dims.update({k: v for k, v in zip(['X', 'Y', 'Z', 'T'], lif_dims) if v})
             except Exception:
-                # Fallback to AICSImage
                 if AICSImage is not None:
-                    img = AICSImage(file_path)
+                    img  = AICSImage(file_path)
                     phys = img.physical_pixel_sizes
                     for ax in ['X', 'Y', 'Z']:
                         val = getattr(phys, ax, None)
@@ -832,31 +869,25 @@ def extract_file_metadata(file_path: str) -> Dict[str, Any]:
                             scales[ax] = {'scale': val, 'unit': 'µm'}
 
         elif suffix in ['.dcm', '.dicom']:
-            # --- DICOM
             ds = pydicom.dcmread(file_path)
             if hasattr(ds, 'PixelSpacing'):
                 scales['X'] = {'scale': float(ds.PixelSpacing[1]), 'unit': 'mm'}
                 scales['Y'] = {'scale': float(ds.PixelSpacing[0]), 'unit': 'mm'}
             if hasattr(ds, 'SliceThickness'):
                 scales['Z'] = {'scale': float(ds.SliceThickness), 'unit': 'mm'}
-
             if hasattr(ds, 'Rows'):
                 dims['height'] = int(ds.Rows)
             if hasattr(ds, 'Columns'):
                 dims['width'] = int(ds.Columns)
-
-            # Full DICOM imaging metadata
             dicom_imaging: Dict[str, Any] = {}
-            if hasattr(ds, 'PixelSpacing'):
-                dicom_imaging['PixelSpacing'] = [float(v) for v in ds.PixelSpacing]
-            if hasattr(ds, 'SliceThickness'):
-                dicom_imaging['SliceThickness'] = float(ds.SliceThickness)
-            if hasattr(ds, 'SpacingBetweenSlices'):
-                dicom_imaging['SpacingBetweenSlices'] = float(ds.SpacingBetweenSlices)
-            if hasattr(ds, 'ImageOrientationPatient'):
-                dicom_imaging['ImageOrientationPatient'] = [float(v) for v in ds.ImageOrientationPatient]
-            if hasattr(ds, 'ImagePositionPatient'):
-                dicom_imaging['ImagePositionPatient'] = [float(v) for v in ds.ImagePositionPatient]
+            for attr in ['PixelSpacing', 'SliceThickness', 'SpacingBetweenSlices',
+                         'ImageOrientationPatient', 'ImagePositionPatient']:
+                if hasattr(ds, attr):
+                    val = getattr(ds, attr)
+                    try:
+                        dicom_imaging[attr] = [float(v) for v in val]
+                    except TypeError:
+                        dicom_imaging[attr] = float(val)
             for attr in ['Rows', 'Columns', 'BitsAllocated', 'BitsStored',
                          'PixelRepresentation', 'SamplesPerPixel']:
                 if hasattr(ds, attr):
@@ -866,10 +897,10 @@ def extract_file_metadata(file_path: str) -> Dict[str, Any]:
             for attr in ['WindowCenter', 'WindowWidth', 'RescaleSlope', 'RescaleIntercept']:
                 if hasattr(ds, attr):
                     val = getattr(ds, attr)
-                    if isinstance(val, pydicom.multival.MultiValue):
-                        dicom_imaging[attr] = [float(v) for v in val]
-                    else:
-                        dicom_imaging[attr] = float(val)
+                    dicom_imaging[attr] = (
+                        [float(v) for v in val]
+                        if isinstance(val, pydicom.multival.MultiValue) else float(val)
+                    )
             if hasattr(ds, 'Modality'):
                 dicom_imaging['Modality'] = str(ds.Modality)
             result['dicom_imaging'] = dicom_imaging
@@ -877,11 +908,33 @@ def extract_file_metadata(file_path: str) -> Dict[str, Any]:
     except Exception as e:
         warnings.warn(f"Could not extract metadata from {file_path}: {e}")
 
-    # --- Intensity statistics & suggestions (standalone, no ImageJ needed) ---
-    stats = _compute_standalone_stats(file_path, suffix, is_ome)
-    if stats:
-        result['intensity_statistics'] = stats
+    # ---- Pixel statistics (format-aware size gate inside) ----
+    stats = _compute_standalone_stats(file_path, suffix)
+    if stats and 'error' in stats:
+        # Too-large or unreadable — attach the warning but don't crash
+        result['intensity_statistics_error'] = stats['message']
+    elif stats:
+        result['intensity_statistics']  = stats
         result['threshold_suggestions'] = _suggest_threshold_from_stats(stats, scales)
-        result['filter_suggestions'] = _suggest_filter_from_stats(stats)
+        result['filter_suggestions']    = _suggest_filter_from_stats(stats)
 
     return result
+
+
+def check_file_size(file_path: str,
+                    threshold_bytes: int = LARGE_FILE_THRESHOLD_BYTES) -> Dict[str, Any]:
+    """
+    Report file size using os.stat — zero file I/O, safe for any format or size.
+    Use as a pre-flight check before passing a file to any analysis function.
+    """
+    p = Path(file_path)
+    if not p.exists():
+        raise FileNotFoundError(file_path)
+    size = _file_size_bytes(file_path)
+    return {
+        'file_path':         str(p),
+        'size_bytes':        size,
+        'size_gb':           round(size / 1024**3, 2),
+        'exceeds_threshold': size > threshold_bytes,
+        'threshold_bytes':   threshold_bytes,
+    }

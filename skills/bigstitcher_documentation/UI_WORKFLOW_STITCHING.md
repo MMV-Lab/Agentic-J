@@ -180,9 +180,10 @@ Progress is reported in the Fiji Log window. When complete, the **Avg. r** and
 
 1. Click **Optimize Globally and Apply Shifts**
 2. In the dialog:
-   - **Strategy**: select **Two-Round using Metadata to align unconnected Tiles**
+   - **Strategy**: select **Two-Round using metadata to align unconnected Tiles**
      if any tiles have no phase-correlation links (sparse acquisitions with empty
-     regions); otherwise **Simple One-Round** is sufficient
+     regions). **Exact capitalization varies by version**; use the Macro Recorder output verbatim.
+     Otherwise **One-Round** is sufficient
    - **Relative threshold**: `2.5` (default)
    - **Absolute threshold**: `3.5` pixels (default)
 3. Click **OK**
