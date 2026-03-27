@@ -88,7 +88,7 @@ EXPOSE 6080
 # volume mount, so this layer is always present without a manual update step)
 RUN /opt/Fiji.app/fiji-linux-x64 \
         --update add-update-site TensorFlow https://sites.imagej.net/TensorFlow/ \
-    && /opt/Fiji.app/fiji-linux-x64 --update update || true
+    && /opt/Fiji.app/fiji-linux-x64 --update update 
 
 USER imagentj
 

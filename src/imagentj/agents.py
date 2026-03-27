@@ -3,9 +3,10 @@ from deepagents import create_deep_agent
 from deepagents.backends import FilesystemBackend
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import MemorySaver
-from .prompts import imagej_coder_prompt, imagej_debugger_prompt, supervisor_prompt, python_analyst_prompt, qa_reporter_prompt
-from .tools import internet_search, inspect_all_ui_windows, run_script_safe, rag_retrieve_docs, inspect_java_class, save_coding_experience, rag_retrieve_mistakes, save_reusable_script, inspect_folder_tree, smart_file_reader, run_python_code, inspect_csv_header, extract_image_metadata, search_fiji_plugins, install_fiji_plugin, check_plugin_installed, get_plugin_docs, find_plugin_examples, mkdir_copy, save_script, execute_script, get_script_info, get_imagej_log
+from .prompts import imagej_coder_prompt, imagej_debugger_prompt, supervisor_prompt, python_analyst_prompt, qa_reporter_prompt, plugin_skill_builder_prompt
+from .tools import internet_search, inspect_all_ui_windows, run_script_safe, rag_retrieve_docs, inspect_java_class, save_coding_experience, rag_retrieve_mistakes, save_reusable_script, inspect_folder_tree, smart_file_reader, run_python_code, inspect_csv_header, extract_image_metadata, search_fiji_plugins, install_fiji_plugin, check_plugin_installed, get_plugin_docs, find_plugin_examples, mkdir_copy, save_script, execute_script, get_script_info, get_imagej_log, capture_plugin_dialog
 from .tools import load_script, get_script_history, setup_analysis_workspace, save_markdown
+from .tools import fetch_plugin_docs_url, search_imagej_wiki, fetch_github_plugin_info, fetch_github_file, save_plugin_skill_file, read_plugin_skill_file, list_plugin_skill_folder, create_plugin_test_script
 from imagentj.tracker import UsageMetrics, MetricsSignalBridge, UsageTrackerCallback
 
 shared_metrics = UsageMetrics()
@@ -99,6 +100,44 @@ python_data_analyst = {
 }
 
 
+plugin_skill_builder = {
+    "name": "plugin_skill_builder",
+    "description": """Researches a Fiji/ImageJ plugin in depth and builds a permanent skill folder at
+                    /app/skills/plugins/{plugin_name}/ containing OVERVIEW.md, UI_GUIDE.md,
+                    GROOVY_API.md, GROOVY_WORKFLOW.groovy, and SKILL.md.
+                    Call when the user wants to use a plugin with no existing skill file, or when
+                    imagej_coder produces failing/hallucinated plugin commands.
+                    INPUT REQUIRED: plugin_name (exact menu name), optionally github_url, docs_url,
+                    test_image_path.""",
+    "system_prompt": plugin_skill_builder_prompt,
+    "middleware": [],
+    "tools": [
+        search_imagej_wiki,
+        fetch_plugin_docs_url,
+        fetch_github_plugin_info,
+        fetch_github_file,
+        internet_search,
+        smart_file_reader,
+        inspect_java_class,
+        rag_retrieve_docs,
+        rag_retrieve_mistakes,
+        save_coding_experience,
+        check_plugin_installed,
+        create_plugin_test_script,
+        get_script_info,
+        execute_script,
+        inspect_all_ui_windows,
+        setup_analysis_workspace,
+        save_plugin_skill_file,
+        read_plugin_skill_file,
+        list_plugin_skill_folder,
+        save_markdown,
+    ],
+    "model": llm_gpt5,
+    "checkpointer": MemorySaver(),
+}
+
+
 # qa_reporter = {
 #     "name": "qa_reporter",
 
@@ -143,9 +182,9 @@ def init_agent():
 
     supervisor = create_deep_agent(
     name="ImageJ_Supervisor",
-    tools = [internet_search, inspect_all_ui_windows, rag_retrieve_docs, save_coding_experience, rag_retrieve_mistakes, save_reusable_script, inspect_folder_tree, smart_file_reader, extract_image_metadata, search_fiji_plugins, install_fiji_plugin, check_plugin_installed, get_plugin_docs, mkdir_copy, inspect_csv_header, execute_script, get_script_info, setup_analysis_workspace, save_markdown, get_imagej_log],
+    tools = [internet_search, inspect_all_ui_windows, capture_plugin_dialog, rag_retrieve_docs, save_coding_experience, rag_retrieve_mistakes, save_reusable_script, inspect_folder_tree, smart_file_reader, extract_image_metadata, search_fiji_plugins, install_fiji_plugin, check_plugin_installed, mkdir_copy, inspect_csv_header, execute_script, get_script_info, setup_analysis_workspace, save_markdown, get_imagej_log, read_plugin_skill_file, list_plugin_skill_folder],
     system_prompt=supervisor_prompt,
-    subagents=[imagej_coder, imagej_debugger, python_data_analyst], #, qa_reporter],
+    subagents=[imagej_coder, imagej_debugger, python_data_analyst, plugin_skill_builder], #, qa_reporter],
     middleware=[],
     model=llm_gpt5,
     debug=False,

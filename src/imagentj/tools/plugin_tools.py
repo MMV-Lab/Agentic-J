@@ -742,7 +742,7 @@ def find_plugin_examples(plugin_name: str) -> dict:
             "sources": [],
             "note": (
                 f"No local Fiji examples found for '{plugin_name}'. "
-                "Try inspect_java_class or get_plugin_docs for parameter information."
+                "Try inspect_java_class or read the plugin skill folder for parameter information."
             ),
         }
 
