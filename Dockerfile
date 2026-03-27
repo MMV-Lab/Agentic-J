@@ -20,7 +20,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # OpenGL
     libopengl0 libglx0 \
     # Utilities
-    wget unzip procps curl \
+    wget unzip procps curl ripgrep \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Install Fiji ──────────────────────────────────────────────────────────────

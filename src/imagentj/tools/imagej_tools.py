@@ -75,10 +75,15 @@ def load_image_ij(path: str)  -> object:
 @tool
 def inspect_all_ui_windows():
     """
-    Inspected everything visible in the ImageJ UI:
-    1. Image Windows (Metadata & Stats)
-    2. Results Tables (Row/Column counts)
-    3. The Log window and ROI Manager
+    Inspect everything visible in the ImageJ UI:
+    1. Image Windows (title, file path, dimensions, bit depth, min/max stats)
+    2. Results Tables (row/column counts)
+    3. ROI Manager (ROI count)
+    4. Log Window (full text content — use this when the user reports a console error)
+    5. Exception/Error Windows (full stack trace text)
+
+    Call this whenever the user mentions an error in the console or exception window,
+    or to verify what is currently open in Fiji.
     """
     ij = get_ij()
 
@@ -100,22 +105,42 @@ def inspect_all_ui_windows():
         for img_id in image_ids:
             imp = WindowManager.getImage(img_id)
             try:
+                # Resolve the on-disk path so the agent can pass it to other tools
+                file_path = None
+                file_path_note = None
+                try:
+                    fi = imp.getOriginalFileInfo()
+                    if fi is not None and fi.directory and fi.fileName:
+                        import os as _os
+                        candidate = _os.path.join(str(fi.directory), str(fi.fileName))
+                        if _os.path.exists(candidate):
+                            file_path = candidate
+                        else:
+                            file_path_note = f"path from ImageJ ({candidate}) does not exist on disk — ask the user for the actual file location"
+                except Exception:
+                    pass
+
                 # Convert ImagePlus to Dataset for stats
                 dataset = ij.py.to_dataset(imp)
 
                 min_val = ij.op().stats().min(dataset).getRealDouble()
                 max_val = ij.op().stats().max(dataset).getRealDouble()
 
-                all_inspections["images"].append({
+                entry = {
                     "title": imp.getTitle(),
+                    "file_path": file_path,
                     "dimensions": f"{imp.getWidth()}x{imp.getHeight()}x{imp.getNSlices()}",
                     "stats": {"min": min_val, "max": max_val},
                     "bit_depth": imp.getBitDepth()
-                })
+                }
+                if file_path_note:
+                    entry["file_path_note"] = file_path_note
+                all_inspections["images"].append(entry)
             except Exception as e:
-                all_inspections["images"].append({"title": imp.getTitle(), "error": str(e)})
+                all_inspections["images"].append({"title": imp.getTitle(), "file_path": None, "error": str(e)})
 
     # --- 2. Inspect Non-Image Windows ---
+    IJ = jimport('ij.IJ')
     all_frames = Frame.getFrames()
     for frame in all_frames:
         if frame.isVisible():
@@ -135,10 +160,34 @@ def inspect_all_ui_windows():
                     "roi_count": rm.getCount() if rm else 0
                 })
             elif title == "Log":
+                log_text = ""
+                try:
+                    log_text = str(IJ.getLog()) or ""
+                except Exception:
+                    pass
                 all_inspections["tables_and_text"].append({
                     "type": "Log Window",
-                    "status": "Visible"
+                    "content": log_text[-4000:] if len(log_text) > 4000 else log_text
                 })
+            elif "exception" in title.lower() or "error" in title.lower():
+                # Capture text from exception/error dialog frames
+                try:
+                    TextArea = jimport('java.awt.TextArea')
+                    text_content = ""
+                    for comp in frame.getComponents():
+                        if isinstance(comp, TextArea):
+                            text_content += str(comp.getText()) + "\n"
+                    all_inspections["tables_and_text"].append({
+                        "type": "Exception Window",
+                        "title": title,
+                        "content": text_content[-4000:] if len(text_content) > 4000 else text_content
+                    })
+                except Exception as e:
+                    all_inspections["tables_and_text"].append({
+                        "type": "Exception Window",
+                        "title": title,
+                        "content": f"(could not read content: {e})"
+                    })
 
     return str(all_inspections)
 
@@ -147,6 +196,24 @@ def inspect_all_ui_windows():
 _SKIP_TITLES = {"ImageJ", "Fiji", "Log", "Results", "ROI Manager", "Recorder",
                 "Brightness/Contrast", "Channels Tool", "Synchronize Windows",
                 "3D Viewer", "BigDataViewer"}
+
+_IMAGE_EXTENSIONS = {".tif", ".tiff", ".png", ".jpg", ".jpeg", ".bmp", ".gif",
+                     ".fits", ".hdf5", ".h5", ".czi", ".lif", ".nd2", ".ims"}
+
+def _is_non_dialog_window(title: str) -> bool:
+    """Return True for windows that are definitely not plugin parameter dialogs."""
+    if title in _SKIP_TITLES:
+        return True
+    # Main Fiji/ImageJ window variations  e.g. "(Fiji Is Just) ImageJ"
+    tl = title.lower()
+    if "imagej" in tl or tl == "fiji":
+        return True
+    # Image display windows — title ends with a known image extension
+    import os as _os
+    ext = _os.path.splitext(title)[1].lower()
+    if ext in _IMAGE_EXTENSIONS:
+        return True
+    return False
 
 
 @tool
@@ -189,7 +256,7 @@ def capture_plugin_dialog() -> str:
                 title = win.getClass().getSimpleName()
 
             # Skip known non-dialog Fiji windows and image display windows
-            if title in _SKIP_TITLES or not title:
+            if not title or _is_non_dialog_window(title):
                 continue
 
             bounds = win.getBounds()
@@ -241,7 +308,11 @@ def capture_plugin_dialog() -> str:
                      "image_url": {"url": f"data:image/png;base64,{b64}", "detail": "high"}},
                 ]),
             ])
-            parsed = json.loads(response.content)
+            import re as _re
+            raw = response.content.strip()
+            if raw.startswith("```"):
+                raw = _re.sub(r"^```(?:json)?\n?", "", raw).rstrip("` \n")
+            parsed = json.loads(raw)
             results.append(parsed)
         except Exception as e:
             results.append({"dialog_title": title, "error": str(e)})

@@ -6,13 +6,13 @@ SCRIPTS_DIR = os.path.join(os.path.dirname(__file__), "../../scripts/saved_scrip
 from .file_tools import inspect_folder_tree, save_reusable_script, smart_file_reader, mkdir_copy, setup_analysis_workspace, save_markdown
 from .rag_tools import rag_retrieve_docs, rag_retrieve_mistakes, save_coding_experience
 from .script_tools import run_script_safe, save_script, execute_script, get_script_info, load_script, get_script_history
-from .imagej_tools import ask_user, load_image_ij, inspect_all_ui_windows, extract_image_metadata
+from .imagej_tools import ask_user, load_image_ij, inspect_all_ui_windows, extract_image_metadata, capture_plugin_dialog
 from .general_tools import internet_search, inspect_java_class
 from .analyst_tools import run_python_code, inspect_csv_header
 from .plugin_tools import search_fiji_plugins, install_fiji_plugin, check_plugin_installed
 from .tools_plugin_research import create_plugin_test_script, list_plugin_skill_folder, read_plugin_skill_file, save_plugin_skill_file, fetch_github_file, fetch_github_plugin_info, search_imagej_wiki, fetch_plugin_docs_url
 from .middleware import SafeToolLoggerMiddleware, TodoDisplayMiddleware
-from .vision_tools import capture_ij_window, build_compilation, analyze_image
+# from .vision_tools import capture_ij_window, build_compilation, analyze_image  # VLM disabled
 
 # Lazy accessors for vector stores (RAG is optional)
 from .vector_stores import get_vec_store_docs, get_vec_store_mistakes, is_rag_available, is_plugin_db_available
@@ -20,7 +20,7 @@ from .vector_stores import get_vec_store_docs, get_vec_store_mistakes, is_rag_av
 __all__ = [
     'inspect_folder_tree', 'save_reusable_script', 'smart_file_reader',
     'rag_retrieve_docs', 'rag_retrieve_mistakes', 'save_coding_experience',
-    'run_script_safe', 'ask_user', 'load_image_ij', 'inspect_all_ui_windows', 'extract_image_metadata',
+    'run_script_safe', 'ask_user', 'load_image_ij', 'inspect_all_ui_windows', 'extract_image_metadata', 'capture_plugin_dialog',
     'internet_search', 'inspect_java_class',
     'search_fiji_plugins', 'install_fiji_plugin', 'check_plugin_installed',
     'SafeToolLoggerMiddleware', 'TodoDisplayMiddleware',

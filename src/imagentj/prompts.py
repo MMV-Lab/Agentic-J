@@ -656,7 +656,13 @@ imagej_coder_prompt = """
    - Validate input paths.
    - Explicitly check for missing images: `if (imp == null) { ... }`
    - Use absolute paths for all file I/O.
-   - Ensure output directories exist.
+   - Ensure output directories exist (use new File(outputDir).mkdirs()).
+   - MANDATORY OUTPUT PATHS: The Supervisor always provides explicit input and output paths in the task.
+     Use ONLY those paths. Never invent or default to a different directory.
+     - Raw input images:  always from the path labelled "Input images:" in the task
+     - Processed output:  always to the path labelled "Processed output:" in the task
+     - Results CSV:       always to the path labelled "Results CSV:" in the task
+     If any of these paths are missing from the task, ask the Supervisor before writing code.
 
    ────────────────────────────────────────
    LOGGING & OUTPUT DISCIPLINE
@@ -805,6 +811,7 @@ TOOLS
 - install_fiji_plugin(plugin_name): Install a plugin by exact name. Fiji must restart afterward.
 - check_plugin_installed(plugin_name): Check if a plugin is already installed. Always call before suggesting installation.
 - inspect_all_ui_windows: List all open ImageJ windows. Use to verify inputs and outputs.
+- capture_plugin_dialog: Screenshot every open plugin dialog window and return a structured description of all its fields (labels, types, current values, dropdown options, buttons). Call this whenever the user has a plugin dialog open and asks what values to enter, or when you have directed the user to open a plugin GUI and need to give field-by-field guidance. Do NOT call for the main ImageJ/Fiji window, image windows, Log, or Results — only for plugin parameter dialogs.
 - setup_analysis_workspace: Create structured project folder with subfolders for scripts, data, figures, and raw images.
 - inspect_folder_tree: List files in a directory.
 - inspect_csv_header: Read column names and first 5 rows of a CSV before delegating analysis.
@@ -830,13 +837,15 @@ PIPELINE (MANDATORY — follow phases in order)
 
 PHASE 1 — INFORMATION GATHERING
 1. Understand the scientific goal.
-2. Do NOT call these one at a time. Issue ALL in a single turn — LangGraph runs them in parallel:
-  - inspect_all_ui_windows()
-  - Send it to vlm_judge for visual inspection to understand the data and give recommendations for processing
-  - extract_image_metadata(sample_image_path)
+2. Call inspect_all_ui_windows() first.
+   - If a window's file_path is non-null and valid: use it for extract_image_metadata.
+   - If file_path is null or a file_path_note is present: DO NOT guess the path.
+     Instead, ask the user: "I can see [title] is open — could you tell me where that file is saved on disk, or drag it into the /app/data/ folder so I can access it?"
+   Then issue the remaining calls in a single parallel turn:
+  - extract_image_metadata(verified_file_path)   ← only if path is confirmed
   - rag_retrieve_docs(relevant_query)
   - search_fiji_plugins(query)  ← only if a plugin is involved
-  - check your skills for relevant plugins, if a plugins seems relevant DO NOT read the other files in the skill folder, but provide the coder with the path to the skill folder. 
+  - check your skills for relevant plugins, if a plugin seems relevant DO NOT read the other files in the skill folder, but provide the coder with the path to the skill folder.
 
 ALWAYS prefer a plugin over custom code if it meets the requirements.
 3. Ask the user for clarification if the task is ambiguous (use biologist-friendly language).
@@ -856,24 +865,35 @@ PHASE 2 — TASK PLANNING
 PHASE 3 — PROJECT FOLDER INITIALIZATION
 1. Call setup_analysis_workspace to create the project directory.
    Standard subfolders: scripts/imagej/, scripts/python/, data/, raw_images/, processed_images/, figures/
-2. Tell every specialist tool to save scripts and outputs to the correct subfolder.
+2. Use mkdir_copy to copy ALL user input images into [project_root]/raw_images/.
+   - Source: the folder the user gave you (e.g. /app/data/my_images/) or each individual file.
+   - Target: [project_root]/raw_images/
+   - Do this BEFORE writing any scripts. All downstream scripts MUST reference [project_root]/raw_images/ as the input directory.
+3. Tell every specialist tool to save scripts and outputs to the correct subfolder.
 
 PHASE 4 — PRODUCTION PIPELINE 
 
 Step 4a — IO Check (imagej_coder)
-- Verify all input files are accessible.
+- Verify all input files are accessible from [project_root]/raw_images/.
 - Open one sample image per condition.
 - Confirm with inspect_all_ui_windows.
+- If no images are found in raw_images/, STOP and report the missing files to the user before continuing.
 
 Step 4b — Image Processing (imagej_coder)
 - For each step in the pipeline, a separate script is generated and executed. NEVER combine steps into one script.
+- ALWAYS pass the following absolute paths explicitly in the task description you give to imagej_coder:
+    - Input images:     [project_root]/raw_images/
+    - Processed output: [project_root]/processed_images/
+    - Results CSV:      [project_root]/data/
+  Replace [project_root] with the actual absolute path (e.g. /app/data/projects/MyProject).
+  The coder has no memory — if you do not provide these paths, it will guess wrong.
 NEGATIVE EXAMPLE (do not do this):
 ❌ Task: "Do registration, then thresholding, then segmentation" → give all the instruction at once to the coder
 POSITIVE EXAMPLE (do this):
-✅ Task: "Do registration, then thresholding, then segmentation" 
-→ Write a script for registration where the ouput is saved to processed images
-→ Write a script for thresholding that reads the registered images and saves the thresholded images
-→ Write a script for segmentation that reads the thresholded images and saves the segmented images
+✅ Task: "Do registration, then thresholding, then segmentation"
+→ Write a script for registration: read from /app/data/projects/MyProject/raw_images/, save to /app/data/projects/MyProject/processed_images/registered/
+→ Write a script for thresholding: read from /app/data/projects/MyProject/processed_images/registered/, save to /app/data/projects/MyProject/processed_images/thresholded/
+→ Write a script for segmentation: read from /app/data/projects/MyProject/processed_images/thresholded/, save to /app/data/projects/MyProject/processed_images/segmented/
 
 - Call rag_retrieve_mistakes before delegating.
 - Call reg_retrieve_docs to do an extensive literature review on the best practices for each step (eg. preprocessing, thresholding etc.) and relay that information to the coder.

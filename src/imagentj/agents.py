@@ -22,10 +22,10 @@ from .prompts import (
     supervisor_prompt,
     python_analyst_prompt,
     qa_reporter_prompt,
-    vlm_judge_prompt,
+    # vlm_judge_prompt,  # VLM disabled
 )
 from .tools import (
-    internet_search, inspect_all_ui_windows,
+    internet_search, inspect_all_ui_windows, capture_plugin_dialog,
     rag_retrieve_docs, inspect_java_class, save_coding_experience,
     rag_retrieve_mistakes, save_reusable_script, inspect_folder_tree,
     smart_file_reader, inspect_csv_header,
@@ -33,7 +33,7 @@ from .tools import (
     check_plugin_installed, mkdir_copy, save_script, execute_script,
     get_script_info, load_script, get_script_history,
     setup_analysis_workspace, save_markdown,
-    capture_ij_window, build_compilation, analyze_image,
+    # capture_ij_window, build_compilation, analyze_image,  # VLM disabled
 )
 from imagentj.tracker import UsageMetrics, MetricsSignalBridge, UsageTrackerCallback
 
@@ -107,25 +107,25 @@ class QAHandoff(BaseModel):
     success: bool
 
 
-class VLMCheckResult(BaseModel):
-    """Result of a single visual check performed by the VLM judge."""
-    check_name:    str   # e.g. "segmentation_quality", "scale_bar"
-    verdict:       str   # "PASS" | "WARN" | "FAIL"
-    observation:   str   # exactly what the vision model reported
-    image_path:    Optional[str] = None  # path to the image (or compilation) used for this check
-
-
-class VLMHandoff(BaseModel):
-    """Returned by vlm_judge."""
-    overall_verdict:       str                  # "PASS" | "WARN" | "FAIL"
-    summary:               str                  # 2–4 sentence plain-English summary
-    checks:                list[VLMCheckResult] # one entry per visual check
-    issues_found:          list[str]            # empty on PASS
-    recommended_action:    str                  # exact next step for the supervisor
-    image_paths_inspected: list[str]            # all images / compilations analysed
-    pipeline_step:         str                  # echoed from the task for logging
-    success:               bool                 # False only if the agent itself crashed
-    error_message:         Optional[str] = None
+# VLM disabled — uncomment to re-enable
+# class VLMCheckResult(BaseModel):
+#     """Result of a single visual check performed by the VLM judge."""
+#     check_name:    str
+#     verdict:       str   # "PASS" | "WARN" | "FAIL"
+#     observation:   str
+#     image_path:    Optional[str] = None
+#
+# class VLMHandoff(BaseModel):
+#     """Returned by vlm_judge."""
+#     overall_verdict:       str
+#     summary:               str
+#     checks:                list[VLMCheckResult]
+#     issues_found:          list[str]
+#     recommended_action:    str
+#     image_paths_inspected: list[str]
+#     pipeline_step:         str
+#     success:               bool
+#     error_message:         Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -164,13 +164,13 @@ llm_nano = ChatOpenAI(
     callbacks=[shared_tracker],
 )
 
-llm_vlm = ChatOpenAI(
-    model="gpt-4o",
-    api_key=gpt_key,
-    temperature=0.,
-    verbose=True,
-    callbacks=[shared_tracker],
-)
+# llm_vlm = ChatOpenAI(  # VLM disabled
+#     model="gpt-4o",
+#     api_key=gpt_key,
+#     temperature=0.,
+#     verbose=True,
+#     callbacks=[shared_tracker],
+# )
 
 
 # ---------------------------------------------------------------------------
@@ -242,17 +242,13 @@ _qa_agent = create_agent(
     name="qa_reporter",
 )
 
-_vlm_agent = create_agent(
-    llm_vlm,
-    tools=[
-        capture_ij_window,   # save named open IJ window as PNG via PyImageJ
-        build_compilation,   # fuse multiple images into a labelled side-by-side panel
-        analyze_image,       # send image/compilation to vision LLM, return analysis
-    ],
-    system_prompt=vlm_judge_prompt,
-    response_format=VLMHandoff,
-    name="vlm_judge",
-)
+# _vlm_agent = create_agent(  # VLM disabled
+#     llm_vlm,
+#     tools=[capture_ij_window, build_compilation, analyze_image],
+#     system_prompt=vlm_judge_prompt,
+#     response_format=VLMHandoff,
+#     name="vlm_judge",
+# )
 
 
 @tool
@@ -340,58 +336,19 @@ def qa_reporter(project_root: str) -> QAHandoff:
     return result["structured_response"]
 
 
-@tool
-def vlm_judge(
-    task:            str,
-    pipeline_step:   str,
-    expected_output: str,
-    image_source:    str | list[str],
-    labels:          Optional[list[str]] = None,
-) -> VLMHandoff:
-    """
-    Visually inspect one or more images using a vision LLM and return a structured verdict.
-
-    IMAGE SOURCE — two modes:
-        Single string:  open IJ window title  → captured via IJ API then analysed.
-                        absolute file path    → analysed directly, no capture.
-        List of strings: multiple window titles and/or file paths
-                        → automatically fused into a side-by-side compilation panel.
-
-    Args:
-        task:            What to inspect and what criteria to judge against.
-        pipeline_step:   Short stage identifier for traceability, e.g. "segmentation".
-        expected_output: What a correct result looks like — used as pass/fail benchmark.
-        image_source:    Window title, file path, or list of either.
-        labels:          Optional panel captions for compilations, e.g. ["Original", "Mask"].
-
-    Returns VLMHandoff with overall_verdict ("PASS"/"WARN"/"FAIL"), per-check breakdown,
-    issues_found, and recommended_action.
-
-    WHEN TO CALL (each call costs tokens — be selective):
-        ✅ Sample verification — once per pipeline, on the verification image.
-        ✅ Segmentation / threshold output — compilation with original + result.
-        ✅ When a script exits cleanly but output is suspected to be wrong.
-        ✅ Final QA before qa_reporter — scale bar and output image check.
-        ✅ When the user reports a visual problem.
-        ❌ Do NOT call after every batch script execution.
-        ❌ Do NOT call to list open windows — use inspect_all_ui_windows.
-        ❌ Do NOT call to read CSV or log output — use inspect_csv_header / smart_file_reader.
-
-    ACTING ON THE VERDICT:
-        PASS → proceed. Show summary to user at sample verification.
-        WARN → continue pipeline; report issues in Phase 5 summary.
-        FAIL → stop. Send script path + issues_found to imagej_debugger after asking user for visual confirmation.
-    """
-    sources = image_source if isinstance(image_source, list) else [image_source]
-    content = (
-        f"PIPELINE STEP: {pipeline_step}\n"
-        f"IMAGE SOURCE(S): {sources}\n"
-        f"LABELS: {labels or []}\n"
-        f"EXPECTED OUTPUT: {expected_output}\n\n"
-        f"TASK: {task}"
-    )
-    result = _vlm_agent.invoke({"messages": [{"role": "user", "content": content}]})
-    return result["structured_response"]
+# VLM disabled — uncomment to re-enable
+# @tool
+# def vlm_judge(task, pipeline_step, expected_output, image_source, labels=None):
+#     sources = image_source if isinstance(image_source, list) else [image_source]
+#     content = (
+#         f"PIPELINE STEP: {pipeline_step}\n"
+#         f"IMAGE SOURCE(S): {sources}\n"
+#         f"LABELS: {labels or []}\n"
+#         f"EXPECTED OUTPUT: {expected_output}\n\n"
+#         f"TASK: {task}"
+#     )
+#     result = _vlm_agent.invoke({"messages": [{"role": "user", "content": content}]})
+#     return result["structured_response"]
 
 
 # ---------------------------------------------------------------------------
@@ -411,11 +368,12 @@ def init_agent():
             imagej_coder,
             imagej_debugger,
             python_data_analyst,
-            vlm_judge,
+            # vlm_judge,  # VLM disabled
             qa_reporter,
             # ── supervisor's own tools ───────────────────────────────────────
             internet_search,
             inspect_all_ui_windows,
+            capture_plugin_dialog,
             rag_retrieve_docs,
             save_coding_experience,
             rag_retrieve_mistakes,
