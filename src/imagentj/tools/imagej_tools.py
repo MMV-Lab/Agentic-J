@@ -2,11 +2,68 @@ import base64
 import io
 import json
 import os
+import re
+from pathlib import Path
 from langchain.tools import tool
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from imagentj.imagej_context import get_ij
 from .metadata_tools import extract_file_metadata
+
+_SKILLS_DIR = Path(os.environ.get("SKILLS_DIR", "/app/skills"))
+
+
+def _find_ui_docs_for_dialog(dialog_title: str) -> str:
+    """
+    Given a dialog title (e.g. 'CiliaQ on Linux - detection preferences'),
+    look for a matching plugin skill folder under _SKILLS_DIR and return
+    the concatenated contents of all UI_*.md files found there.
+    Returns an empty string if nothing matches.
+    """
+    if not _SKILLS_DIR.exists():
+        return ""
+
+    # Extract a short plugin name: take the first meaningful token(s) before
+    # separators like " - ", " on ", " (", numbers, or "preferences/settings/options"
+    short = re.split(r'\s+[-–]\s+|\s+on\s+|\s+\(', dialog_title)[0]
+    short = re.sub(r'\s+(preferences?|settings?|options?|parameters?|wizard).*', '',
+                   short, flags=re.IGNORECASE).strip()
+    slug = re.sub(r'[\s_\-]+', '', short).lower()  # "CiliaQ" → "ciliaq"
+
+    # Score each skill folder by how much its name overlaps with the slug
+    best_dir: Path | None = None
+    best_score = 0
+    for skill_dir in _SKILLS_DIR.iterdir():
+        if not skill_dir.is_dir():
+            continue
+        folder_slug = re.sub(r'[\s_\-]+(documentation|docs?|plugin)?$', '',
+                              skill_dir.name, flags=re.IGNORECASE)
+        folder_slug = re.sub(r'[\s_\-]+', '', folder_slug).lower()
+        # Simple overlap score
+        score = 0
+        if slug == folder_slug:
+            score = 100
+        elif slug in folder_slug or folder_slug in slug:
+            score = max(len(slug), len(folder_slug))
+        if score > best_score:
+            best_score = score
+            best_dir = skill_dir
+
+    if best_dir is None or best_score == 0:
+        return ""
+
+    # Read all UI_*.md files from the matched folder
+    ui_files = sorted(best_dir.glob("UI_*.md"))
+    if not ui_files:
+        return ""
+
+    parts = [f"[Skill documentation from: {best_dir.name}]"]
+    for f in ui_files:
+        try:
+            parts.append(f"\n--- {f.name} ---\n{f.read_text(encoding='utf-8', errors='ignore')}")
+        except Exception:
+            pass
+    return "\n".join(parts)
 
 _DIALOG_VISION_SYSTEM = """You are an ImageJ/Fiji expert analysing a screenshot of a plugin dialog window.
 
@@ -299,19 +356,28 @@ def capture_plugin_dialog() -> str:
 
     for title, b64 in dialog_images:
         try:
+            ui_docs = _find_ui_docs_for_dialog(title)
+            text_prompt = f"Analyze this plugin dialog screenshot (window title: '{title}')."
+            if ui_docs:
+                text_prompt += (
+                    "\n\nThe following documentation describes the parameters of this plugin. "
+                    "Use it to enrich the 'description' field of each parameter with accurate, "
+                    "specific guidance (recommended values, valid ranges, what it controls):\n\n"
+                    + ui_docs
+                )
+                print(f"[capture_plugin_dialog] Enriching '{title}' with UI docs ({len(ui_docs)} chars)")
+
             response = llm.invoke([
                 SystemMessage(content=_DIALOG_VISION_SYSTEM),
                 HumanMessage(content=[
-                    {"type": "text",
-                     "text": f"Analyze this plugin dialog screenshot (window title: '{title}')."},
+                    {"type": "text", "text": text_prompt},
                     {"type": "image_url",
                      "image_url": {"url": f"data:image/png;base64,{b64}", "detail": "high"}},
                 ]),
             ])
-            import re as _re
             raw = response.content.strip()
             if raw.startswith("```"):
-                raw = _re.sub(r"^```(?:json)?\n?", "", raw).rstrip("` \n")
+                raw = re.sub(r"^```(?:json)?\n?", "", raw).rstrip("` \n")
             parsed = json.loads(raw)
             results.append(parsed)
         except Exception as e:
