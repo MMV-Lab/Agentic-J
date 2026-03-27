@@ -436,11 +436,6 @@ def init_agent():
         system_prompt=supervisor_prompt,
         subagents=[],           # all subagents are now tools above
         middleware=[
-            SummarizationMiddleware(
-                model=llm_nano,
-                trigger=("tokens", 50000),
-                keep=("messages", 20),
-            ),
             ContextEditingMiddleware(
                 edits=[
                     ClearToolUsesEdit(

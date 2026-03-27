@@ -212,7 +212,8 @@ class ChatScrollArea(QWidget):
         self._msg_layout = QVBoxLayout(self._container)
         self._msg_layout.setContentsMargins(8, 8, 8, 8)
         self._msg_layout.setSpacing(6)
- 
+        self._msg_layout.setAlignment(Qt.AlignTop)
+
         self._scroll.setWidget(self._container)
         outer.addWidget(self._scroll)
  
@@ -596,11 +597,6 @@ class ImageJAgentGUI(QWidget):
 
         self.chat_scroll = ChatScrollArea()
 
-        self.attachment_status = QLabel("No files attached")
-        self.attachment_status.setStyleSheet(
-            "color: #7f8c8d; font-style: italic; padding-left: 5px;"
-        )
-
         self.input_line = QTextEdit()
         self.input_line.setFixedHeight(120)
 
@@ -624,7 +620,6 @@ class ImageJAgentGUI(QWidget):
         btn_row.addWidget(self.stop_button, stretch=1)
 
         chat_layout.addWidget(self.chat_scroll,        stretch=3)
-        chat_layout.addWidget(self.attachment_status,  stretch=0)
         chat_layout.addWidget(self.input_line,         stretch=1)
         chat_layout.addLayout(btn_row)
         chat_layout.addWidget(self.status_label,       stretch=0)
@@ -772,31 +767,6 @@ class ImageJAgentGUI(QWidget):
             log.exception(f"Failed to save report: {e}")
             QMessageBox.warning(self, "Save Failed", str(e))
 
-    # ------------------------------------------------------------------
-    # Drag-and-drop / attachments
-    # ------------------------------------------------------------------
-
-    def dragEnterEvent(self, event):
-        if event.mimeData().hasUrls():
-            event.acceptProposedAction()
-
-    def dropEvent(self, event):
-        for url in event.mimeData().urls():
-            p = url.toLocalFile()
-            if p not in self.attached_files:
-                self.attached_files.append(p)
-        self._update_attachment_ui()
-
-    def _update_attachment_ui(self):
-        if not self.attached_files:
-            self.attachment_status.setText("No files attached")
-            self.attachment_status.setStyleSheet(
-                "color: #7f8c8d; font-style: italic; padding-left: 5px;"
-            )
-        else:
-            names = [os.path.basename(p) for p in self.attached_files]
-            self.attachment_status.setText(f"Attached ({len(names)}): {', '.join(names)}")
-            self.attachment_status.setStyleSheet("color: #2980b9; font-weight: bold;")
 
     # ------------------------------------------------------------------
     # Status / UI helpers
@@ -913,9 +883,6 @@ class ImageJAgentGUI(QWidget):
         self._is_new_thread = False
 
         self._execute_agent_query(full_prompt)
-        self.attached_files = []
-        self._update_attachment_ui()
-
     # ------------------------------------------------------------------
     # Event handler (streaming from agent)
     # ------------------------------------------------------------------
