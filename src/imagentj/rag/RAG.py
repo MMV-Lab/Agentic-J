@@ -33,6 +33,7 @@ from config.rag_config import (
 )
 
 openrouter_key = os.getenv("OPEN_ROUTER_API_KEY")
+openai_key = os.getenv("OPENAI_API_KEY")
 
 import hashlib
 
@@ -79,11 +80,23 @@ def get_embeddings_models():
     """
     Returns the initialized dense and sparse embedding models.
     """
-    dense_embeddings = OpenAIEmbeddings(
-    model="openai/text-embedding-3-large",
-    api_key=openrouter_key,
-    openai_api_base="https://openrouter.ai/api/v1",
-    )
+
+    if openrouter_key:
+        dense_embeddings = OpenAIEmbeddings(
+        model="openai/text-embedding-3-large",
+        api_key=openrouter_key,
+        openai_api_base="https://openrouter.ai/api/v1",
+        )
+
+    elif openai_key and openrouter_key is None:
+        dense_embeddings = OpenAIEmbeddings(
+            model="text-embedding-3-large",
+            api_key=openai_key,
+        )
+
+    else:
+        raise ValueError("No API key found for OpenAI or OpenRouter. Please set OPENAI_API_KEY or OPEN_ROUTER_API_KEY environment variable.")
+    
     sparse_embeddings = FastEmbedSparse(model_name=SPARSE_MODEL_NAME)
     return dense_embeddings, sparse_embeddings
 
