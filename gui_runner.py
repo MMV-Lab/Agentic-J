@@ -46,7 +46,7 @@ To get started, please share:
 
 If you're unsure, tell me the biological question and show one representative image."""
 
-
+os.environ["LANGCHAIN_CALLBACKS_BACKGROUND"] = "true"
 
 # ---------------------------------------------------------------------------
 # Text helpers
@@ -212,7 +212,9 @@ class ChatScrollArea(QWidget):
         self._msg_layout = QVBoxLayout(self._container)
         self._msg_layout.setContentsMargins(8, 8, 8, 8)
         self._msg_layout.setSpacing(6)
- 
+        self._msg_layout.setAlignment(Qt.AlignTop)
+        self._last_bubble = None
+
         self._scroll.setWidget(self._container)
         outer.addWidget(self._scroll)
  
@@ -222,27 +224,32 @@ class ChatScrollArea(QWidget):
         if vp_w > 0:
             self._container.setMaximumWidth(vp_w)
  
-    def scroll_to_bottom(self):
-        """Scroll to the bottom after the current event loop iteration completes.
- 
-        Using a zero-delay QTimer ensures Qt has finished its layout pass before
-        we read the new scrollbar maximum. Without this, in-place bubble updates
-        (update_text) don't move the scroll position because the layout hasn't
-        recalculated yet when the call is made.
+    def scroll_to_bottom(self, widget: "MessageBubble | None" = None):
+        """Scroll to make `widget` visible, or to the last bubble if None.
+
+        Uses ensureWidgetVisible so we land on actual content rather than the
+        empty space Qt leaves below AlignTop layouts in a resizable scroll area.
+        The zero-delay timer defers the call until after Qt's layout pass.
         """
-        QTimer.singleShot(0, lambda: (
-            self._scroll.verticalScrollBar().setValue(
-                self._scroll.verticalScrollBar().maximum()
-            )
-        ))
- 
-    def add_message(self, role: str, text: str) -> MessageBubble:
+        def _do_scroll():
+            target = widget or self._last_bubble
+            if target is not None:
+                try:
+                    self._scroll.ensureWidgetVisible(target)
+                except RuntimeError:
+                    pass  # widget deleted during shutdown
+        QTimer.singleShot(0, _do_scroll)
+
+    def add_message(self, role: str, text: str, *, auto_scroll: bool = True) -> MessageBubble:
         bubble = MessageBubble(text, role)
-        self._msg_layout.addWidget(bubble)   # ← addWidget (not insertWidget) — no stretch to jump over
-        self.scroll_to_bottom()
+        self._msg_layout.addWidget(bubble)
+        self._last_bubble = bubble
+        if auto_scroll:
+            self.scroll_to_bottom(bubble)
         return bubble
  
     def clear_messages(self):
+        self._last_bubble = None
         while self._msg_layout.count() > 0:
             item = self._msg_layout.takeAt(0)
             if item.widget():
@@ -286,13 +293,13 @@ class SubagentHeartbeatTimer:
             "Data Scientist is adding publication-quality plot settings…",
             "Data Scientist is saving the script…",
         ],
-        "vlm_judge": [
-            "Vision AI is capturing the ImageJ window…",
-            "Vision AI is building the comparison panel…",
-            "Vision AI is sending the image for analysis…",
-            "Vision AI is evaluating against expected output…",
-            "Vision AI is compiling the verdict…",
-        ],
+        # "vlm_judge": [  # VLM disabled
+        #     "Vision AI is capturing the ImageJ window…",
+        #     "Vision AI is building the comparison panel…",
+        #     "Vision AI is sending the image for analysis…",
+        #     "Vision AI is evaluating against expected output…",
+        #     "Vision AI is compiling the verdict…",
+        # ],
         "qa_reporter": [
             "QA Agent is scanning the project folder…",
             "QA Agent is reading script documentation…",
@@ -573,6 +580,8 @@ class ImageJAgentGUI(QWidget):
         # Streaming state
         self._current_ai_bubble: MessageBubble | None = None
         self._ai_response_buffer: str = ""
+        self._status_bubble: MessageBubble | None = None
+        self._agent_had_error: bool = False
 
         # Agent + tracker (init_agent returns 5 values)
         (self.supervisor,
@@ -595,11 +604,6 @@ class ImageJAgentGUI(QWidget):
         chat_layout = QVBoxLayout()
 
         self.chat_scroll = ChatScrollArea()
-
-        self.attachment_status = QLabel("No files attached")
-        self.attachment_status.setStyleSheet(
-            "color: #7f8c8d; font-style: italic; padding-left: 5px;"
-        )
 
         self.input_line = QTextEdit()
         self.input_line.setFixedHeight(120)
@@ -624,7 +628,6 @@ class ImageJAgentGUI(QWidget):
         btn_row.addWidget(self.stop_button, stretch=1)
 
         chat_layout.addWidget(self.chat_scroll,        stretch=3)
-        chat_layout.addWidget(self.attachment_status,  stretch=0)
         chat_layout.addWidget(self.input_line,         stretch=1)
         chat_layout.addLayout(btn_row)
         chat_layout.addWidget(self.status_label,       stretch=0)
@@ -696,6 +699,7 @@ class ImageJAgentGUI(QWidget):
         self._is_new_thread    = True
         self._current_ai_bubble   = None
         self._ai_response_buffer  = ""
+        self._status_bubble       = None
         self._tracker_cb.switch_thread(thread_id)
 
         self.chat_scroll.clear_messages()
@@ -713,6 +717,7 @@ class ImageJAgentGUI(QWidget):
         self._is_new_thread    = False
         self._current_ai_bubble  = None
         self._ai_response_buffer = ""
+        self._status_bubble      = None
         self._tracker_cb.switch_thread(thread_id)
 
         self.chat_scroll.clear_messages()
@@ -727,9 +732,12 @@ class ImageJAgentGUI(QWidget):
                 tool_calls = getattr(msg, 'tool_calls', None) or []
 
                 if msg_type == 'human' and content:
-                    self.chat_scroll.add_message('user', content)
+                    self.chat_scroll.add_message('user', content, auto_scroll=False)
                 elif msg_type == 'ai' and content and not tool_calls:
-                    self.chat_scroll.add_message('ai', content)
+                    self.chat_scroll.add_message('ai', content, auto_scroll=False)
+
+            # Scroll to the last bubble once all messages are laid out
+            self.chat_scroll.scroll_to_bottom()
 
         self.history_panel.set_active(thread_id)
 
@@ -772,31 +780,6 @@ class ImageJAgentGUI(QWidget):
             log.exception(f"Failed to save report: {e}")
             QMessageBox.warning(self, "Save Failed", str(e))
 
-    # ------------------------------------------------------------------
-    # Drag-and-drop / attachments
-    # ------------------------------------------------------------------
-
-    def dragEnterEvent(self, event):
-        if event.mimeData().hasUrls():
-            event.acceptProposedAction()
-
-    def dropEvent(self, event):
-        for url in event.mimeData().urls():
-            p = url.toLocalFile()
-            if p not in self.attached_files:
-                self.attached_files.append(p)
-        self._update_attachment_ui()
-
-    def _update_attachment_ui(self):
-        if not self.attached_files:
-            self.attachment_status.setText("No files attached")
-            self.attachment_status.setStyleSheet(
-                "color: #7f8c8d; font-style: italic; padding-left: 5px;"
-            )
-        else:
-            names = [os.path.basename(p) for p in self.attached_files]
-            self.attachment_status.setText(f"Attached ({len(names)}): {', '.join(names)}")
-            self.attachment_status.setStyleSheet("color: #2980b9; font-weight: bold;")
 
     # ------------------------------------------------------------------
     # Status / UI helpers
@@ -860,11 +843,19 @@ class ImageJAgentGUI(QWidget):
             self.chat_scroll.add_message('system', "Agent stopped.")
         self._current_ai_bubble  = None
         self._ai_response_buffer = ""
-        self.set_status("Ready")
+        self._status_bubble      = None
+        if not self._agent_had_error:
+            self.set_status("Ready")
+        self._agent_had_error = False
         self.set_ui_busy(False)
 
     def on_agent_error(self, msg: str):
         log.error(f"Agent error: {msg}")
+        self._stop_heartbeat()
+        self._agent_had_error    = True
+        self._current_ai_bubble  = None
+        self._ai_response_buffer = ""
+        self._status_bubble      = None
         self.chat_scroll.add_message('error', f"Agent error:\n{msg}")
         self.status_label.setText("Error")
         self.status_label.setStyleSheet("color: red;")
@@ -900,6 +891,7 @@ class ImageJAgentGUI(QWidget):
 
         self._current_ai_bubble  = None
         self._ai_response_buffer = ""
+        self._agent_had_error    = False
 
         current_title = self.history_manager._index.get(
             self.current_thread_id, {}
@@ -913,9 +905,6 @@ class ImageJAgentGUI(QWidget):
         self._is_new_thread = False
 
         self._execute_agent_query(full_prompt)
-        self.attached_files = []
-        self._update_attachment_ui()
-
     # ------------------------------------------------------------------
     # Event handler (streaming from agent)
     # ------------------------------------------------------------------
@@ -936,7 +925,7 @@ class ImageJAgentGUI(QWidget):
 
         # These are the subagent tool names that run for a long time with no streaming.
         _SUBAGENT_TOOLS = {"imagej_coder", "imagej_debugger",
-                        "python_data_analyst", "vlm_judge", "qa_reporter"}
+                        "python_data_analyst", "qa_reporter"}  # vlm_judge disabled
 
         # Non-subagent tool start messages (short, fire-and-forget tools)
         _TOOL_START = {
@@ -944,6 +933,7 @@ class ImageJAgentGUI(QWidget):
             "rag_retrieve_docs":         "Searching ImageJ documentation…",
             "rag_retrieve_mistakes":     "Checking past lessons learned…",
             "inspect_all_ui_windows":    "Listing open ImageJ windows…",
+            "capture_plugin_dialog":     "Reading plugin dialog (taking screenshot)…",
             "extract_image_metadata":    "Reading image metadata & calibration…",
             "setup_analysis_workspace":  "Creating project workspace…",
             "search_fiji_plugins":       "Searching Fiji plugin registry…",
@@ -965,7 +955,7 @@ class ImageJAgentGUI(QWidget):
             "python_data_analyst":       "Data Scientist finished.",
             "execute_script":            "Script execution complete.",
             "qa_reporter":               "QA report generated.",
-            "vlm_judge":                 "Vision AI inspection complete.",
+            # "vlm_judge":              "Vision AI inspection complete.",  # VLM disabled
             "setup_analysis_workspace":  "Project workspace ready.",
             "install_fiji_plugin":       "Plugin installed — please restart Fiji.",
         }
@@ -976,55 +966,56 @@ class ImageJAgentGUI(QWidget):
                 self._status_bubble = self.chat_scroll.add_message('system', text)
             else:
                 self._status_bubble.update_text(text)
-                self.chat_scroll.scroll_to_bottom()
     
         for node_name, node_data in event.items():
             if "Middleware" in node_name:
                 continue
-    
-            # ── Supervisor routing announcements ─────────────────────────────────
-            if node_name in ("supervisor", "model"):
-                for msg in node_data.get("messages", []):
-                    for tc in (getattr(msg, "tool_calls", None) or []):
-                        name = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", "")
-                        args = tc.get("args") if isinstance(tc, dict) else getattr(tc, "args", {})
+            if node_name == "tools":
+                continue  # handled separately below
+
+            messages = node_data.get("messages", []) if isinstance(node_data, dict) else []
+
+            for msg in messages:
+                content    = getattr(msg, "content", "") or ""
+                tool_calls = getattr(msg, "tool_calls", None) or []
+                msg_type   = getattr(msg, "type", "") or ""
+
+                # skip human / tool-result messages
+                if msg_type in ("human", "tool"):
+                    continue
+
+                # ── AI text (supervisor speaking to user) ─────────────────────
+                if content and not tool_calls:
+                    self._stop_heartbeat()
+                    self._status_bubble = None
+
+                    if self._current_ai_bubble is None:
+                        self._ai_response_buffer = content
+                        self._current_ai_bubble  = self.chat_scroll.add_message('ai', content)
+                    else:
+                        self._ai_response_buffer += content
+                        self._current_ai_bubble.update_text(self._ai_response_buffer)
+
+                # ── Tool call announcements ───────────────────────────────────
+                if tool_calls:
+                    self._current_ai_bubble = None
+                    for tc in tool_calls:
+                        name = tc.get("name", "") if isinstance(tc, dict) else getattr(tc, "name", "")
+                        args = tc.get("args", {}) if isinstance(tc, dict) else getattr(tc, "args", {})
+
+                        # routing announcement for deepagents "task" tool
                         if name == "task":
                             agent_type = args.get("subagent_type", "Specialist")
                             desc       = args.get("description", "")
                             short_desc = (desc[:120] + "…") if len(desc) > 120 else desc
                             set_status(f"Routing to {agent_type}: {short_desc}")
-    
-            # ── AI text streaming ─────────────────────────────────────────────────
-            if node_name == "model":
-                for msg in node_data.get("messages", []):
-                    content = getattr(msg, "content", "")
-                    if content:
-                        # AI is speaking → reset status so the next tool gets a fresh line
-                        self._stop_heartbeat()
-                        self._status_bubble = None
-    
-                        if self._current_ai_bubble is None:
-                            self._ai_response_buffer = content
-                            self._current_ai_bubble  = self.chat_scroll.add_message('ai', content)
+                        elif name in _SUBAGENT_TOOLS:
+                            self._stop_heartbeat()
+                            self._heartbeat = SubagentHeartbeatTimer(name, set_status)
+                            self._heartbeat.start()
                         else:
-                            self._ai_response_buffer += content
-                            self._current_ai_bubble.update_text(self._ai_response_buffer)
-                            self.chat_scroll.scroll_to_bottom()
-    
-                    # ── Tool start announcement ───────────────────────────────────
-                    if getattr(msg, "tool_calls", None):
-                        self._current_ai_bubble = None
-                        for tc in msg.tool_calls:
-                            name = tc.get("name", "") if isinstance(tc, dict) else getattr(tc, "name", "")
-    
-                            if name in _SUBAGENT_TOOLS:
-                                # Stop any previous heartbeat before starting a new one
-                                self._stop_heartbeat()
-                                self._heartbeat = SubagentHeartbeatTimer(name, set_status)
-                                self._heartbeat.start()
-                            else:
-                                status = _TOOL_START.get(name) or f"Running {name.replace('_', ' ').title()}…"
-                                set_status(status)
+                            status = _TOOL_START.get(name) or f"Running {name.replace('_', ' ').title()}…"
+                            set_status(status)
     
         # ── Tool completion ───────────────────────────────────────────────────────
         if "tools" in event:
