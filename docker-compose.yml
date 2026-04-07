@@ -41,7 +41,7 @@ services:
       # Folder to save data
       - ./data:/app/data
       # Folder for skills
-      - ./skills:/app/skills
+      - ./skills:/app/skills:ro
     env_file:
       - path: .env
         required: false
