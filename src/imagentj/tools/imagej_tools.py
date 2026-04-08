@@ -201,7 +201,7 @@ def inspect_all_ui_windows():
     all_frames = Frame.getFrames()
     for frame in all_frames:
         if frame.isVisible():
-            title = frame.getTitle()
+            title = str(frame.getTitle())
 
             if title == "Results":
                 rt = ResultsTable.getResultsTable()
