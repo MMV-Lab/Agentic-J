@@ -1,7 +1,7 @@
 ---
 name: coloc2_documentation
 description: Coloc 2 is the standard Fiji plugin for pixel-based colocalization analysis. It implements validated algorithms including Pearson’s, Manders’ (with and without threshold), Costes’ significance test, and Li’s ICQ. Read the files listed at the end of this SKILL for verified commands, GUI walkthroughs, scripting examples, and common pitfalls.
-----
+---
 
 ### Documentation Files
 - [OVERVIEW.md](./OVERVIEW.md): Biological context and metric definitions.
