@@ -99,7 +99,9 @@ class ChatHistoryManager:
                 return []
             return state.values.get("messages", [])
         except Exception as e:
-            print(f"[ChatHistory] Could not load thread {thread_id}: {e}")
+            import traceback
+            traceback.print_exc()
+            print(f"[ChatHistory] Could not load thread {thread_id}: {e}", flush=True)
             return []
 
     def format_messages_as_html(self, messages: list) -> str:

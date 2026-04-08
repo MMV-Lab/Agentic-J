@@ -1,6 +1,6 @@
 services:
   imagentj:
-    image: imagent_j-imagentj:with-fastembed #-with-chat-history
+    image: imagent_j-imagent-with-chat-history
     build: .
     ports:
       # Bind to localhost only by default for security
@@ -20,6 +20,7 @@ services:
       # Optional: Set a VNC password (recommended if exposing to network)
       - VNC_PASSWORD=${VNC_PASSWORD:-}
       - PYTHONPATH=/app:/app/src:/app/extra_packages
+      - PYTHONUNBUFFERED=1
 
     volumes:
       # Fiji plugin persistence across container rebuilds
