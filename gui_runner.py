@@ -267,6 +267,7 @@ class SubagentHeartbeatTimer:
  
     INTERVAL = 5000   # ms between message rotations
  
+ 
     # Messages shown while each long-running subagent is in flight.
     # Each list is cycled in order and then repeated.
     STEPS: dict[str, list[str]] = {

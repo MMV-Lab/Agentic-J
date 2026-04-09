@@ -6,7 +6,6 @@ from deepagents import create_deep_agent
 from deepagents.backends import FilesystemBackend
 from langchain.agents import create_agent
 from langchain.agents.middleware import (
-    SummarizationMiddleware,
     ContextEditingMiddleware,
     ClearToolUsesEdit,
     FilesystemFileSearchMiddleware,
@@ -459,6 +458,29 @@ def init_agent():
         virtual_mode=False,
     )
 
+    # Note: create_deep_agent already adds SummarizationMiddleware internally.
+    # Adding it here too would cause a duplicate-name error in create_agent
+    # (middleware names are checked via __class__.__name__).
+    # deepagents' built-in SummarizationMiddleware also persists history to
+    # the backend, so there is no need to add our own.
+    supervisor_middleware = [
+        ContextEditingMiddleware(
+            edits=[
+                ClearToolUsesEdit(
+                    trigger=50000,
+                    keep=10,
+                    clear_tool_inputs=False,
+                    exclude_tools=[],
+                    placeholder="[cleared]",
+                ),
+            ],
+        ),
+        FilesystemFileSearchMiddleware(
+            root_path="/app/data/",
+            use_ripgrep=True,
+        ),
+    ]
+
     supervisor = create_deep_agent(
         name="ImageJ_Supervisor",
         tools=[
@@ -489,29 +511,8 @@ def init_agent():
             save_markdown,
         ],
         system_prompt=supervisor_prompt,
-        subagents=[],           # empty — all subagents are now tools above
-        middleware=[
-            SummarizationMiddleware(
-                model=llm_supervisor,
-                trigger=("tokens", 50000),
-                keep=("messages", 20),
-            ),
-            ContextEditingMiddleware(
-                edits=[
-                    ClearToolUsesEdit(
-                        trigger=50000,
-                        keep=10,
-                        clear_tool_inputs=False,
-                        exclude_tools=[],
-                        placeholder="[cleared]",
-                    ),
-                ],
-            ),
-            FilesystemFileSearchMiddleware(
-                root_path="/app/data/",
-                use_ripgrep=True,
-            ),
-        ],
+        subagents=[],
+        middleware=supervisor_middleware,
         model=llm_supervisor,
         debug=False,
         backend=fs_backend,

@@ -88,7 +88,7 @@ def get_embeddings_models():
         openai_api_base="https://openrouter.ai/api/v1",
         )
 
-    elif openai_key and openrouter_key is None:
+    elif openai_key and not openrouter_key:
         dense_embeddings = OpenAIEmbeddings(
             model="text-embedding-3-large",
             api_key=openai_key,
