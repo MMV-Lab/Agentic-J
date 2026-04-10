@@ -53,15 +53,23 @@ RUN groupadd -r imagentj && useradd -r -g imagentj -m -d /home/imagentj -s /bin/
 
 # ── Application code ─────────────────────────────────────────────────────────
 WORKDIR /app
-COPY . /app
+COPY --chown=imagentj:imagentj . /app
 
 # Use keys_template.py as keys.py (keys.py is .dockerignored since it has real secrets)
 RUN cp /app/src/config/keys_template.py /app/src/config/keys.py
 
-# Ensure the app user owns everything it needs to write to (including qdrant_data directory)
-RUN mkdir -p /app/qdrant_data \
-    && chown -R imagentj:imagentj /app /home/imagentj /app/qdrant_data \
-    && chown -R imagentj:imagentj /opt/Fiji.app
+# Ensure the app user owns the runtime-writable paths without duplicating the whole app tree.
+RUN mkdir -p /app/data /app/qdrant_data /app/scripts/saved_scripts /home/imagentj/.cellpose /opt/Fiji.app/update \
+    && chown -R imagentj:imagentj \
+        /app/data \
+        /app/qdrant_data \
+        /app/scripts/saved_scripts \
+        /home/imagentj/.cellpose \
+        /opt/Fiji.app/plugins \
+        /opt/Fiji.app/jars \
+        /opt/Fiji.app/macros \
+        /opt/Fiji.app/scripts \
+        /opt/Fiji.app/update
 
 # ── Environment defaults ─────────────────────────────────────────────────────
 ENV DISPLAY=:1
