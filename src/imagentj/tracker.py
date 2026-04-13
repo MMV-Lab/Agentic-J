@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Union
 
+import requests
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.outputs import LLMResult
 from PySide6.QtCore import QObject, Signal
@@ -69,6 +70,69 @@ def _price_for_model(model_name: str) -> tuple[float, float]:
         if key != "default" and key in lower:
             return prices
     return PRICE_TABLE["default"]
+
+
+# ---------------------------------------------------------------------------
+# OpenRouter actual-cost fetcher (optional — only active when key is set)
+# ---------------------------------------------------------------------------
+
+class _OpenRouterCostFetcher:
+    """
+    Session-level actual cost tracking via OpenRouter's /auth/key ``usage``
+    field (per-key, not account-wide — see OpenRouter docs).
+
+    Usage counter updates on OR's side with a delay after a request completes,
+    so we record a baseline at conversation start and poll after a configurable
+    delay at query end to let the counter settle.
+    """
+
+    _URL = "https://openrouter.ai/api/v1/auth/key"
+
+    def __init__(self, api_key: str):
+        self._api_key      = api_key
+        self._baseline: float | None = None
+        self._baseline_lock = threading.Lock()
+
+    def _fetch_usage(self) -> float | None:
+        try:
+            r = requests.get(
+                self._URL,
+                headers={"Authorization": f"Bearer {self._api_key}"},
+                timeout=6,
+            )
+            if r.status_code == 200:
+                return r.json().get("data", {}).get("usage")
+        except Exception:
+            pass
+        return None
+
+    def init_baseline(self):
+        """
+        Snapshot the current OR usage as the baseline for this conversation.
+        Runs in a background thread so it never blocks the GUI.
+        """
+        def _run():
+            usage = self._fetch_usage()
+            with self._baseline_lock:
+                self._baseline = usage
+            if usage is not None:
+                log.debug(f"OpenRouter baseline usage: ${usage:.4f}")
+            else:
+                log.warning("OpenRouter: baseline fetch failed")
+
+        threading.Thread(target=_run, daemon=True).start()
+
+    def get_session_delta(self) -> float | None:
+        """
+        Return ``current_usage − baseline`` in USD without any sleep.
+        Returns None if either value is unavailable.
+        """
+        current = self._fetch_usage()
+        with self._baseline_lock:
+            baseline = self._baseline
+        if current is None or baseline is None:
+            return None
+        return max(0.0, current - baseline)
 
 
 # ---------------------------------------------------------------------------
@@ -389,6 +453,16 @@ class UsageTrackerCallback(BaseCallbackHandler):
         self._q_tool_log: list[dict] = []
         # [{"tool": str, "status": "ok"|"error"|"soft_error"}]
 
+        # ── OpenRouter session-level cost tracking (only when key is set) ──
+        or_key = os.environ.get("OPEN_ROUTER_API_KEY", "")
+        self._or_fetcher: _OpenRouterCostFetcher | None = (
+            _OpenRouterCostFetcher(or_key) if or_key else None
+        )
+        # Running OR-confirmed cost for the current conversation (USD).
+        # Protected by _or_lock; updated once per query after the poll delay.
+        self._or_conv_cost: float = 0.0
+        self._or_lock = threading.Lock()
+
     def notify_workspace_created(self, output_str: str):
         """Called by the GUI from handle_event when setup_analysis_workspace completes."""
         for line in output_str.splitlines():
@@ -412,6 +486,12 @@ class UsageTrackerCallback(BaseCallbackHandler):
         self._m.reset()
         if totals:
             self._m.load_from_totals(totals)
+        if self._or_fetcher:
+            # Fresh OR baseline for this conversation so that new queries
+            # accumulate correctly on top of any already-saved cost.
+            self._or_fetcher.init_baseline()
+            with self._or_lock:
+                self._or_conv_cost = 0.0
         self._bridge.updated.emit(self._m.snapshot())
 
     def start_query(self, prompt: str, thread_id: str):
@@ -431,12 +511,13 @@ class UsageTrackerCallback(BaseCallbackHandler):
         self._m.start_thinking()
 
     def finish_query(self):
-        elapsed = self._m.stop_thinking()
-        snap    = self._m.snapshot()
-        s       = self._q_start
+        elapsed   = self._m.stop_thinking()
+        snap      = self._m.snapshot()
+        s         = self._q_start
+        timestamp = time.strftime("%Y-%m-%dT%H:%M:%S")
 
-        record = QueryRecord(
-            timestamp             = time.strftime("%Y-%m-%dT%H:%M:%S"),
+        base = dict(
+            timestamp             = timestamp,
             thread_id             = self._thread_id,
             prompt_preview        = (self._prompt[:120] + "…")
                                     if len(self._prompt) > 120 else self._prompt,
@@ -446,15 +527,62 @@ class UsageTrackerCallback(BaseCallbackHandler):
             output_tokens         = snap["output_tokens"] - s["output"],
             total_tokens          = (snap["input_tokens"]  - s["input"])
                                   + (snap["output_tokens"] - s["output"]),
-            cost_usd              = round(snap["cost_usd"] - s["cost"], 6),
             tool_calls            = snap["tool_calls"]            - s["tools"],
             failed_tool_calls     = snap["failed_tool_calls"]     - s["failed"],
             soft_error_tool_calls = snap["soft_error_tool_calls"] - s["soft"],
-            # ── new ────────────────────────────────────────────────────────
             model_breakdown       = self._q_model_breakdown,
             tool_call_log         = self._q_tool_log,
         )
-        self._logger.append_query(record, snap)
+
+        if not self._or_fetcher:
+            # Estimated-cost path: write record immediately.
+            record = QueryRecord(**base, cost_usd=round(snap["cost_usd"] - s["cost"], 6))
+            self._logger.append_query(record, snap)
+            return
+
+        # OR path: poll with retries until OR's billing counter moves past the
+        # previous conversation total, then attribute the increment to this query.
+        fetcher = self._or_fetcher
+
+        def _finalize(
+            initial_delay:  float = 2.0,   # first check after this many seconds
+            retry_interval: float = 3.0,   # re-check every N seconds if not settled
+            max_wait:       float = 60.0,  # give up after this many seconds total
+        ):
+            time.sleep(initial_delay)
+            deadline = time.monotonic() + max_wait
+
+            session_cost: float | None = None
+            while True:
+                session_cost = fetcher.get_session_delta()
+                with self._or_lock:
+                    prev = self._or_conv_cost
+                # Success once the session total has actually moved
+                if session_cost is not None and session_cost > prev:
+                    break
+                if time.monotonic() >= deadline:
+                    log.warning("OpenRouter: billing counter did not update within "
+                                f"{max_wait:.0f}s — query cost not recorded")
+                    return
+                time.sleep(retry_interval)
+
+            with self._or_lock:
+                query_cost         = session_cost - self._or_conv_cost
+                self._or_conv_cost = session_cost
+
+            with self._m._lock:
+                self._m.cost_usd += query_cost
+
+            record     = QueryRecord(**base, cost_usd=round(query_cost, 6))
+            final_snap = self._m.snapshot()
+            self._logger.append_query(record, final_snap)
+            log.debug(
+                f"OpenRouter: query=${query_cost:.6f}  "
+                f"conversation total=${session_cost:.6f}"
+            )
+            self._emit()
+
+        threading.Thread(target=_finalize, daemon=True).start()
 
     def get_report(self) -> dict:
         return self._logger.build_report()
@@ -500,21 +628,23 @@ class UsageTrackerCallback(BaseCallbackHandler):
                     added_out += tok.get("completion_tokens", tok.get("output_tokens", 0))
 
         if added_in or added_out:
-            p_in, p_out = _price_for_model(model)
-            cost = (added_in * p_in + added_out * p_out) / 1_000_000
-
             with self._m._lock:
                 self._m.input_tokens  += added_in
                 self._m.output_tokens += added_out
-                self._m.cost_usd      += cost
+                if not self._or_fetcher:
+                    # Estimated cost — only applied when OR key is not set
+                    p_in, p_out = _price_for_model(model)
+                    cost = (added_in * p_in + added_out * p_out) / 1_000_000
+                    self._m.cost_usd += cost
 
-            # ── accumulate into per-query model breakdown ─────────────────
+            # ── per-query model breakdown (tokens always; cost only estimated path)
             entry = self._q_model_breakdown.setdefault(
                 model, {"input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0}
             )
             entry["input_tokens"]  += added_in
             entry["output_tokens"] += added_out
-            entry["cost_usd"]       = round(entry["cost_usd"] + cost, 6)
+            if not self._or_fetcher:
+                entry["cost_usd"] = round(entry["cost_usd"] + cost, 6)
 
             self._emit()
 
