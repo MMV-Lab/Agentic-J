@@ -27,7 +27,7 @@ import fiji.plugin.trackmate.Settings
 import fiji.plugin.trackmate.TrackMate
 import fiji.plugin.trackmate.Logger
 import fiji.plugin.trackmate.detection.LogDetectorFactory
-import fiji.plugin.trackmate.tracking.sparselap.SimpleSparseLAPTrackerFactory
+import fiji.plugin.trackmate.tracking.jaqaman.SimpleSparseLAPTrackerFactory
 import fiji.plugin.trackmate.features.FeatureFilter
 import ij.IJ
 
@@ -99,11 +99,11 @@ import fiji.plugin.trackmate.detection.MaskDetectorFactory
 import fiji.plugin.trackmate.detection.ThresholdDetectorFactory
 import fiji.plugin.trackmate.detection.LabelImageDetectorFactory
 
-// Trackers (core Fiji)
-import fiji.plugin.trackmate.tracking.sparselap.SimpleSparseLAPTrackerFactory
-import fiji.plugin.trackmate.tracking.sparselap.SparseLAPTrackerFactory
+// Trackers (core Fiji) — jaqaman package required in v8+ (sparselap package removed)
+import fiji.plugin.trackmate.tracking.jaqaman.SimpleSparseLAPTrackerFactory
+import fiji.plugin.trackmate.tracking.jaqaman.SparseLAPTrackerFactory
+import fiji.plugin.trackmate.tracking.jaqaman.LAPUtils
 import fiji.plugin.trackmate.tracking.kalman.KalmanTrackerFactory
-import fiji.plugin.trackmate.tracking.LAPUtils
 
 // Feature filters
 import fiji.plugin.trackmate.features.FeatureFilter
@@ -221,6 +221,8 @@ settings.detectorSettings = [
 Suitable for Brownian motion without splits or merges. Fewest parameters.
 
 ```groovy
+import fiji.plugin.trackmate.tracking.jaqaman.SimpleSparseLAPTrackerFactory
+
 settings.trackerFactory = new SimpleSparseLAPTrackerFactory()
 settings.trackerSettings = settings.trackerFactory.getDefaultSettings()
 settings.trackerSettings['LINKING_MAX_DISTANCE']     = 10.0   // µm
@@ -239,10 +241,10 @@ settings.trackerSettings['MAX_FRAME_GAP']            = 2      // frames
 Extends the Simple LAP tracker with splits and merges.
 
 ```groovy
-import fiji.plugin.trackmate.tracking.LAPUtils
+import fiji.plugin.trackmate.tracking.jaqaman.SparseLAPTrackerFactory
 
 settings.trackerFactory = new SparseLAPTrackerFactory()
-settings.trackerSettings = LAPUtils.getDefaultLAPSettingsMap()
+settings.trackerSettings = settings.trackerFactory.getDefaultSettings()  // preferred over LAPUtils.getDefaultLAPSettingsMap()
 settings.trackerSettings['LINKING_MAX_DISTANCE']     = 10.0
 settings.trackerSettings['GAP_CLOSING_MAX_DISTANCE'] = 10.0
 settings.trackerSettings['MAX_FRAME_GAP']            = 2
@@ -429,9 +431,11 @@ for (def id in trackIDs) {
 ```groovy
 import fiji.plugin.trackmate.SelectionModel
 import fiji.plugin.trackmate.visualization.hyperstack.HyperStackDisplayer
+import fiji.plugin.trackmate.gui.displaysettings.DisplaySettings
 
 def selectionModel = new SelectionModel(model)
-def displayer = new HyperStackDisplayer(model, selectionModel, imp)
+def ds = DisplaySettings.defaultStyle()   // NOT new DisplaySettings()
+def displayer = new HyperStackDisplayer(model, selectionModel, imp, ds)  // 4-arg constructor in v8+
 displayer.render()
 displayer.refresh()
 ```
@@ -489,7 +493,7 @@ import fiji.plugin.trackmate.visualization.table.TrackTableView
 import fiji.plugin.trackmate.gui.displaysettings.DisplaySettings
 
 def sm = new SelectionModel(model)
-def ds = new DisplaySettings()
+def ds = DisplaySettings.defaultStyle()   // NOT new DisplaySettings()
 def tableView = new TrackTableView(model, sm, ds)
 tableView.getSpotTable().exportToCsv(new File("/path/to/spots.csv"))
 tableView.getTrackTable().exportToCsv(new File("/path/to/tracks.csv"))
@@ -520,9 +524,13 @@ tableView.getTrackTable().exportToCsv(new File("/path/to/tracks.csv"))
    are swapped, use `imp.setDimensions(nChannels, nSlices, nFrames)` to fix it.
 
 6. **SparseLAPTracker default settings map.** When using `SparseLAPTrackerFactory`,
-   always start with `LAPUtils.getDefaultLAPSettingsMap()` and override only the keys you
-   need. Do not build the settings map from scratch — it requires many internal keys
-   (penalty structures, etc.) that the default map already contains correctly.
+   always start with `settings.trackerFactory.getDefaultSettings()` and override only the
+   keys you need. Do not build the settings map from scratch — it requires many internal
+   keys (penalty structures, etc.) that the default map already contains correctly.
+
+7. **Tracker package changed in v8+.** All tracker classes moved from
+   `fiji.plugin.trackmate.tracking.sparselap` to `fiji.plugin.trackmate.tracking.jaqaman`.
+   `SimpleSparseLAPTrackerFactory` still exists — it was moved, not removed.
 
 7. **`trackIDs(true)` vs `trackIDs(false)`.** The `true` argument returns only **filtered**
    (visible) tracks — the ones that passed the track filters. `false` returns all tracks
