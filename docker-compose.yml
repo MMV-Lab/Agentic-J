@@ -1,13 +1,16 @@
 services:
   imagentj:
-    image: imagent_j-imagentj:with-fastembed #-with-chat-history
-    build: .
+    image: imagentj:cpu #-with-chat-history
+    build:
+      context: .
+      target: cpu
     ports:
       # Bind to localhost only by default for security
       # Change to "0.0.0.0:6080:6080" if you need network access (not recommended)
       - "0.0.0.0:6080:6080"
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - LANGSMITH_API_KEY=${LANGSMITH_API_KEY:-}
       - LANGSMITH_TRACING=${LANGSMITH_TRACING:-true}
       - LANGSMITH_ENDPOINT=${LANGSMITH_ENDPOINT:-https://api.smith.langchain.com}
@@ -21,25 +24,29 @@ services:
       - PYTHONPATH=/app:/app/src:/app/extra_packages
 
     volumes:
-      # Fiji plugin persistence across container rebuilds
+      # Fiji plugin persistence — seeded from image on first run by entrypoint
       - fiji_plugins:/opt/Fiji.app/plugins
       - fiji_jars:/opt/Fiji.app/jars
+      # DeepImageJ APPOSE framework environments (TF, PyTorch) — persisted so
+      # they are created once on first model run and reused on every subsequent start
+      - appose_envs:/opt/appose
       # Saved scripts persistence
       - saved_scripts:/app/scripts/saved_scripts
       # Qdrant vector database for plugin search and RAG
-      # Use bind mount (./qdrant_data on host) instead of named volume to preserve host permissions
-      - ./qdrant_data:/app/qdrant_data
+      # Named volume so Docker initialises it with the correct imagentj ownership from the image.
+      # (dev compose overrides this with a bind mount for direct host access)
+      - qdrant_data:/app/qdrant_data
       # Image data directory (place images in ./data on host, access as /mnt/data in container)
       - ${IMAGE_DATA_DIR:-./data}:/data
-      # Entrypoint script (contains security features like VNC password support)
-      - ./docker-entrypoint.sh:/docker-entrypoint.sh
       # Source code mount for development (remove in production image)
       - ./src:/app/src:ro
       - ./gui_runner.py:/app/gui_runner.py:ro
       # Folder to save data
       - ./data:/app/data
       # Folder for skills
-      - ./skills:/app/skills
+      - ./skills:/app/skills:ro
+      # Entrypoint bind-mount so changes take effect without rebuilding
+      - ./docker-entrypoint.sh:/docker-entrypoint.sh:ro
     env_file:
       - path: .env
         required: false
@@ -71,6 +78,8 @@ volumes:
   fiji_plugins:
   fiji_jars:
   saved_scripts:
+  qdrant_data:
+  appose_envs:
 
 networks:
   imagent_net:
