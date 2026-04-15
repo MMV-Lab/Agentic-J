@@ -1,5 +1,5 @@
 // These #@ lines inject Fiji services; they must stay at the top of the file.
-#@ File (label = "Ilastik executable", value = "/home/imagentj/ilastik-1.4.1.post1-Linux/run_ilastik.sh") executableFile
+#@ String (label = "Ilastik executable path", value = "") executablePath
 #@ File (label = "Pixel Classification project", value = "/data/ilastik_validation/pixel_class_2d_cells_apoptotic.ilp") projectFile
 #@ File (label = "Input TIFF", value = "/data/ilastik_validation/2d_cells_apoptotic.tif") inputFile
 #@ String (label = "Output type", choices = {"Probabilities", "Segmentation"}, value = "Probabilities") outputType
@@ -25,7 +25,7 @@ import org.ilastik.ilastik4ij.workflow.PixelClassificationCommand
  *   4. Save the returned probabilities or segmentation as TIFF
  *
  * REQUIRED INPUTS:
- *   executableFile - ilastik executable, for example run_ilastik.sh
+ *   executablePath - ilastik executable path; leave empty to use ILASTIK_EXECUTABLE
  *   projectFile    - trained Pixel Classification .ilp file
  *   inputFile      - raw image to process
  *   outputType     - `Probabilities` or `Segmentation`
@@ -34,14 +34,25 @@ import org.ilastik.ilastik4ij.workflow.PixelClassificationCommand
  *   maxRamMb       - ilastik RAM limit in MiB
  *
  * IMPORTANT:
- *   - The default values point to the validation assets used for this skill.
+ *   - Adjust the default file paths for your own project, input, and output files.
+ *   - Provide executablePath explicitly or set ILASTIK_EXECUTABLE in the environment.
  *   - The `.ilp` project must be closed in ilastik before Fiji runs it.
  *   - The image dimensionality and channel layout must match the project.
  *   - Choose a new output path instead of overwriting an existing file.
  */
 
-if (executableFile == null || !executableFile.exists()) {
-    throw new IllegalArgumentException("Executable not found: " + executableFile)
+String resolvedExecutablePath = executablePath?.trim()
+if (!resolvedExecutablePath) {
+    resolvedExecutablePath = System.getenv("ILASTIK_EXECUTABLE") ?: ""
+}
+if (!resolvedExecutablePath) {
+    throw new IllegalArgumentException(
+        "Set executablePath or ILASTIK_EXECUTABLE before running this workflow")
+}
+
+def executableFile = new File(resolvedExecutablePath)
+if (!executableFile.exists()) {
+    throw new IllegalArgumentException("Executable not found: " + resolvedExecutablePath)
 }
 if (projectFile == null || !projectFile.exists()) {
     throw new IllegalArgumentException("Project file not found: " + projectFile)

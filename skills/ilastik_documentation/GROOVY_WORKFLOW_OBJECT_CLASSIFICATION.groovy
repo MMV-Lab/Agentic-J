@@ -1,8 +1,8 @@
 // These #@ lines inject Fiji services; they must stay at the top of the file.
-#@ File (label = "Ilastik executable", value = "/home/imagentj/ilastik-1.4.1.post1-Linux/run_ilastik.sh") executableFile
+#@ String (label = "Ilastik executable path", value = "") executablePath
 #@ File (label = "Object Classification project", value = "/data/ilastik_validation/obj_class_2d_cells_apoptotic.ilp") projectFile
 #@ File (label = "Raw input TIFF", value = "/data/ilastik_validation/2d_cells_apoptotic.tif") inputFile
-#@ File (label = "Second input TIFF", value = "/data/ilastik_validation/2d_cells_apoptotic_1channel-data_Probabilities.tif") secondInputFile
+#@ File (label = "Second input TIFF", value = "/data/ilastik_validation/pixel_class_probabilities.tif") secondInputFile
 #@ String (label = "Second input type", choices = {"Probabilities", "Segmentation"}, value = "Probabilities") secondInputType
 #@ String (label = "Output type", choices = {"Object Predictions", "Object Probabilities", "Object Identities"}, value = "Object Predictions") outputType
 #@ File (label = "Output TIFF", value = "/data/ilastik_validation/object_predictions.tif") outputFile
@@ -27,7 +27,7 @@ import org.ilastik.ilastik4ij.workflow.ObjectClassificationCommand
  *   4. Save the returned object-classification result as TIFF
  *
  * REQUIRED INPUTS:
- *   executableFile  - ilastik executable
+ *   executablePath  - ilastik executable path; leave empty to use ILASTIK_EXECUTABLE
  *   projectFile     - trained Object Classification .ilp file
  *   inputFile       - raw image
  *   secondInputFile - probability or segmentation image for the same scene
@@ -38,9 +38,10 @@ import org.ilastik.ilastik4ij.workflow.ObjectClassificationCommand
  *   maxRamMb        - ilastik RAM limit in MiB
  *
  * IMPORTANT:
- *   - The default values point to the validation assets used for this skill.
+ *   - Adjust the default file paths for your own project, input, and output files.
+ *   - Provide executablePath explicitly or set ILASTIK_EXECUTABLE in the environment.
  *   - The `.ilp` project must be closed in ilastik before Fiji runs it.
- *   - The default validated configuration uses a probability image as the second input.
+ *   - The default second input points to the default probabilities output from GROOVY_WORKFLOW_PIXEL_CLASSIFICATION.groovy.
  *   - Choose a new output path instead of overwriting an existing file.
  */
 
@@ -50,8 +51,18 @@ def validOutputs = [
     "Object Identities"
 ]
 
-if (executableFile == null || !executableFile.exists()) {
-    throw new IllegalArgumentException("Executable not found: " + executableFile)
+String resolvedExecutablePath = executablePath?.trim()
+if (!resolvedExecutablePath) {
+    resolvedExecutablePath = System.getenv("ILASTIK_EXECUTABLE") ?: ""
+}
+if (!resolvedExecutablePath) {
+    throw new IllegalArgumentException(
+        "Set executablePath or ILASTIK_EXECUTABLE before running this workflow")
+}
+
+def executableFile = new File(resolvedExecutablePath)
+if (!executableFile.exists()) {
+    throw new IllegalArgumentException("Executable not found: " + resolvedExecutablePath)
 }
 if (projectFile == null || !projectFile.exists()) {
     throw new IllegalArgumentException("Project file not found: " + projectFile)

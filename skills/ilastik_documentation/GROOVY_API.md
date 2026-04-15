@@ -2,19 +2,14 @@
 
 This file contains the Groovy paths used by this skill.
 
-The committed workflow files in this skill use:
-
-- SciJava `#@` parameters for files, strings, and numeric inputs
-- sample default values that point to the validation assets used for this skill
-- temporary `IlastikOptions` overrides that are restored in a `finally` block
-- explicit output-path checks instead of silently deleting an existing file
-
 ## Script Parameter Pattern
 
-Use SciJava parameters for file and choice inputs:
+Use SciJava parameters for file and choice inputs. The executable path is a
+string parameter so the workflow can fall back to `ILASTIK_EXECUTABLE` in
+headless execution.
 
 ```groovy
-#@ File (label = "Ilastik executable", value = "/path/to/run_ilastik.sh") executableFile
+#@ String (label = "Ilastik executable path", value = "") executablePath
 #@ File (label = "Project file", value = "/path/to/project.ilp") projectFile
 #@ File (label = "Input TIFF", value = "/path/to/input.tif") inputFile
 #@ String (label = "Output type", choices = {"Probabilities", "Segmentation"}, value = "Probabilities") outputType
@@ -23,14 +18,29 @@ Use SciJava parameters for file and choice inputs:
 #@ Integer (label = "Max RAM (MiB)", value = 4096) maxRamMb
 ```
 
-The workflow files in this skill use the same pattern for HDF5 inputs, dataset
-names, axis strings, and second-input modes.
+Use the same pattern for HDF5 inputs, dataset names, axis strings, and
+second-input modes.
+
+Resolve the executable path like this:
+
+```groovy
+String resolvedExecutablePath = executablePath?.trim()
+if (!resolvedExecutablePath) {
+    resolvedExecutablePath = System.getenv("ILASTIK_EXECUTABLE") ?: ""
+}
+if (!resolvedExecutablePath) {
+    throw new IllegalArgumentException(
+        "Set executablePath or ILASTIK_EXECUTABLE before running this workflow")
+}
+
+def executableFile = new File(resolvedExecutablePath)
+```
 
 ## Temporary ilastik Settings Override
 
 Prediction wrappers read the executable, thread count, and RAM limit from
-`IlastikOptions`. The committed workflows save the requested values, run the
-command, and then restore the previous Fiji preferences:
+`IlastikOptions`. Save the requested values before the command and restore the
+previous Fiji preferences in a `finally` block:
 
 ```groovy
 def options = optionsService.getOptions(IlastikOptions)
@@ -221,8 +231,8 @@ datasetIOService.save(outputDataset, outputFile.absolutePath)
 ## Preconditions
 
 - `ilastik4ij` must be installed in Fiji.
-- Prediction wrappers require an ilastik executable and a trained `.ilp`
-  project.
+- Prediction wrappers require a trained `.ilp` project and either
+  `executablePath` or `ILASTIK_EXECUTABLE`.
 - `Export HDF5` requires a readable input image and an `.h5` output path.
 - `Import HDF5` requires the correct dataset name and axis order.
 - Pixel Classification requires one raw image.
@@ -236,6 +246,8 @@ datasetIOService.save(outputDataset, outputFile.absolutePath)
 - The image dimensionality and channel layout must match the `.ilp` project.
 - Some sample `.ilp` bundles reference sibling files under `inputdata/`.
   Preserve that directory layout when reusing such bundles.
+- The committed Object Classification workflow defaults to the probabilities
+  output written by the committed Pixel Classification workflow.
 
 ## Parameters
 
@@ -268,7 +280,7 @@ datasetIOService.save(outputDataset, outputFile.absolutePath)
 
 | Field | Type | Meaning |
 |------|------|---------|
-| `executableFile` | `File` | Path to the ilastik executable, for example `run_ilastik.sh`. |
+| `executableFile` | `File` | Path to the ilastik executable, for example `run_ilastik.sh`. The committed workflows derive it from `executablePath` or `ILASTIK_EXECUTABLE`. |
 | `numThreads` | `int` | Thread limit passed through the ilastik environment. |
 | `maxRamMb` | `int` | RAM limit in MiB passed through the ilastik environment. |
 
@@ -330,6 +342,7 @@ These are standard Fiji / SCIFIO calls. They are not ilastik-specific.
 | Run the export command | `command.run(ExportCommand, true, ...)` |
 | Run the dataset listing command | `command.run(ListDatasetsCommand, true, ...)` |
 | Import one HDF5 dataset | `new ImportCommand()`, `setContext(context)`, then `run()` |
+| Resolve executable from parameter or environment | `executablePath?.trim()` or `System.getenv("ILASTIK_EXECUTABLE")` |
 | Temporarily override ilastik executable settings | `optionsService.getOptions(IlastikOptions)`, then `options.save()` in `try` / `finally` |
 | Run Pixel Classification | `command.run(PixelClassificationCommand, true, ...)` |
 | Run Autocontext | `command.run(AutocontextCommand, true, ...)` |

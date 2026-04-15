@@ -27,7 +27,7 @@ import org.ilastik.ilastik4ij.io.ImportCommand
  *
  * IMPORTANT:
  *   - Use `List HDF5 Datasets` first if datasetName or axisOrder are unknown.
- *   - The default values point to the validation assets used for this skill.
+ *   - Adjust the default file paths for your own input and output files.
  *   - Choose a new output path instead of overwriting an existing file.
  */
 

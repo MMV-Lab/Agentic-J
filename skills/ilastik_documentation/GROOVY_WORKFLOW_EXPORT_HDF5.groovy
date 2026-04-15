@@ -25,7 +25,7 @@ import org.ilastik.ilastik4ij.io.ListDatasetsCommand
  *   compressionLevel - gzip compression level from 0 to 9
  *
  * IMPORTANT:
- *   - The default values point to the validation assets used for this skill.
+ *   - Adjust the default file paths for your own input and output files.
  *   - Choose a new output path instead of overwriting an existing file.
  *   - This workflow does not run an ilastik prediction.
  */
