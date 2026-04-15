@@ -37,8 +37,4 @@ checkpoints*
 conversation_history.json
 
 extra_packages/
-.agents/*
-!.agents/skills/
-.agents/skills/*
-!.agents/skills/imagej-plugin-skill-builder/
-!.agents/skills/imagej-plugin-skill-builder/**
+.agents/
