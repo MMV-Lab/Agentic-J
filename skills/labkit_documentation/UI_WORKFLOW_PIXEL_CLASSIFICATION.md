@@ -47,7 +47,6 @@ Notes:
 ## Step 5 — Save the Classifier for Batch Reuse
 
 1. In Labkit, open `Segmentation > Save Classifier...`.
-2. Save the classifier to a path without spaces if you plan to reuse the exact
-   workflow from `GROOVY_WORKFLOW_BATCH_SEGMENTATION.groovy`.
+2. Save the classifier to a known location for reuse in batch workflows.
 3. Reuse that saved `.classifier` file with the batch command in
    `GROOVY_API.md`.

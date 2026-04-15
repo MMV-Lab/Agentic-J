@@ -1,9 +1,11 @@
 // These #@ lines inject Fiji services; they must stay at the top of the file.
+#@ File (label = "Input image", value = "/data/example_1.tif") inputFile
+#@ File (label = "Labkit classifier", value = "/data/labkit_validation/example_1.classifier") classifierFile
+#@ File (label = "Output TIFF", style = "save", value = "/data/labkit_validation/example_1-segmentation.tif") outputFile
 #@ CommandService command
 
 import ij.IJ
 import ij.ImagePlus
-import java.io.File
 import sc.fiji.labkit.ui.plugin.SegmentImageWithLabkitIJ1Plugin
 
 /*
@@ -16,26 +18,22 @@ import sc.fiji.labkit.ui.plugin.SegmentImageWithLabkitIJ1Plugin
  *   4. Close the image windows created by the workflow
  *
  * REQUIRED INPUTS:
- *   INPUT_IMAGE     - absolute path to the image to segment
- *   CLASSIFIER_FILE - absolute path to a Labkit .classifier file created in the GUI
- *   OUTPUT_TIFF     - absolute path to the TIFF that will be written
+ *   inputFile      - image to segment
+ *   classifierFile - Labkit .classifier file created in the GUI
+ *   outputFile     - TIFF path that will be written
  *
  * GROOVY CALL USED IN THIS SCRIPT:
  *   command.run(SegmentImageWithLabkitIJ1Plugin, true,
  *       "input",          imp,
- *       "segmenter_file", new File(CLASSIFIER_FILE),
+ *       "segmenter_file", classifierFile,
  *       "use_gpu",        false
  *   ).get()
  *
  * IMPORTANT:
- *   - This workflow intentionally uses a classifier path without spaces.
+ *   - Adjust the default file paths for your own image, classifier, and output files.
  *   - The classifier must already exist. This script does not train one.
- *   - This script uses the Groovy plugin call documented in GROOVY_API.md.
+ *   - Choose a new output path instead of overwriting an existing file.
  */
-
-String INPUT_IMAGE     = "/data/example_1.tif"
-String CLASSIFIER_FILE = "/data/labkit_validation/example_1.classifier"
-String OUTPUT_TIFF     = "/data/labkit_validation/example_1-segmentation.tif"
 
 void closeImageIfOpen(ImagePlus imp) {
     if (imp != null) {
@@ -44,56 +42,55 @@ void closeImageIfOpen(ImagePlus imp) {
     }
 }
 
-File inputFile = new File(INPUT_IMAGE)
-File classifierFile = new File(CLASSIFIER_FILE)
-File outputFile = new File(OUTPUT_TIFF)
-
 if (!inputFile.exists()) {
-    IJ.error("Labkit Workflow", "Input image not found:\n" + INPUT_IMAGE)
-    return
+    throw new IllegalArgumentException("Input image not found: " + inputFile.absolutePath)
 }
 if (!classifierFile.exists()) {
-    IJ.error("Labkit Workflow", "Classifier file not found:\n" + CLASSIFIER_FILE)
-    return
+    throw new IllegalArgumentException("Classifier file not found: " + classifierFile.absolutePath)
 }
-if (CLASSIFIER_FILE.contains(" ")) {
-    IJ.error("Labkit Workflow",
-        "Classifier path contains spaces.\n" +
-        "This workflow requires a classifier path without spaces.")
-    return
+if (outputFile == null) {
+    throw new IllegalArgumentException("Output TIFF file must be provided")
 }
 outputFile.getParentFile()?.mkdirs()
+if (outputFile.exists()) {
+    throw new IllegalArgumentException("Output file already exists: " + outputFile.absolutePath)
+}
 
 IJ.log("Labkit batch segmentation")
-IJ.log("Input      : " + INPUT_IMAGE)
-IJ.log("Classifier : " + CLASSIFIER_FILE)
-IJ.log("Output     : " + OUTPUT_TIFF)
+IJ.log("Input      : " + inputFile.absolutePath)
+IJ.log("Classifier : " + classifierFile.absolutePath)
+IJ.log("Output     : " + outputFile.absolutePath)
 
-ImagePlus sourceImp = IJ.openImage(INPUT_IMAGE)
-if (sourceImp == null) {
-    IJ.error("Labkit Workflow", "Could not open input image:\n" + INPUT_IMAGE)
-    return
+ImagePlus sourceImp = null
+ImagePlus resultImp = null
+
+try {
+    sourceImp = IJ.openImage(inputFile.absolutePath)
+    if (sourceImp == null) {
+        throw new IllegalStateException("Could not open input image: " + inputFile.absolutePath)
+    }
+
+    def module = command.run(SegmentImageWithLabkitIJ1Plugin, true,
+        "input",          sourceImp,
+        "segmenter_file", classifierFile,
+        "use_gpu",        false
+    ).get()
+
+    resultImp = module.getOutput("output")
+    if (resultImp == null) {
+        throw new IllegalStateException("Labkit returned no output image.")
+    }
+
+    IJ.saveAs(resultImp, "Tiff", outputFile.absolutePath)
+    if (!outputFile.exists() || outputFile.length() == 0) {
+        throw new IllegalStateException("Labkit did not write a TIFF: " + outputFile.absolutePath)
+    }
+
+    IJ.log("Saved segmentation: " + outputFile.absolutePath)
 }
-sourceImp.show()
-
-def module = command.run(SegmentImageWithLabkitIJ1Plugin, true,
-    "input",          sourceImp,
-    "segmenter_file", classifierFile,
-    "use_gpu",        false
-).get()
-
-ImagePlus resultImp = module.getOutput("output")
-if (resultImp == null) {
+finally {
+    closeImageIfOpen(resultImp)
     closeImageIfOpen(sourceImp)
-    IJ.error("Labkit Workflow",
-        "Labkit returned no output image.")
-    return
 }
-
-IJ.saveAs(resultImp, "Tiff", OUTPUT_TIFF)
-IJ.log("Saved segmentation: " + OUTPUT_TIFF)
-
-closeImageIfOpen(resultImp)
-closeImageIfOpen(sourceImp)
 
 IJ.log("Labkit workflow complete")
