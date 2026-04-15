@@ -1,10 +1,19 @@
 // These #@ lines inject Fiji services; they must stay at the top of the file.
-#@ CommandService command
+#@ File (label = "Ilastik executable", value = "/home/imagentj/ilastik-1.4.1.post1-Linux/run_ilastik.sh") executableFile
+#@ File (label = "Object Classification project", value = "/data/ilastik_validation/obj_class_2d_cells_apoptotic.ilp") projectFile
+#@ File (label = "Raw input TIFF", value = "/data/ilastik_validation/2d_cells_apoptotic.tif") inputFile
+#@ File (label = "Second input TIFF", value = "/data/ilastik_validation/2d_cells_apoptotic_1channel-data_Probabilities.tif") secondInputFile
+#@ String (label = "Second input type", choices = {"Probabilities", "Segmentation"}, value = "Probabilities") secondInputType
+#@ String (label = "Output type", choices = {"Object Predictions", "Object Probabilities", "Object Identities"}, value = "Object Predictions") outputType
+#@ File (label = "Output TIFF", value = "/data/ilastik_validation/object_predictions.tif") outputFile
+#@ Integer (label = "Threads (-1 for all)", value = -1) numThreads
+#@ Integer (label = "Max RAM (MiB)", value = 4096) maxRamMb
+#@ org.scijava.command.CommandService command
 #@ net.imagej.DatasetService datasetService
 #@ org.scijava.options.OptionsService optionsService
 #@ io.scif.services.DatasetIOService datasetIOService
 
-import java.io.File
+import ij.IJ
 import org.ilastik.ilastik4ij.ui.IlastikOptions
 import org.ilastik.ilastik4ij.workflow.ObjectClassificationCommand
 
@@ -13,97 +22,109 @@ import org.ilastik.ilastik4ij.workflow.ObjectClassificationCommand
  *
  * PURPOSE:
  *   1. Configure the ilastik executable path used by ilastik4ij
- *   2. Open one raw image and one probability image
+ *   2. Open one raw image and one matching probability or segmentation image
  *   3. Apply a trained ilastik Object Classification project
  *   4. Save the returned object-classification result as TIFF
  *
  * REQUIRED INPUTS:
- *   EXECUTABLE        - absolute path to the ilastik executable
- *   PROJECT_FILE      - absolute path to a trained Object Classification .ilp file
- *   INPUT_TIFF        - absolute path to the raw image
- *   SECOND_INPUT_TIFF - absolute path to the probability image
- *   OUTPUT_TYPE       - Object Predictions, Object Probabilities, or Object Identities
- *   OUTPUT_TIFF       - absolute path to the TIFF that will be written
+ *   executableFile  - ilastik executable
+ *   projectFile     - trained Object Classification .ilp file
+ *   inputFile       - raw image
+ *   secondInputFile - probability or segmentation image for the same scene
+ *   secondInputType - `Probabilities` or `Segmentation`
+ *   outputType      - `Object Predictions`, `Object Probabilities`, or `Object Identities`
+ *   outputFile      - TIFF path to write
+ *   numThreads      - ilastik thread limit, use `-1` for all available threads
+ *   maxRamMb        - ilastik RAM limit in MiB
  *
  * IMPORTANT:
- *   - The .ilp project must be closed in ilastik before Fiji runs it
- *   - This workflow uses a probability image as the second input
- *   - The raw image and the second input must describe the same scene
+ *   - The default values point to the validation assets used for this skill.
+ *   - The `.ilp` project must be closed in ilastik before Fiji runs it.
+ *   - The default validated configuration uses a probability image as the second input.
+ *   - Choose a new output path instead of overwriting an existing file.
  */
-
-String EXECUTABLE = "/home/imagentj/ilastik-1.4.1.post1-Linux/run_ilastik.sh"
-String PROJECT_FILE = "/data/ilastik_validation/obj_class_2d_cells_apoptotic.ilp"
-String INPUT_TIFF = "/data/ilastik_validation/2d_cells_apoptotic.tif"
-String SECOND_INPUT_TIFF = "/data/ilastik_validation/2d_cells_apoptotic_1channel-data_Probabilities.tif"
-String OUTPUT_TYPE = "Object Predictions"
-String OUTPUT_TIFF = "/data/ilastik_validation/object_predictions.tif"
 
 def validOutputs = [
     "Object Predictions",
     "Object Probabilities",
     "Object Identities"
 ]
-if (!(OUTPUT_TYPE in validOutputs)) {
+
+if (executableFile == null || !executableFile.exists()) {
+    throw new IllegalArgumentException("Executable not found: " + executableFile)
+}
+if (projectFile == null || !projectFile.exists()) {
+    throw new IllegalArgumentException("Project file not found: " + projectFile)
+}
+if (inputFile == null || !inputFile.exists()) {
+    throw new IllegalArgumentException("Input image not found: " + inputFile)
+}
+if (secondInputFile == null || !secondInputFile.exists()) {
+    throw new IllegalArgumentException("Second input image not found: " + secondInputFile)
+}
+if (secondInputType !in ["Probabilities", "Segmentation"]) {
     throw new IllegalArgumentException(
-        "OUTPUT_TYPE must be one of " + validOutputs + ": " + OUTPUT_TYPE)
+        "secondInputType must be Probabilities or Segmentation: " + secondInputType)
 }
-
-def executableFile = new File(EXECUTABLE)
-def projectFile = new File(PROJECT_FILE)
-def inputFile = new File(INPUT_TIFF)
-def secondInputFile = new File(SECOND_INPUT_TIFF)
-def outputFile = new File(OUTPUT_TIFF)
-
-if (!executableFile.exists()) {
-    throw new IllegalArgumentException("Executable not found: " + EXECUTABLE)
+if (!(outputType in validOutputs)) {
+    throw new IllegalArgumentException(
+        "outputType must be one of " + validOutputs + ": " + outputType)
 }
-if (!projectFile.exists()) {
-    throw new IllegalArgumentException("Project file not found: " + PROJECT_FILE)
+if (outputFile == null) {
+    throw new IllegalArgumentException("Output TIFF file must be provided")
 }
-if (!inputFile.exists()) {
-    throw new IllegalArgumentException("Input image not found: " + INPUT_TIFF)
-}
-if (!secondInputFile.exists()) {
-    throw new IllegalArgumentException("Second input image not found: " + SECOND_INPUT_TIFF)
-}
-outputFile.getParentFile()?.mkdirs()
+outputFile.parentFile?.mkdirs()
 if (outputFile.exists()) {
-    outputFile.delete()
+    throw new IllegalArgumentException(
+        "Output file already exists: " + outputFile.absolutePath)
 }
 
 def options = optionsService.getOptions(IlastikOptions)
-options.executableFile = executableFile
-options.numThreads = -1
-options.maxRamMb = 4096
-options.save()
+def previousExecutableFile = options.executableFile
+int previousNumThreads = options.numThreads
+int previousMaxRamMb = options.maxRamMb
 
-def rawDataset = datasetIOService.open(INPUT_TIFF)
-def secondDataset = datasetIOService.open(SECOND_INPUT_TIFF)
-println("rawDataset=" + rawDataset)
-println("secondDataset=" + secondDataset)
+try {
+    options.executableFile = executableFile
+    options.numThreads = numThreads
+    options.maxRamMb = maxRamMb
+    options.save()
 
-def future = command.run(ObjectClassificationCommand, true,
-    "projectFileName", projectFile,
-    "inputImage", rawDataset,
-    "inputProbOrSegImage", secondDataset,
-    "secondInputType", "Probabilities",
-    "objectExportSource", OUTPUT_TYPE
-)
-println("future=" + future)
+    IJ.log("ilastik Object Classification")
+    IJ.log("Project: " + projectFile.absolutePath)
+    IJ.log("Input: " + inputFile.absolutePath)
+    IJ.log("Second input: " + secondInputFile.absolutePath)
+    IJ.log("Second input type: " + secondInputType)
+    IJ.log("Output type: " + outputType)
 
-if (future == null) {
-    throw new IllegalStateException("ObjectClassificationCommand returned null future")
+    def rawDataset = datasetIOService.open(inputFile.absolutePath)
+    def secondDataset = datasetIOService.open(secondInputFile.absolutePath)
+
+    def future = command.run(ObjectClassificationCommand, true,
+        "projectFileName", projectFile,
+        "inputImage", rawDataset,
+        "inputProbOrSegImage", secondDataset,
+        "secondInputType", secondInputType,
+        "objectExportSource", outputType
+    )
+
+    if (future == null) {
+        throw new IllegalStateException("ObjectClassificationCommand returned null future")
+    }
+
+    def module = future.get()
+    def predictions = module.getOutput("predictions")
+    if (predictions == null) {
+        throw new IllegalStateException("ObjectClassificationCommand returned null predictions")
+    }
+
+    def outputDataset = datasetService.create(predictions)
+    datasetIOService.save(outputDataset, outputFile.absolutePath)
+    IJ.log("Saved prediction: " + outputFile.absolutePath)
 }
-
-def module = future.get()
-println("module=" + module)
-
-def predictions = module.getOutput("predictions")
-println("predictions=" + predictions)
-if (predictions == null) {
-    throw new IllegalStateException("ObjectClassificationCommand returned null predictions")
+finally {
+    options.executableFile = previousExecutableFile
+    options.numThreads = previousNumThreads
+    options.maxRamMb = previousMaxRamMb
+    options.save()
 }
-
-def outputDataset = datasetService.create(predictions)
-datasetIOService.save(outputDataset, OUTPUT_TIFF)
-println("saved=" + outputFile.exists())

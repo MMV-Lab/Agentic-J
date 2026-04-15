@@ -1,11 +1,20 @@
 // These #@ lines inject Fiji services; they must stay at the top of the file.
-#@ CommandService command
+#@ File (label = "Ilastik executable", value = "/home/imagentj/ilastik-1.4.1.post1-Linux/run_ilastik.sh") executableFile
+#@ File (label = "Autocontext project", value = "/data/ilastik_validation/core/Autocontext2d3c.ilp") projectFile
+#@ File (label = "Input HDF5", value = "/data/ilastik_validation/core/2d3c.h5") inputFile
+#@ String (label = "Dataset name", value = "/data") datasetName
+#@ String (label = "Axis order", value = "yxc") axisOrder
+#@ String (label = "Output type", choices = {"Probabilities", "Segmentation"}, value = "Probabilities") outputType
+#@ File (label = "Output TIFF", value = "/data/ilastik_validation/core/autocontext_probabilities.tif") outputFile
+#@ Integer (label = "Threads (-1 for all)", value = -1) numThreads
+#@ Integer (label = "Max RAM (MiB)", value = 4096) maxRamMb
+#@ org.scijava.command.CommandService command
 #@ org.scijava.Context context
 #@ net.imagej.DatasetService datasetService
 #@ org.scijava.options.OptionsService optionsService
 #@ io.scif.services.DatasetIOService datasetIOService
 
-import java.io.File
+import ij.IJ
 import org.ilastik.ilastik4ij.io.ImportCommand
 import org.ilastik.ilastik4ij.ui.IlastikOptions
 import org.ilastik.ilastik4ij.workflow.AutocontextCommand
@@ -15,105 +24,108 @@ import org.ilastik.ilastik4ij.workflow.AutocontextCommand
  *
  * PURPOSE:
  *   1. Configure the ilastik executable path used by ilastik4ij
- *   2. Open a raw input image as a Dataset
+ *   2. Import one raw HDF5 dataset as a Dataset
  *   3. Apply a trained ilastik Autocontext project
  *   4. Save the returned probabilities or segmentation as TIFF
  *
  * REQUIRED INPUTS:
- *   EXECUTABLE   - absolute path to the ilastik executable
- *   PROJECT_FILE - absolute path to a trained Autocontext .ilp file
- *   INPUT_H5     - absolute path to the raw image exported as HDF5
- *   DATASET_NAME - dataset path inside INPUT_H5
- *   AXIS_ORDER   - row-major axis string for INPUT_H5
- *   OUTPUT_TYPE  - Probabilities or Segmentation
- *   OUTPUT_TIFF  - absolute path to the TIFF that will be written
+ *   executableFile - ilastik executable
+ *   projectFile    - trained Autocontext .ilp file
+ *   inputFile      - raw image exported as HDF5
+ *   datasetName    - dataset path inside inputFile
+ *   axisOrder      - row-major axis string for inputFile
+ *   outputType     - `Probabilities` or `Segmentation`
+ *   outputFile     - TIFF path to write
+ *   numThreads     - ilastik thread limit, use `-1` for all available threads
+ *   maxRamMb       - ilastik RAM limit in MiB
  *
  * IMPORTANT:
- *   - The .ilp project must be closed in ilastik before Fiji runs it
- *   - The sample project used here expects inputdata/2d3c.h5 next to the .ilp file
- *   - The dataset dimensionality and channel layout must match the project
+ *   - The default values point to the validation assets used for this skill.
+ *   - The `.ilp` project must be closed in ilastik before Fiji runs it.
+ *   - The sample project used here expects `inputdata/2d3c.h5` next to the `.ilp` file.
+ *   - Choose a new output path instead of overwriting an existing file.
  */
 
-String EXECUTABLE = "/home/imagentj/ilastik-1.4.1.post1-Linux/run_ilastik.sh"
-String PROJECT_FILE = "/data/ilastik_validation/core/Autocontext2d3c.ilp"
-String INPUT_H5 = "/data/ilastik_validation/core/2d3c.h5"
-String DATASET_NAME = "/data"
-String AXIS_ORDER = "yxc"
-String OUTPUT_TYPE = "Probabilities"
-String OUTPUT_TIFF = "/data/ilastik_validation/core/autocontext_probabilities.tif"
-
-if (!(OUTPUT_TYPE in ["Probabilities", "Segmentation"])) {
+if (executableFile == null || !executableFile.exists()) {
+    throw new IllegalArgumentException("Executable not found: " + executableFile)
+}
+if (projectFile == null || !projectFile.exists()) {
+    throw new IllegalArgumentException("Project file not found: " + projectFile)
+}
+if (inputFile == null || !inputFile.exists()) {
+    throw new IllegalArgumentException("Input HDF5 file not found: " + inputFile)
+}
+if (datasetName.trim().isEmpty()) {
+    throw new IllegalArgumentException("datasetName must not be empty")
+}
+if (axisOrder.trim().isEmpty()) {
+    throw new IllegalArgumentException("axisOrder must not be empty")
+}
+if (outputType !in ["Probabilities", "Segmentation"]) {
     throw new IllegalArgumentException(
-        "OUTPUT_TYPE must be Probabilities or Segmentation: " + OUTPUT_TYPE)
+        "outputType must be Probabilities or Segmentation: " + outputType)
 }
-
-def executableFile = new File(EXECUTABLE)
-def projectFile = new File(PROJECT_FILE)
-def inputFile = new File(INPUT_H5)
-def outputFile = new File(OUTPUT_TIFF)
-
-if (!executableFile.exists()) {
-    throw new IllegalArgumentException("Executable not found: " + EXECUTABLE)
+if (outputFile == null) {
+    throw new IllegalArgumentException("Output TIFF file must be provided")
 }
-if (!projectFile.exists()) {
-    throw new IllegalArgumentException("Project file not found: " + PROJECT_FILE)
-}
-if (!inputFile.exists()) {
-    throw new IllegalArgumentException("Input HDF5 file not found: " + INPUT_H5)
-}
-if (DATASET_NAME.trim().isEmpty()) {
-    throw new IllegalArgumentException("DATASET_NAME must not be empty")
-}
-if (AXIS_ORDER.trim().isEmpty()) {
-    throw new IllegalArgumentException("AXIS_ORDER must not be empty")
-}
-outputFile.getParentFile()?.mkdirs()
+outputFile.parentFile?.mkdirs()
 if (outputFile.exists()) {
-    outputFile.delete()
+    throw new IllegalArgumentException(
+        "Output file already exists: " + outputFile.absolutePath)
 }
 
 def options = optionsService.getOptions(IlastikOptions)
-options.executableFile = executableFile
-options.numThreads = -1
-options.maxRamMb = 4096
-options.save()
+def previousExecutableFile = options.executableFile
+int previousNumThreads = options.numThreads
+int previousMaxRamMb = options.maxRamMb
 
-def importCommand = new ImportCommand()
-importCommand.setContext(context)
-importCommand.select = inputFile
-importCommand.datasetName = DATASET_NAME
-importCommand.axisOrder = AXIS_ORDER
-importCommand.run()
+try {
+    options.executableFile = executableFile
+    options.numThreads = numThreads
+    options.maxRamMb = maxRamMb
+    options.save()
 
-def imported = importCommand.output
-println("imported=" + imported)
-if (imported == null) {
-    throw new IllegalStateException("ImportCommand returned null output")
+    def importCommand = new ImportCommand()
+    importCommand.setContext(context)
+    importCommand.select = inputFile
+    importCommand.datasetName = datasetName
+    importCommand.axisOrder = axisOrder
+    importCommand.run()
+
+    def imported = importCommand.output
+    if (imported == null) {
+        throw new IllegalStateException("ImportCommand returned null output")
+    }
+
+    IJ.log("ilastik Autocontext")
+    IJ.log("Project: " + projectFile.absolutePath)
+    IJ.log("Input: " + inputFile.absolutePath + " " + datasetName)
+    IJ.log("Output type: " + outputType)
+
+    def dataset = datasetService.create(imported)
+    def future = command.run(AutocontextCommand, true,
+        "projectFileName", projectFile,
+        "inputImage", dataset,
+        "AutocontextPredictionType", outputType
+    )
+
+    if (future == null) {
+        throw new IllegalStateException("AutocontextCommand returned null future")
+    }
+
+    def module = future.get()
+    def predictions = module.getOutput("predictions")
+    if (predictions == null) {
+        throw new IllegalStateException("AutocontextCommand returned null predictions")
+    }
+
+    def outputDataset = datasetService.create(predictions)
+    datasetIOService.save(outputDataset, outputFile.absolutePath)
+    IJ.log("Saved prediction: " + outputFile.absolutePath)
 }
-
-def dataset = datasetService.create(imported)
-println("dataset=" + dataset)
-
-def future = command.run(AutocontextCommand, true,
-    "projectFileName", projectFile,
-    "inputImage", dataset,
-    "AutocontextPredictionType", OUTPUT_TYPE
-)
-println("future=" + future)
-
-if (future == null) {
-    throw new IllegalStateException("AutocontextCommand returned null future")
+finally {
+    options.executableFile = previousExecutableFile
+    options.numThreads = previousNumThreads
+    options.maxRamMb = previousMaxRamMb
+    options.save()
 }
-
-def module = future.get()
-println("module=" + module)
-
-def predictions = module.getOutput("predictions")
-println("predictions=" + predictions)
-if (predictions == null) {
-    throw new IllegalStateException("AutocontextCommand returned null predictions")
-}
-
-def outputDataset = datasetService.create(predictions)
-datasetIOService.save(outputDataset, OUTPUT_TIFF)
-println("saved=" + outputFile.exists())

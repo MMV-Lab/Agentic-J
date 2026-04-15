@@ -1,9 +1,13 @@
 // These #@ lines inject Fiji services; they must stay at the top of the file.
+#@ File (label = "Input HDF5", value = "/data/ilastik_validation/examples/mitocheck_2d+t/mitocheck_94570_2D+t_01-53.h5") inputFile
+#@ String (label = "Dataset name", value = "/volume/data") datasetName
+#@ String (label = "Axis order", value = "txyc") axisOrder
+#@ File (label = "Output TIFF", value = "/data/ilastik_validation/mitocheck_raw_import.tif") outputFile
 #@ org.scijava.Context context
 #@ net.imagej.DatasetService datasetService
 #@ io.scif.services.DatasetIOService datasetIOService
 
-import java.io.File
+import ij.IJ
 import org.ilastik.ilastik4ij.io.ImportCommand
 
 /*
@@ -16,51 +20,47 @@ import org.ilastik.ilastik4ij.io.ImportCommand
  *   4. Save the imported image as TIFF
  *
  * REQUIRED INPUTS:
- *   INPUT_H5     - absolute path to the source HDF5 file
- *   DATASET_NAME - dataset path inside the HDF5 file
- *   AXIS_ORDER   - row-major axis string for the selected dataset
- *   OUTPUT_TIFF  - absolute path to the TIFF that will be written
+ *   inputFile   - source HDF5 file
+ *   datasetName - dataset path inside the HDF5 file
+ *   axisOrder   - row-major axis string for the selected dataset
+ *   outputFile  - TIFF path to write
  *
  * IMPORTANT:
- *   - Use List HDF5 Datasets first if DATASET_NAME or AXIS_ORDER are unknown
- *   - AXIS_ORDER must match the dataset dimensions reported by the plugin
+ *   - Use `List HDF5 Datasets` first if datasetName or axisOrder are unknown.
+ *   - The default values point to the validation assets used for this skill.
+ *   - Choose a new output path instead of overwriting an existing file.
  */
 
-String INPUT_H5 = "/data/ilastik_validation/examples/mitocheck_2d+t/mitocheck_94570_2D+t_01-53.h5"
-String DATASET_NAME = "/volume/data"
-String AXIS_ORDER = "txyc"
-String OUTPUT_TIFF = "/data/ilastik_validation/mitocheck_raw_import.tif"
-
-def inputFile = new File(INPUT_H5)
-def outputFile = new File(OUTPUT_TIFF)
-
-if (!inputFile.exists()) {
-    throw new IllegalArgumentException("Input HDF5 file not found: " + INPUT_H5)
+if (inputFile == null || !inputFile.exists()) {
+    throw new IllegalArgumentException("Input HDF5 file not found: " + inputFile)
 }
-if (DATASET_NAME.trim().isEmpty()) {
-    throw new IllegalArgumentException("DATASET_NAME must not be empty")
+if (datasetName.trim().isEmpty()) {
+    throw new IllegalArgumentException("datasetName must not be empty")
 }
-if (AXIS_ORDER.trim().isEmpty()) {
-    throw new IllegalArgumentException("AXIS_ORDER must not be empty")
+if (axisOrder.trim().isEmpty()) {
+    throw new IllegalArgumentException("axisOrder must not be empty")
 }
-outputFile.getParentFile()?.mkdirs()
+if (outputFile == null) {
+    throw new IllegalArgumentException("Output TIFF file must be provided")
+}
+outputFile.parentFile?.mkdirs()
 if (outputFile.exists()) {
-    outputFile.delete()
+    throw new IllegalArgumentException(
+        "Output file already exists: " + outputFile.absolutePath)
 }
 
 def importCommand = new ImportCommand()
 importCommand.setContext(context)
 importCommand.select = inputFile
-importCommand.datasetName = DATASET_NAME
-importCommand.axisOrder = AXIS_ORDER
+importCommand.datasetName = datasetName
+importCommand.axisOrder = axisOrder
 importCommand.run()
 
 def imported = importCommand.output
-println("output=" + imported)
 if (imported == null) {
     throw new IllegalStateException("ImportCommand returned null output")
 }
 
 def outputDataset = datasetService.create(imported)
-datasetIOService.save(outputDataset, OUTPUT_TIFF)
-println("saved=" + outputFile.exists())
+datasetIOService.save(outputDataset, outputFile.absolutePath)
+IJ.log("Imported HDF5 dataset to: " + outputFile.absolutePath)

@@ -1,8 +1,12 @@
 // These #@ lines inject Fiji services; they must stay at the top of the file.
-#@ CommandService command
+#@ File (label = "Input TIFF", value = "/data/example_1.tif") inputFile
+#@ File (label = "Output HDF5", value = "/data/ilastik_validation/example_1.h5") outputFile
+#@ String (label = "Dataset name", value = "/data") datasetName
+#@ Integer (label = "Compression level", value = 0) compressionLevel
+#@ org.scijava.command.CommandService command
 #@ io.scif.services.DatasetIOService datasetIOService
 
-import java.io.File
+import ij.IJ
 import org.ilastik.ilastik4ij.io.ExportCommand
 import org.ilastik.ilastik4ij.io.ListDatasetsCommand
 
@@ -15,50 +19,57 @@ import org.ilastik.ilastik4ij.io.ListDatasetsCommand
  *   3. List the datasets stored in the new HDF5 file
  *
  * REQUIRED INPUTS:
- *   INPUT_TIFF        - absolute path to the source image
- *   OUTPUT_H5         - absolute path to the HDF5 file to write
- *   DATASET_NAME      - dataset path inside the HDF5 file
- *   COMPRESSION_LEVEL - gzip compression level from 0 to 9
+ *   inputFile        - source image to export
+ *   outputFile       - destination HDF5 file
+ *   datasetName      - dataset path inside the HDF5 file
+ *   compressionLevel - gzip compression level from 0 to 9
  *
  * IMPORTANT:
- *   - OUTPUT_H5 must end with .h5
- *   - This workflow exports data for ilastik and then inspects the written file
- *   - This workflow does not run an ilastik prediction
+ *   - The default values point to the validation assets used for this skill.
+ *   - Choose a new output path instead of overwriting an existing file.
+ *   - This workflow does not run an ilastik prediction.
  */
 
-String INPUT_TIFF = "/data/example_1.tif"
-String OUTPUT_H5 = "/data/ilastik_validation/example_1.h5"
-String DATASET_NAME = "/data"
-int COMPRESSION_LEVEL = 0
-
-def inputFile = new File(INPUT_TIFF)
-if (!inputFile.exists()) {
-    throw new IllegalArgumentException("Input image not found: " + INPUT_TIFF)
+if (inputFile == null || !inputFile.exists()) {
+    throw new IllegalArgumentException("Input image not found: " + inputFile)
 }
-
-def outputFile = new File(OUTPUT_H5)
-if (!OUTPUT_H5.endsWith(".h5")) {
-    throw new IllegalArgumentException("Output file must end with .h5: " + OUTPUT_H5)
+if (outputFile == null) {
+    throw new IllegalArgumentException("Output HDF5 file must be provided")
 }
-outputFile.getParentFile()?.mkdirs()
+if (!outputFile.name.endsWith(".h5")) {
+    throw new IllegalArgumentException(
+        "Output file must end with .h5: " + outputFile.absolutePath)
+}
+if (datasetName.trim().isEmpty()) {
+    throw new IllegalArgumentException("datasetName must not be empty")
+}
+if (compressionLevel < 0 || compressionLevel > 9) {
+    throw new IllegalArgumentException(
+        "compressionLevel must be between 0 and 9: " + compressionLevel)
+}
+outputFile.parentFile?.mkdirs()
 if (outputFile.exists()) {
-    outputFile.delete()
+    throw new IllegalArgumentException(
+        "Output file already exists: " + outputFile.absolutePath)
 }
 
-def dataset = datasetIOService.open(INPUT_TIFF)
-println("opened=" + dataset)
+IJ.log("ilastik HDF5 export")
+IJ.log("Input: " + inputFile.absolutePath)
+IJ.log("Output: " + outputFile.absolutePath)
 
-def exportModule = command.run(ExportCommand, true,
+def dataset = datasetIOService.open(inputFile.absolutePath)
+
+command.run(ExportCommand, true,
     "input", dataset,
     "exportPath", outputFile,
-    "datasetName", DATASET_NAME,
-    "compressionLevel", COMPRESSION_LEVEL
+    "datasetName", datasetName,
+    "compressionLevel", compressionLevel
 ).get()
-println("exportModule=" + exportModule)
-println("exportExists=" + outputFile.exists())
 
 def listModule = command.run(ListDatasetsCommand, true,
     "file", outputFile
 ).get()
 def table = listModule.getOutput("datasets")
-println("datasets=" + table)
+
+IJ.log("Exported HDF5: " + outputFile.absolutePath)
+IJ.log("Datasets: " + table)

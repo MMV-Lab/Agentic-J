@@ -2,192 +2,179 @@
 
 This file contains the Groovy paths used by this skill.
 
-## HDF5 Commands
+The committed workflow files in this skill use:
+
+- SciJava `#@` parameters for files, strings, and numeric inputs
+- sample default values that point to the validation assets used for this skill
+- temporary `IlastikOptions` overrides that are restored in a `finally` block
+- explicit output-path checks instead of silently deleting an existing file
+
+## Script Parameter Pattern
+
+Use SciJava parameters for file and choice inputs:
 
 ```groovy
-#@ CommandService command
-#@ org.scijava.Context context
-#@ net.imagej.DatasetService datasetService
-#@ io.scif.services.DatasetIOService datasetIOService
+#@ File (label = "Ilastik executable", value = "/path/to/run_ilastik.sh") executableFile
+#@ File (label = "Project file", value = "/path/to/project.ilp") projectFile
+#@ File (label = "Input TIFF", value = "/path/to/input.tif") inputFile
+#@ String (label = "Output type", choices = {"Probabilities", "Segmentation"}, value = "Probabilities") outputType
+#@ File (label = "Output TIFF", value = "/path/to/output.tif") outputFile
+#@ Integer (label = "Threads (-1 for all)", value = -1) numThreads
+#@ Integer (label = "Max RAM (MiB)", value = 4096) maxRamMb
+```
 
-import java.io.File
-import org.ilastik.ilastik4ij.io.ExportCommand
-import org.ilastik.ilastik4ij.io.ImportCommand
-import org.ilastik.ilastik4ij.io.ListDatasetsCommand
+The workflow files in this skill use the same pattern for HDF5 inputs, dataset
+names, axis strings, and second-input modes.
 
-def dataset = datasetIOService.open(INPUT_TIFF)
+## Temporary ilastik Settings Override
+
+Prediction wrappers read the executable, thread count, and RAM limit from
+`IlastikOptions`. The committed workflows save the requested values, run the
+command, and then restore the previous Fiji preferences:
+
+```groovy
+def options = optionsService.getOptions(IlastikOptions)
+def previousExecutableFile = options.executableFile
+int previousNumThreads = options.numThreads
+int previousMaxRamMb = options.maxRamMb
+
+try {
+    options.executableFile = executableFile
+    options.numThreads = numThreads
+    options.maxRamMb = maxRamMb
+    options.save()
+
+    // run ilastik command here
+}
+finally {
+    options.executableFile = previousExecutableFile
+    options.numThreads = previousNumThreads
+    options.maxRamMb = previousMaxRamMb
+    options.save()
+}
+```
+
+## HDF5 Commands
+
+### Export HDF5
+
+```groovy
+def dataset = datasetIOService.open(inputFile.absolutePath)
 
 command.run(ExportCommand, true,
     "input", dataset,
-    "exportPath", new File(OUTPUT_H5),
-    "datasetName", DATASET_NAME,
-    "compressionLevel", 0
+    "exportPath", outputFile,
+    "datasetName", datasetName,
+    "compressionLevel", compressionLevel
 ).get()
+```
 
+### List HDF5 Datasets
+
+```groovy
 def listModule = command.run(ListDatasetsCommand, true,
-    "file", new File(OUTPUT_H5)
+    "file", outputFile
 ).get()
-
 def table = listModule.getOutput("datasets")
+```
 
+### Import HDF5
+
+```groovy
 def importCommand = new ImportCommand()
 importCommand.setContext(context)
-importCommand.select = new File(INPUT_H5)
-importCommand.datasetName = DATASET_NAME
-importCommand.axisOrder = AXIS_ORDER
+importCommand.select = inputFile
+importCommand.datasetName = datasetName
+importCommand.axisOrder = axisOrder
 importCommand.run()
 
 def importedDataset = datasetService.create(importCommand.output)
-datasetIOService.save(importedDataset, OUTPUT_TIFF)
+datasetIOService.save(importedDataset, outputFile.absolutePath)
 ```
 
 ## Pixel Classification Command
 
 ```groovy
-#@ CommandService command
-#@ net.imagej.DatasetService datasetService
-#@ org.scijava.options.OptionsService optionsService
-#@ io.scif.services.DatasetIOService datasetIOService
-
-import java.io.File
-import org.ilastik.ilastik4ij.ui.IlastikOptions
-import org.ilastik.ilastik4ij.workflow.PixelClassificationCommand
-
-def options = optionsService.getOptions(IlastikOptions)
-options.executableFile = new File(EXECUTABLE)
-options.numThreads = -1
-options.maxRamMb = 4096
-options.save()
-
-def dataset = datasetIOService.open(INPUT_TIFF)
+def dataset = datasetIOService.open(inputFile.absolutePath)
 
 def future = command.run(PixelClassificationCommand, true,
-    "projectFileName", new File(PROJECT_FILE),
+    "projectFileName", projectFile,
     "inputImage", dataset,
-    "pixelClassificationType", OUTPUT_TYPE
+    "pixelClassificationType", outputType
 )
 
 def module = future.get()
 def predictions = module.getOutput("predictions")
 def outputDataset = datasetService.create(predictions)
-datasetIOService.save(outputDataset, OUTPUT_TIFF)
+datasetIOService.save(outputDataset, outputFile.absolutePath)
 ```
 
 ## Autocontext Command
 
 ```groovy
-#@ CommandService command
-#@ org.scijava.Context context
-#@ net.imagej.DatasetService datasetService
-#@ org.scijava.options.OptionsService optionsService
-#@ io.scif.services.DatasetIOService datasetIOService
-
-import java.io.File
-import org.ilastik.ilastik4ij.io.ImportCommand
-import org.ilastik.ilastik4ij.ui.IlastikOptions
-import org.ilastik.ilastik4ij.workflow.AutocontextCommand
-
-def options = optionsService.getOptions(IlastikOptions)
-options.executableFile = new File(EXECUTABLE)
-options.numThreads = -1
-options.maxRamMb = 4096
-options.save()
-
 def importCommand = new ImportCommand()
 importCommand.setContext(context)
-importCommand.select = new File(INPUT_H5)
-importCommand.datasetName = DATASET_NAME
-importCommand.axisOrder = AXIS_ORDER
+importCommand.select = inputFile
+importCommand.datasetName = datasetName
+importCommand.axisOrder = axisOrder
 importCommand.run()
 
 def dataset = datasetService.create(importCommand.output)
 
 def future = command.run(AutocontextCommand, true,
-    "projectFileName", new File(PROJECT_FILE),
+    "projectFileName", projectFile,
     "inputImage", dataset,
-    "AutocontextPredictionType", OUTPUT_TYPE
+    "AutocontextPredictionType", outputType
 )
 
 def module = future.get()
 def predictions = module.getOutput("predictions")
 def outputDataset = datasetService.create(predictions)
-datasetIOService.save(outputDataset, OUTPUT_TIFF)
+datasetIOService.save(outputDataset, outputFile.absolutePath)
 ```
 
 ## Object Classification Command
 
 ```groovy
-#@ CommandService command
-#@ net.imagej.DatasetService datasetService
-#@ org.scijava.options.OptionsService optionsService
-#@ io.scif.services.DatasetIOService datasetIOService
-
-import java.io.File
-import org.ilastik.ilastik4ij.ui.IlastikOptions
-import org.ilastik.ilastik4ij.workflow.ObjectClassificationCommand
-
-def options = optionsService.getOptions(IlastikOptions)
-options.executableFile = new File(EXECUTABLE)
-options.numThreads = -1
-options.maxRamMb = 4096
-options.save()
-
-def rawDataset = datasetIOService.open(INPUT_TIFF)
-def secondDataset = datasetIOService.open(SECOND_INPUT_TIFF)
+def rawDataset = datasetIOService.open(inputFile.absolutePath)
+def secondDataset = datasetIOService.open(secondInputFile.absolutePath)
 
 def future = command.run(ObjectClassificationCommand, true,
-    "projectFileName", new File(PROJECT_FILE),
+    "projectFileName", projectFile,
     "inputImage", rawDataset,
     "inputProbOrSegImage", secondDataset,
-    "secondInputType", "Probabilities",
-    "objectExportSource", OUTPUT_TYPE
+    "secondInputType", secondInputType,
+    "objectExportSource", outputType
 )
 
 def module = future.get()
 def predictions = module.getOutput("predictions")
 def outputDataset = datasetService.create(predictions)
-datasetIOService.save(outputDataset, OUTPUT_TIFF)
+datasetIOService.save(outputDataset, outputFile.absolutePath)
 ```
 
 ## Multicut Command
 
 ```groovy
-#@ CommandService command
-#@ org.scijava.Context context
-#@ net.imagej.DatasetService datasetService
-#@ org.scijava.options.OptionsService optionsService
-#@ io.scif.services.DatasetIOService datasetIOService
-
-import java.io.File
-import org.ilastik.ilastik4ij.io.ImportCommand
-import org.ilastik.ilastik4ij.ui.IlastikOptions
-import org.ilastik.ilastik4ij.workflow.MulticutCommand
-
-def options = optionsService.getOptions(IlastikOptions)
-options.executableFile = new File(EXECUTABLE)
-options.numThreads = -1
-options.maxRamMb = 4096
-options.save()
-
 def rawImport = new ImportCommand()
 rawImport.setContext(context)
-rawImport.select = new File(INPUT_H5)
-rawImport.datasetName = INPUT_DATASET
-rawImport.axisOrder = INPUT_AXES
+rawImport.select = rawFile
+rawImport.datasetName = rawDatasetName
+rawImport.axisOrder = rawAxisOrder
 rawImport.run()
 
-def probImport = new ImportCommand()
-probImport.setContext(context)
-probImport.select = new File(PROB_H5)
-probImport.datasetName = PROB_DATASET
-probImport.axisOrder = PROB_AXES
-probImport.run()
+def boundaryImport = new ImportCommand()
+boundaryImport.setContext(context)
+boundaryImport.select = boundaryFile
+boundaryImport.datasetName = boundaryDatasetName
+boundaryImport.axisOrder = boundaryAxisOrder
+boundaryImport.run()
 
 def rawDataset = datasetService.create(rawImport.output)
-def boundaryDataset = datasetService.create(probImport.output)
+def boundaryDataset = datasetService.create(boundaryImport.output)
 
 def future = command.run(MulticutCommand, true,
-    "projectFileName", new File(PROJECT_FILE),
+    "projectFileName", projectFile,
     "inputImage", rawDataset,
     "boundaryPredictionImage", boundaryDataset
 )
@@ -195,76 +182,57 @@ def future = command.run(MulticutCommand, true,
 def module = future.get()
 def predictions = module.getOutput("predictions")
 def outputDataset = datasetService.create(predictions)
-datasetIOService.save(outputDataset, OUTPUT_TIFF)
+datasetIOService.save(outputDataset, outputFile.absolutePath)
 ```
 
 ## Tracking Command
 
 ```groovy
-#@ CommandService command
-#@ org.scijava.Context context
-#@ net.imagej.DatasetService datasetService
-#@ org.scijava.options.OptionsService optionsService
-#@ io.scif.services.DatasetIOService datasetIOService
-
-import java.io.File
-import org.ilastik.ilastik4ij.io.ImportCommand
-import org.ilastik.ilastik4ij.ui.IlastikOptions
-import org.ilastik.ilastik4ij.workflow.TrackingCommand
-
-def options = optionsService.getOptions(IlastikOptions)
-options.executableFile = new File(EXECUTABLE)
-options.numThreads = -1
-options.maxRamMb = 4096
-options.save()
-
 def rawImport = new ImportCommand()
 rawImport.setContext(context)
-rawImport.select = new File(RAW_H5)
-rawImport.datasetName = RAW_DATASET
-rawImport.axisOrder = RAW_AXES
+rawImport.select = rawFile
+rawImport.datasetName = rawDatasetName
+rawImport.axisOrder = rawAxisOrder
 rawImport.run()
 
 def secondImport = new ImportCommand()
 secondImport.setContext(context)
-secondImport.select = new File(PROB_H5)
-secondImport.datasetName = PROB_DATASET
-secondImport.axisOrder = PROB_AXES
+secondImport.select = secondInputFile
+secondImport.datasetName = secondInputDatasetName
+secondImport.axisOrder = secondInputAxisOrder
 secondImport.run()
 
 def rawDataset = datasetService.create(rawImport.output)
 def secondDataset = datasetService.create(secondImport.output)
 
 def future = command.run(TrackingCommand, true,
-    "projectFileName", new File(PROJECT_FILE),
+    "projectFileName", projectFile,
     "inputImage", rawDataset,
     "inputProbOrSegImage", secondDataset,
-    "secondInputType", "Probabilities"
+    "secondInputType", secondInputType
 )
 
 def module = future.get()
 def predictions = module.getOutput("predictions")
 def outputDataset = datasetService.create(predictions)
-datasetIOService.save(outputDataset, OUTPUT_TIFF)
+datasetIOService.save(outputDataset, outputFile.absolutePath)
 ```
 
 ## Preconditions
 
 - `ilastik4ij` must be installed in Fiji.
-- The input image must be readable as a `Dataset`.
-- The export path must end with `.h5`.
-- Use a dataset name that ilastik expects. This skill uses `/data`.
-- For `Import HDF5`, determine the dataset name and axis order before import.
-- For Pixel Classification, an ilastik executable and a trained `.ilp` project
-  must be available.
-- For Autocontext, an ilastik executable and a trained `.ilp` project must be
-  available.
-- For Object Classification, a trained `.ilp` project, one raw image, and one
-  matching probability image must be available.
-- For Multicut, a trained `.ilp` project, one raw image, and one matching
-  boundary-probability image must be available.
-- For Tracking, a trained `.ilp` project, one raw time series, and one
-  matching probability or segmentation input must be available.
+- Prediction wrappers require an ilastik executable and a trained `.ilp`
+  project.
+- `Export HDF5` requires a readable input image and an `.h5` output path.
+- `Import HDF5` requires the correct dataset name and axis order.
+- Pixel Classification requires one raw image.
+- Autocontext requires one raw HDF5 dataset.
+- Object Classification requires one raw image and one matching probability or
+  segmentation image.
+- Multicut requires one raw HDF5 dataset and one matching
+  boundary-probability HDF5 dataset.
+- Tracking requires one raw HDF5 dataset and one matching probability or
+  segmentation HDF5 dataset.
 - The image dimensionality and channel layout must match the `.ilp` project.
 - Some sample `.ilp` bundles reference sibling files under `inputdata/`.
   Preserve that directory layout when reusing such bundles.
@@ -277,7 +245,7 @@ datasetIOService.save(outputDataset, OUTPUT_TIFF)
 |------|------|---------|
 | `input` | `Dataset` | Image to export. |
 | `exportPath` | `File` | Output `.h5` file. |
-| `datasetName` | `String` | Dataset path inside the HDF5 file. Default in this skill: `/data`. |
+| `datasetName` | `String` | Dataset path inside the HDF5 file. |
 | `compressionLevel` | `int` | Gzip compression level from `0` to `9`. |
 
 ### `ListDatasetsCommand`
@@ -329,7 +297,7 @@ datasetIOService.save(outputDataset, OUTPUT_TIFF)
 | `projectFileName` | `File` | Trained ilastik Object Classification project (`.ilp`). |
 | `inputImage` | `Dataset` | Raw input image from Fiji. |
 | `inputProbOrSegImage` | `Dataset` | Probability map or segmentation image for the same scene. |
-| `secondInputType` | `String` | Validated value in this skill: `Probabilities`. |
+| `secondInputType` | `String` | Supported values from plugin source: `Probabilities` and `Segmentation`. The committed workflow defaults to `Probabilities`. |
 | `objectExportSource` | `String` | Validated values: `Object Predictions`, `Object Probabilities`, `Object Identities`. |
 | `predictions` | `ImgPlus` output | Object-classification result returned by the command. |
 
@@ -349,7 +317,7 @@ datasetIOService.save(outputDataset, OUTPUT_TIFF)
 | `projectFileName` | `File` | Trained ilastik Tracking project (`.ilp`). |
 | `inputImage` | `Dataset` | Raw time-series image from Fiji. |
 | `inputProbOrSegImage` | `Dataset` | Matching probability or segmentation input. |
-| `secondInputType` | `String` | Validated value in this skill: `Probabilities`. |
+| `secondInputType` | `String` | Supported values from plugin source: `Probabilities` and `Segmentation`. The committed workflow defaults to `Probabilities`. |
 | `predictions` | `ImgPlus` output | Tracking result returned by the command. |
 
 ## Standard Helpers
@@ -362,7 +330,7 @@ These are standard Fiji / SCIFIO calls. They are not ilastik-specific.
 | Run the export command | `command.run(ExportCommand, true, ...)` |
 | Run the dataset listing command | `command.run(ListDatasetsCommand, true, ...)` |
 | Import one HDF5 dataset | `new ImportCommand()`, `setContext(context)`, then `run()` |
-| Load and save ilastik executable settings | `optionsService.getOptions(IlastikOptions)` and `options.save()` |
+| Temporarily override ilastik executable settings | `optionsService.getOptions(IlastikOptions)`, then `options.save()` in `try` / `finally` |
 | Run Pixel Classification | `command.run(PixelClassificationCommand, true, ...)` |
 | Run Autocontext | `command.run(AutocontextCommand, true, ...)` |
 | Run Object Classification | `command.run(ObjectClassificationCommand, true, ...)` |
@@ -376,6 +344,9 @@ These are standard Fiji / SCIFIO calls. They are not ilastik-specific.
 
 - No claim that this repo ships an ilastik executable or a sample `.ilp`
   project file.
+- No claim that all supported command choices are validated in every workflow
+  combination. Use the committed defaults when you need the exact validated
+  path.
 
 Use `OVERVIEW.md`, `UI_GUIDE.md`, and the `UI_WORKFLOW_*.md` files for the
 documented wrapper dialogs.

@@ -1,11 +1,22 @@
 // These #@ lines inject Fiji services; they must stay at the top of the file.
-#@ CommandService command
+#@ File (label = "Ilastik executable", value = "/home/imagentj/ilastik-1.4.1.post1-Linux/run_ilastik.sh") executableFile
+#@ File (label = "Multicut project", value = "/data/ilastik_validation/core/Boundary-basedSegmentationwMulticut3d1c.ilp") projectFile
+#@ File (label = "Raw input HDF5", value = "/data/ilastik_validation/core/3d1c.h5") rawFile
+#@ String (label = "Raw dataset name", value = "/data") rawDatasetName
+#@ String (label = "Raw axis order", value = "zyxc") rawAxisOrder
+#@ File (label = "Boundary-probability HDF5", value = "/data/ilastik_validation/core/3d1c_Probabilities.h5") boundaryFile
+#@ String (label = "Boundary dataset name", value = "/exported_data") boundaryDatasetName
+#@ String (label = "Boundary axis order", value = "zyxc") boundaryAxisOrder
+#@ File (label = "Output TIFF", value = "/data/ilastik_validation/core/multicut_segmentation.tif") outputFile
+#@ Integer (label = "Threads (-1 for all)", value = -1) numThreads
+#@ Integer (label = "Max RAM (MiB)", value = 4096) maxRamMb
+#@ org.scijava.command.CommandService command
 #@ org.scijava.Context context
 #@ net.imagej.DatasetService datasetService
 #@ org.scijava.options.OptionsService optionsService
 #@ io.scif.services.DatasetIOService datasetIOService
 
-import java.io.File
+import ij.IJ
 import org.ilastik.ilastik4ij.io.ImportCommand
 import org.ilastik.ilastik4ij.ui.IlastikOptions
 import org.ilastik.ilastik4ij.workflow.MulticutCommand
@@ -20,122 +31,124 @@ import org.ilastik.ilastik4ij.workflow.MulticutCommand
  *   4. Save the returned segmentation as TIFF
  *
  * REQUIRED INPUTS:
- *   EXECUTABLE    - absolute path to the ilastik executable
- *   PROJECT_FILE  - absolute path to a trained Multicut .ilp file
- *   INPUT_H5      - absolute path to the raw-image HDF5 file
- *   INPUT_DATASET - dataset path inside INPUT_H5
- *   INPUT_AXES    - row-major axis string for INPUT_H5
- *   PROB_H5       - absolute path to the boundary-probability HDF5 file
- *   PROB_DATASET  - dataset path inside PROB_H5
- *   PROB_AXES     - row-major axis string for PROB_H5
- *   OUTPUT_TIFF   - absolute path to the TIFF that will be written
+ *   executableFile      - ilastik executable
+ *   projectFile         - trained Multicut .ilp file
+ *   rawFile             - raw-image HDF5 file
+ *   rawDatasetName      - dataset path inside rawFile
+ *   rawAxisOrder        - row-major axis string for rawFile
+ *   boundaryFile        - boundary-probability HDF5 file
+ *   boundaryDatasetName - dataset path inside boundaryFile
+ *   boundaryAxisOrder   - row-major axis string for boundaryFile
+ *   outputFile          - TIFF path to write
+ *   numThreads          - ilastik thread limit, use `-1` for all available threads
+ *   maxRamMb            - ilastik RAM limit in MiB
  *
  * IMPORTANT:
- *   - The .ilp project must be closed in ilastik before Fiji runs it
- *   - The sample project used here expects inputdata/3d1c.h5 and inputdata/3d1c_Probabilities.h5 next to the .ilp file
- *   - The raw image and boundary probabilities must describe the same volume
+ *   - The default values point to the validation assets used for this skill.
+ *   - The `.ilp` project must be closed in ilastik before Fiji runs it.
+ *   - The sample project used here expects `inputdata/3d1c.h5` and `inputdata/3d1c_Probabilities.h5` next to the `.ilp` file.
+ *   - Choose a new output path instead of overwriting an existing file.
  */
 
-String EXECUTABLE = "/home/imagentj/ilastik-1.4.1.post1-Linux/run_ilastik.sh"
-String PROJECT_FILE = "/data/ilastik_validation/core/Boundary-basedSegmentationwMulticut3d1c.ilp"
-String INPUT_H5 = "/data/ilastik_validation/core/3d1c.h5"
-String INPUT_DATASET = "/data"
-String INPUT_AXES = "zyxc"
-String PROB_H5 = "/data/ilastik_validation/core/3d1c_Probabilities.h5"
-String PROB_DATASET = "/exported_data"
-String PROB_AXES = "zyxc"
-String OUTPUT_TIFF = "/data/ilastik_validation/core/multicut_segmentation.tif"
-
-def executableFile = new File(EXECUTABLE)
-def projectFile = new File(PROJECT_FILE)
-def rawFile = new File(INPUT_H5)
-def probFile = new File(PROB_H5)
-def outputFile = new File(OUTPUT_TIFF)
-
-if (!executableFile.exists()) {
-    throw new IllegalArgumentException("Executable not found: " + EXECUTABLE)
+if (executableFile == null || !executableFile.exists()) {
+    throw new IllegalArgumentException("Executable not found: " + executableFile)
 }
-if (!projectFile.exists()) {
-    throw new IllegalArgumentException("Project file not found: " + PROJECT_FILE)
+if (projectFile == null || !projectFile.exists()) {
+    throw new IllegalArgumentException("Project file not found: " + projectFile)
 }
-if (!rawFile.exists()) {
-    throw new IllegalArgumentException("Raw HDF5 file not found: " + INPUT_H5)
+if (rawFile == null || !rawFile.exists()) {
+    throw new IllegalArgumentException("Raw HDF5 file not found: " + rawFile)
 }
-if (!probFile.exists()) {
-    throw new IllegalArgumentException("Probability HDF5 file not found: " + PROB_H5)
+if (boundaryFile == null || !boundaryFile.exists()) {
+    throw new IllegalArgumentException("Boundary HDF5 file not found: " + boundaryFile)
 }
-if (INPUT_DATASET.trim().isEmpty()) {
-    throw new IllegalArgumentException("INPUT_DATASET must not be empty")
+if (rawDatasetName.trim().isEmpty()) {
+    throw new IllegalArgumentException("rawDatasetName must not be empty")
 }
-if (INPUT_AXES.trim().isEmpty()) {
-    throw new IllegalArgumentException("INPUT_AXES must not be empty")
+if (rawAxisOrder.trim().isEmpty()) {
+    throw new IllegalArgumentException("rawAxisOrder must not be empty")
 }
-if (PROB_DATASET.trim().isEmpty()) {
-    throw new IllegalArgumentException("PROB_DATASET must not be empty")
+if (boundaryDatasetName.trim().isEmpty()) {
+    throw new IllegalArgumentException("boundaryDatasetName must not be empty")
 }
-if (PROB_AXES.trim().isEmpty()) {
-    throw new IllegalArgumentException("PROB_AXES must not be empty")
+if (boundaryAxisOrder.trim().isEmpty()) {
+    throw new IllegalArgumentException("boundaryAxisOrder must not be empty")
 }
-outputFile.getParentFile()?.mkdirs()
+if (outputFile == null) {
+    throw new IllegalArgumentException("Output TIFF file must be provided")
+}
+outputFile.parentFile?.mkdirs()
 if (outputFile.exists()) {
-    outputFile.delete()
+    throw new IllegalArgumentException(
+        "Output file already exists: " + outputFile.absolutePath)
 }
 
 def options = optionsService.getOptions(IlastikOptions)
-options.executableFile = executableFile
-options.numThreads = -1
-options.maxRamMb = 4096
-options.save()
+def previousExecutableFile = options.executableFile
+int previousNumThreads = options.numThreads
+int previousMaxRamMb = options.maxRamMb
 
-def rawImport = new ImportCommand()
-rawImport.setContext(context)
-rawImport.select = rawFile
-rawImport.datasetName = INPUT_DATASET
-rawImport.axisOrder = INPUT_AXES
-rawImport.run()
+try {
+    options.executableFile = executableFile
+    options.numThreads = numThreads
+    options.maxRamMb = maxRamMb
+    options.save()
 
-def rawOutput = rawImport.output
-println("rawOutput=" + rawOutput)
-if (rawOutput == null) {
-    throw new IllegalStateException("ImportCommand returned null raw output")
+    def rawImport = new ImportCommand()
+    rawImport.setContext(context)
+    rawImport.select = rawFile
+    rawImport.datasetName = rawDatasetName
+    rawImport.axisOrder = rawAxisOrder
+    rawImport.run()
+
+    def rawOutput = rawImport.output
+    if (rawOutput == null) {
+        throw new IllegalStateException("ImportCommand returned null raw output")
+    }
+
+    def boundaryImport = new ImportCommand()
+    boundaryImport.setContext(context)
+    boundaryImport.select = boundaryFile
+    boundaryImport.datasetName = boundaryDatasetName
+    boundaryImport.axisOrder = boundaryAxisOrder
+    boundaryImport.run()
+
+    def boundaryOutput = boundaryImport.output
+    if (boundaryOutput == null) {
+        throw new IllegalStateException("ImportCommand returned null boundary output")
+    }
+
+    IJ.log("ilastik Multicut")
+    IJ.log("Project: " + projectFile.absolutePath)
+    IJ.log("Raw input: " + rawFile.absolutePath + " " + rawDatasetName)
+    IJ.log("Boundary input: " + boundaryFile.absolutePath + " " + boundaryDatasetName)
+
+    def rawDataset = datasetService.create(rawOutput)
+    def boundaryDataset = datasetService.create(boundaryOutput)
+
+    def future = command.run(MulticutCommand, true,
+        "projectFileName", projectFile,
+        "inputImage", rawDataset,
+        "boundaryPredictionImage", boundaryDataset
+    )
+
+    if (future == null) {
+        throw new IllegalStateException("MulticutCommand returned null future")
+    }
+
+    def module = future.get()
+    def predictions = module.getOutput("predictions")
+    if (predictions == null) {
+        throw new IllegalStateException("MulticutCommand returned null predictions")
+    }
+
+    def outputDataset = datasetService.create(predictions)
+    datasetIOService.save(outputDataset, outputFile.absolutePath)
+    IJ.log("Saved prediction: " + outputFile.absolutePath)
 }
-
-def probImport = new ImportCommand()
-probImport.setContext(context)
-probImport.select = probFile
-probImport.datasetName = PROB_DATASET
-probImport.axisOrder = PROB_AXES
-probImport.run()
-
-def probOutput = probImport.output
-println("probOutput=" + probOutput)
-if (probOutput == null) {
-    throw new IllegalStateException("ImportCommand returned null probability output")
+finally {
+    options.executableFile = previousExecutableFile
+    options.numThreads = previousNumThreads
+    options.maxRamMb = previousMaxRamMb
+    options.save()
 }
-
-def rawDataset = datasetService.create(rawOutput)
-def boundaryDataset = datasetService.create(probOutput)
-
-def future = command.run(MulticutCommand, true,
-    "projectFileName", projectFile,
-    "inputImage", rawDataset,
-    "boundaryPredictionImage", boundaryDataset
-)
-println("future=" + future)
-
-if (future == null) {
-    throw new IllegalStateException("MulticutCommand returned null future")
-}
-
-def module = future.get()
-println("module=" + module)
-
-def predictions = module.getOutput("predictions")
-println("predictions=" + predictions)
-if (predictions == null) {
-    throw new IllegalStateException("MulticutCommand returned null predictions")
-}
-
-def outputDataset = datasetService.create(predictions)
-datasetIOService.save(outputDataset, OUTPUT_TIFF)
-println("saved=" + outputFile.exists())
