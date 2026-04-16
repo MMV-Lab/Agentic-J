@@ -87,9 +87,29 @@ sleep 1
 
 echo "[entrypoint] noVNC is listening on http://localhost:6080"
 
-# ── Validate API key ─────────────────────────────────────────────────────────
-if [ -z "$OPENAI_API_KEY" ]; then
-    echo "[entrypoint] WARNING: OPENAI_API_KEY is not set. The agent will not work without it."
+# ── Load persisted API keys (if any) ────────────────────────────────────────
+API_KEYS_FILE=/app/data/api_keys.env
+if [ -f "$API_KEYS_FILE" ]; then
+    echo "[entrypoint] Sourcing persisted API keys from $API_KEYS_FILE"
+    . "$API_KEYS_FILE"
+fi
+
+# ── Run setup wizard if no key is configured ────────────────────────────────
+if [ -z "$OPENAI_API_KEY" ] && [ -z "$OPEN_ROUTER_API_KEY" ]; then
+    echo "[entrypoint] No API key found — launching setup wizard on display :1"
+    python /app/setup_wizard.py || true
+
+    if [ -f "$API_KEYS_FILE" ]; then
+        echo "[entrypoint] Sourcing API keys written by setup wizard..."
+        . "$API_KEYS_FILE"
+    fi
+fi
+
+# ── Final key check (warn, never block) ─────────────────────────────────────
+if [ -z "$OPENAI_API_KEY" ] && [ -z "$OPEN_ROUTER_API_KEY" ]; then
+    echo "[entrypoint] WARNING: No API key is set. The agent will not work."
+    echo "[entrypoint]          Set OPENAI_API_KEY or OPEN_ROUTER_API_KEY in .env, or"
+    echo "[entrypoint]          place 'export OPENAI_API_KEY=...' in ./data/api_keys.env"
 fi
 
 # ── Launch the application ───────────────────────────────────────────────────
