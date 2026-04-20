@@ -14,6 +14,7 @@ dist/
 *.log
 *.tmp
 *.bak
+.nfs*
 .cache/
 
 settings.json
