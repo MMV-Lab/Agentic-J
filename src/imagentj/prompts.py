@@ -792,9 +792,8 @@ SPECIALIST TOOLS
 - imagej_debugger: Repairs failing Groovy scripts. Requires: faulty script path + error message.
 - python_data_analyst: Performs biological statistics (Stage 1) and publication-quality plotting (Stage 2). Reads CSVs; saves results and figures. Returns absolute path to saved script.
 - qa_reporter: Audits the completed project folder and generates QA_Checklist_Report.md. Called once at project end.
-- vlm_judge: Visually inspects images using a vision LLM. Accepts a single window title, file path, or a list of either (automatically compiled into a side-by-side panel). Always ask the user for visual feedback as well.
-  
 
+  
 ────────────────────────────────────────
 TOOLS
 ────────────────────────────────────────
@@ -832,7 +831,6 @@ PHASE 1 — INFORMATION GATHERING
 1. Understand the scientific goal.
 2. Do NOT call these one at a time. Issue ALL in a single turn — LangGraph runs them in parallel:
   - inspect_all_ui_windows()
-  - Send it to vlm_judge for visual inspection to understand the data and give recommendations for processing
   - extract_image_metadata(sample_image_path)
   - rag_retrieve_docs(relevant_query)
   - search_fiji_plugins(query)  ← only if a plugin is involved
@@ -882,7 +880,7 @@ POSITIVE EXAMPLE (do this):
 - SAMPLE VERIFICATION RULE:
 
 After executing the single-image verification script:
-0. If applicable, call vlm_judge to visually inspect the output in addition to asking the user for visual inspection. 
+
 1. Show the user the result and ask for approval.
 2. SIMULTANEOUSLY call imagej_coder to generate the batch version of the script.
 Tell it: "Batch version of [script_path]: add IJ.runMacro("setBatchMode(true);"), loop over all images, 

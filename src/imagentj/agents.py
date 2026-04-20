@@ -108,27 +108,27 @@ class QAHandoff(BaseModel):
 
 
 
-class VLMCheckResult(BaseModel):
-    """Result of a single visual check performed by the VLM judge."""
-    check_name:    str   # e.g. "segmentation_quality", "scale_bar"
-    verdict:       str   # "PASS" | "WARN" | "FAIL"
-    observation:   str   # exactly what the vision model reported
-    image_path:    Optional[str] = None  # path to the image (or compilation) used for this check
+# class VLMCheckResult(BaseModel):
+#     """Result of a single visual check performed by the VLM judge."""
+#     check_name:    str   # e.g. "segmentation_quality", "scale_bar"
+#     verdict:       str   # "PASS" | "WARN" | "FAIL"
+#     observation:   str   # exactly what the vision model reported
+#     image_path:    Optional[str] = None  # path to the image (or compilation) used for this check
  
  
-class VLMHandoff(BaseModel):
-    """Returned by vlm_judge."""
-    overall_verdict:       str                  # "PASS" | "WARN" | "FAIL"
-    summary:               str                  # 2–4 sentence plain-English summary
-    checks:                list[VLMCheckResult] # one entry per visual check
-    issues_found:          list[str]            # empty on PASS
-    recommended_action:    str                  # exact next step for the supervisor
-                                                # e.g. "FAIL: send segmenter.groovy to
-                                                #  imagej_debugger — nuclei merging detected"
-    image_paths_inspected: list[str]            # all images / compilations analysed
-    pipeline_step:         str                  # echoed from the task for logging
-    success:               bool                 # False only if the agent itself crashed
-    error_message:         Optional[str] = None
+# class VLMHandoff(BaseModel):
+#     """Returned by vlm_judge."""
+#     overall_verdict:       str                  # "PASS" | "WARN" | "FAIL"
+#     summary:               str                  # 2–4 sentence plain-English summary
+#     checks:                list[VLMCheckResult] # one entry per visual check
+#     issues_found:          list[str]            # empty on PASS
+#     recommended_action:    str                  # exact next step for the supervisor
+#                                                 # e.g. "FAIL: send segmenter.groovy to
+#                                                 #  imagej_debugger — nuclei merging detected"
+#     image_paths_inspected: list[str]            # all images / compilations analysed
+#     pipeline_step:         str                  # echoed from the task for logging
+#     success:               bool                 # False only if the agent itself crashed
+#     error_message:         Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -281,17 +281,17 @@ _qa_agent = create_agent(
     name="qa_reporter",
 )
 
-_vlm_agent = create_agent(
-    llm_vlm,
-    tools=[
-        capture_ij_window,   # save named open IJ window as PNG via PyImageJ
-        build_compilation,   # fuse multiple images into a labelled side-by-side panel
-        analyze_image,       # send image/compilation to vision LLM, return analysis
-    ],
-    system_prompt=vlm_judge_prompt,
-    response_format=VLMHandoff,
-    name="vlm_judge",
-)
+# _vlm_agent = create_agent(
+#     llm_vlm,
+#     tools=[
+#         capture_ij_window,   # save named open IJ window as PNG via PyImageJ
+#         build_compilation,   # fuse multiple images into a labelled side-by-side panel
+#         analyze_image,       # send image/compilation to vision LLM, return analysis
+#     ],
+#     system_prompt=vlm_judge_prompt,
+#     response_format=VLMHandoff,
+#     name="vlm_judge",
+# )
 
 
 
@@ -384,69 +384,69 @@ def qa_reporter(project_root: str) -> QAHandoff:
     })
     return result["structured_response"]
 
-@tool
-def vlm_judge(
-    task:            str,
-    pipeline_step:   str,
-    expected_output: str,
-    image_source:    str | list[str],
-    labels:          Optional[list[str]] = None,
-) -> VLMHandoff:
-    """
-    Visually inspect one or more images using a vision LLM and return a structured verdict.
+# @tool
+# def vlm_judge(
+#     task:            str,
+#     pipeline_step:   str,
+#     expected_output: str,
+#     image_source:    str | list[str],
+#     labels:          Optional[list[str]] = None,
+# ) -> VLMHandoff:
+#     """
+#     Visually inspect one or more images using a vision LLM and return a structured verdict.
  
-    ⚠️  COST NOTICE — vision API calls are significantly more expensive than text:
-        Call vlm_judge selectively — see WHEN TO CALL below.
+#     ⚠️  COST NOTICE — vision API calls are significantly more expensive than text:
+#         Call vlm_judge selectively — see WHEN TO CALL below.
  
-    IMAGE SOURCE — two modes:
-        Single string:  open IJ window title  → captured via IJ API then analysed.
-                        absolute file path    → analysed directly, no capture.
-        List of strings: multiple window titles and/or file paths
-                        → automatically fused into a side-by-side compilation panel
-                          before analysis. Much more effective for comparisons than
-                          sending images separately (VLM gets direct spatial reference).
+#     IMAGE SOURCE — two modes:
+#         Single string:  open IJ window title  → captured via IJ API then analysed.
+#                         absolute file path    → analysed directly, no capture.
+#         List of strings: multiple window titles and/or file paths
+#                         → automatically fused into a side-by-side compilation panel
+#                           before analysis. Much more effective for comparisons than
+#                           sending images separately (VLM gets direct spatial reference).
  
-    Args:
-        task:            What to inspect and what criteria to judge against.
-        pipeline_step:   Short stage identifier for traceability, e.g. "segmentation".
-        expected_output: What a correct result looks like — used as pass/fail benchmark.
-        image_source:    Window title, file path, or list of either.
-                         Window titles: e.g. "MAX_DAPI.tif", "mask_nuclei.tif"
-                         File paths:    e.g. "/app/data/projects/study/processed/mask.tif"
-        labels:          Optional panel captions for compilations, e.g. ["Original", "Mask"].
-                         Ignored for single images.
+#     Args:
+#         task:            What to inspect and what criteria to judge against.
+#         pipeline_step:   Short stage identifier for traceability, e.g. "segmentation".
+#         expected_output: What a correct result looks like — used as pass/fail benchmark.
+#         image_source:    Window title, file path, or list of either.
+#                          Window titles: e.g. "MAX_DAPI.tif", "mask_nuclei.tif"
+#                          File paths:    e.g. "/app/data/projects/study/processed/mask.tif"
+#         labels:          Optional panel captions for compilations, e.g. ["Original", "Mask"].
+#                          Ignored for single images.
  
-    Returns VLMHandoff with overall_verdict ("PASS"/"WARN"/"FAIL"), per-check breakdown,
-    issues_found, and recommended_action.
+#     Returns VLMHandoff with overall_verdict ("PASS"/"WARN"/"FAIL"), per-check breakdown,
+#     issues_found, and recommended_action.
  
-    WHEN TO CALL (be selective — each call costs money):
-        ✅ Sample verification (Phase 4b) — once per pipeline, on the verification image.
-        ✅ Segmentation / threshold output — use compilation with original + result.
-        ✅ When a script exits cleanly but output is suspected to be wrong.
-        ✅ Final QA before qa_reporter — scale bar and output image check.
-        ✅ When the user reports a visual problem.
-        ❌ Do NOT call after every batch script execution.
-        ❌ Do NOT call to list open windows — use inspect_all_ui_windows.
-        ❌ Do NOT call to read CSV or log output — use inspect_csv_header / smart_file_reader.
+#     WHEN TO CALL (be selective — each call costs money):
+#         ✅ Sample verification (Phase 4b) — once per pipeline, on the verification image.
+#         ✅ Segmentation / threshold output — use compilation with original + result.
+#         ✅ When a script exits cleanly but output is suspected to be wrong.
+#         ✅ Final QA before qa_reporter — scale bar and output image check.
+#         ✅ When the user reports a visual problem.
+#         ❌ Do NOT call after every batch script execution.
+#         ❌ Do NOT call to list open windows — use inspect_all_ui_windows.
+#         ❌ Do NOT call to read CSV or log output — use inspect_csv_header / smart_file_reader.
  
-    ACTING ON THE VERDICT:
-        PASS → proceed. Show summary to user at sample verification.
-        WARN → continue pipeline; report issues in Phase 5 summary.
-        FAIL → stop. Send script path + issues_found to imagej_debugger. AFTER asking the user for visual verfification. 
-               Re-run and call vlm_judge again after the fix.
-    """
-    sources = image_source if isinstance(image_source, list) else [image_source]
+#     ACTING ON THE VERDICT:
+#         PASS → proceed. Show summary to user at sample verification.
+#         WARN → continue pipeline; report issues in Phase 5 summary.
+#         FAIL → stop. Send script path + issues_found to imagej_debugger. AFTER asking the user for visual verfification. 
+#                Re-run and call vlm_judge again after the fix.
+#     """
+#     sources = image_source if isinstance(image_source, list) else [image_source]
  
-    content = (
-        f"PIPELINE STEP: {pipeline_step}\n"
-        f"IMAGE SOURCE(S): {sources}\n"
-        f"LABELS: {labels or []}\n"
-        f"EXPECTED OUTPUT: {expected_output}\n\n"
-        f"TASK: {task}"
-    )
+#     content = (
+#         f"PIPELINE STEP: {pipeline_step}\n"
+#         f"IMAGE SOURCE(S): {sources}\n"
+#         f"LABELS: {labels or []}\n"
+#         f"EXPECTED OUTPUT: {expected_output}\n\n"
+#         f"TASK: {task}"
+#     )
  
-    result = _vlm_agent.invoke({"messages": [{"role": "user", "content": content}]})
-    return result["structured_response"]
+#     result = _vlm_agent.invoke({"messages": [{"role": "user", "content": content}]})
+#     return result["structured_response"]
 
 # ---------------------------------------------------------------------------
 # Factory
@@ -488,7 +488,7 @@ def init_agent():
             imagej_coder,
             imagej_debugger,
             python_data_analyst,
-            vlm_judge,
+            #vlm_judge,
             qa_reporter,
             # ── supervisor's own tools ───────────────────────────────────────
             internet_search,
