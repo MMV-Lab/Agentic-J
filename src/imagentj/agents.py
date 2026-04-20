@@ -46,7 +46,8 @@ shared_metrics = UsageMetrics()
 shared_bridge  = MetricsSignalBridge()
 shared_tracker = UsageTrackerCallback(shared_metrics, shared_bridge)
 
-gpt_key = os.getenv("OPENAI_API_KEY")
+open_router_key = os.getenv("OPEN_ROUTER_API_KEY")
+openai_key = os.getenv("OPENAI_API_KEY")
 
 
 # ---------------------------------------------------------------------------
@@ -132,9 +133,19 @@ class QAHandoff(BaseModel):
 # Models
 # ---------------------------------------------------------------------------
 
+if open_router_key:
+    api_key = open_router_key
+    base_url = "https://openrouter.ai/api/v1"
+elif openai_key:
+    api_key = openai_key
+    base_url = None
+else:
+    raise RuntimeError("No API key found. Set OPEN_ROUTER_API_KEY or OPENAI_API_KEY.")
+
 llm_supervisor = ChatOpenAI(
     model="gpt-4o",
-    api_key=gpt_key,
+    api_key=api_key,
+    base_url=base_url,
     temperature=0.,
     verbose=True,
     callbacks=[shared_tracker],
@@ -142,7 +153,8 @@ llm_supervisor = ChatOpenAI(
 
 llm_worker = ChatOpenAI(
     model="gpt-4o",
-    api_key=gpt_key,
+    api_key=api_key,
+    base_url=base_url,
     temperature=0.,
     verbose=True,
     callbacks=[shared_tracker],
@@ -150,7 +162,8 @@ llm_worker = ChatOpenAI(
 
 llm_analyst = ChatOpenAI(
     model="gpt-4o-mini",
-    api_key=gpt_key,
+    api_key=api_key,
+    base_url=base_url,
     temperature=0.,
     verbose=True,
     callbacks=[shared_tracker],
@@ -158,7 +171,8 @@ llm_analyst = ChatOpenAI(
 
 llm_nano = ChatOpenAI(
     model="gpt-4o-mini",
-    api_key=gpt_key,
+    api_key=api_key,
+    base_url=base_url,
     temperature=0.,
     verbose=True,
     callbacks=[shared_tracker],

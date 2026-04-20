@@ -9,7 +9,8 @@ services:
       # Change to "0.0.0.0:6080:6080" if you need network access (not recommended)
       - "0.0.0.0:6080:6080"
     environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPEN_ROUTER_API_KEY=${OPEN_ROUTER_API_KEY:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - LANGSMITH_API_KEY=${LANGSMITH_API_KEY:-}
       - LANGSMITH_TRACING=${LANGSMITH_TRACING:-true}
