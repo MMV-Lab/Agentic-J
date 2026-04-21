@@ -14,6 +14,8 @@ from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import MemorySaver
 from pydantic import BaseModel
+from deepagents.middleware.skills import SkillsMiddleware
+
 
 from .prompts import (
     imagej_coder_prompt,
@@ -22,6 +24,7 @@ from .prompts import (
     python_analyst_prompt,
     qa_reporter_prompt,
     vlm_judge_prompt,
+    plugin_manager_prompt,
 )
 from .tools import (
     internet_search, inspect_all_ui_windows,
@@ -108,6 +111,19 @@ class QAHandoff(BaseModel):
     minimal_workflow_total: int
     critical_failures: list[str]
     success: bool
+
+
+class PluginRecommendation(BaseModel):
+    """Returned by plugin_manager."""
+    recommended_plugin: Optional[str] = None   # plugin name, or None if no plugin fits
+    is_installed: bool = False                  # already installed in Fiji?
+    needs_restart: bool = False                 # Fiji restart needed after install?
+    skill_folder: Optional[str] = None          # path to skill docs (e.g. /app/skills/morpholibj_documentation/)
+    plugin_capabilities: str = ""               # one-paragraph summary of what the plugin does
+    relevance_reasoning: str = ""               # why this plugin fits the task (or why none do)
+    alternative_plugins: list[str] = []         # other plugins considered
+    installation_status: str = "not_needed"     # "installed" | "ready_to_install" | "user_approval_needed" | "not_needed" | "just_installed"
+    success: bool = True
 
 
 
@@ -284,6 +300,33 @@ _qa_agent = create_agent(
     name="qa_reporter",
 )
 
+# Plugin manager — gets SkillsMiddleware so it sees all plugin skill descriptions
+# and can read full SKILL.md files on demand via progressive disclosure.
+_plugin_skills_backend = FilesystemBackend(
+    root_dir="/app/",
+    virtual_mode=False,
+)
+
+_plugin_agent = create_agent(
+    llm_analyst,
+    tools=[
+        search_fiji_plugins,
+        check_plugin_installed,
+        install_fiji_plugin,
+        smart_file_reader,
+        inspect_folder_tree,
+    ],
+    system_prompt=plugin_manager_prompt,
+    response_format=PluginRecommendation,
+    name="plugin_manager",
+    middleware=[
+        SkillsMiddleware(
+            backend=_plugin_skills_backend,
+            sources=["/app/skills/"],  # scans /app/skills/ for SKILL.md files
+        ),
+    ],
+)
+
 # _vlm_agent = create_agent(
 #     llm_vlm,
 #     tools=[
@@ -435,6 +478,45 @@ def qa_reporter(project_root: str) -> QAHandoff:
     return result["structured_response"]
 
 
+@tool
+def plugin_manager(task: str, project_root: str = "") -> PluginRecommendation:
+    """
+    Find, evaluate, and optionally install Fiji plugins for an image analysis task.
+
+    Call in Phase 1 to find the best plugin for the scientific goal.
+    Call again with "INSTALL <plugin_name>" after user approval to install.
+
+    Args:
+        task:         Describe the scientific task (e.g., "segment touching nuclei in
+                      fluorescence images") OR an install command ("INSTALL MorphoLibJ").
+        project_root: Absolute path to the project folder. Provides the plugin manager
+                      with image metadata and scientific goal for intelligent matching.
+
+    Returns a PluginRecommendation with the best plugin, its installation status,
+    skill folder path (if docs exist), and reasoning.
+
+    AFTER receiving the recommendation:
+    - Record the skill_folder in the ledger via set_ledger_metadata(relevant_skill=...).
+    - If installation_status="user_approval_needed", ask the user before calling again
+      with "INSTALL <plugin_name>".
+    - After installation, remind the user to restart Fiji.
+    """
+    sections = []
+    if project_root:
+        ledger_ctx = get_ledger_context(project_root)
+        if ledger_ctx:
+            sections.append(f"PROJECT STATE (for context):\n{ledger_ctx}")
+    sections.append(f"TASK: {task}")
+
+    result = _plugin_agent.invoke({
+        "messages": [{
+            "role": "user",
+            "content": "\n\n".join(sections),
+        }]
+    })
+    return result["structured_response"]
+
+
 # @tool
 # def vlm_judge(
 #     task:            str,
@@ -543,6 +625,7 @@ def init_agent():
             imagej_coder,
             imagej_debugger,
             python_data_analyst,
+            plugin_manager,
             #vlm_judge,
             qa_reporter,
             # ── supervisor's own tools ───────────────────────────────────────
@@ -555,9 +638,6 @@ def init_agent():
             inspect_folder_tree,
             smart_file_reader,
             extract_image_metadata,
-            search_fiji_plugins,
-            install_fiji_plugin,
-            check_plugin_installed,
             mkdir_copy,
             inspect_csv_header,
             execute_script,
@@ -576,7 +656,7 @@ def init_agent():
         debug=False,
         backend=fs_backend,
         checkpointer=checkpointer_supervisor,
-        skills=["/app/skills/"],
+        skills=["/app/skills/supervisor_phases"],
     )
 
     return supervisor, checkpointer_supervisor, shared_metrics, shared_bridge, shared_tracker
