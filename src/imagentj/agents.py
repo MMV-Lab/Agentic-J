@@ -33,7 +33,10 @@ from .tools import (
     get_script_info, load_script, get_script_history,
     setup_analysis_workspace, save_markdown,
     capture_ij_window, build_compilation, analyze_image,
+    update_state_ledger, read_state_ledger, set_ledger_metadata, get_ledger_context
 )
+
+    
 from imagentj.tracker import UsageMetrics, MetricsSignalBridge, UsageTrackerCallback
 
 
@@ -310,57 +313,92 @@ def imagej_coder(task: str, project_root: str) -> ScriptHandoff:
     If success=False, pass script_path + error_message to imagej_debugger.
     """
 
-    model = llm_worker  # ← codex is best for code generation, even for Python analyst tasks
+    model = llm_worker
+
+    # Auto-inject ledger context so the coder has image metadata, previous step
+    # outputs, skill paths, and RAG findings without the supervisor relaying them.
+    sections = [f"PROJECT ROOT: {project_root}"]
+    ledger_ctx = get_ledger_context(project_root)
+    if ledger_ctx:
+        sections.append(f"PROJECT STATE (auto-injected from state ledger):\n{ledger_ctx}")
+    sections.append(f"TASK: {task}")
 
     agent = _make_coder_agent(model, "imagej_coder", imagej_coder_prompt)
 
     result = agent.invoke({
         "messages": [{
             "role": "user",
-            "content": f"PROJECT ROOT: {project_root}\n\nTASK: {task}",
+            "content": "\n\n".join(sections),
         }]
     })
     return result["structured_response"]
 
 
 @tool
-def imagej_debugger(script_path: str, error_message: str) -> ScriptHandoff:
+def imagej_debugger(script_path: str, error_message: str, project_root: str = "") -> ScriptHandoff:
     """
     Diagnose and repair a failing ImageJ/Fiji Groovy script.
 
-    Provide the absolute path to the faulty script and the full error message.
+    Args:
+        script_path:   Absolute path to the faulty .groovy script.
+        error_message: Full error output from execute_script (stack trace, line numbers, etc.).
+        project_root:  Absolute path to the project folder.
+
     Returns a ScriptHandoff with the repaired script_path and a lesson field.
     After success, pass lesson to save_coding_experience.
     """
     agent = _make_coder_agent(llm_worker, "imagej_debugger", imagej_debugger_prompt)
 
+    sections = [f"FAULTY SCRIPT: {script_path}", f"ERROR:\n{error_message}"]
+    # Inject ledger so the debugger understands image properties and pipeline context
+    if project_root:
+        ledger_ctx = get_ledger_context(project_root)
+        if ledger_ctx:
+            sections.insert(1, f"PROJECT STATE (for context):\n{ledger_ctx}")
+
     result = agent.invoke({
         "messages": [{
             "role": "user",
-            "content": f"FAULTY SCRIPT: {script_path}\n\nERROR:\n{error_message}",
+            "content": "\n\n".join(sections),
         }]
     })
     return result["structured_response"]
 
 
+
 @tool
-def python_data_analyst(task: str, input_csv: str, output_dir: str) -> AnalystHandoff:
+def python_data_analyst(task: str, input_csv: str, output_dir: str, project_root: str) -> AnalystHandoff:
     """
     Run statistical analysis or generate publication-quality plots from ImageJ CSV data.
 
     Call TWICE — once per stage, never combined:
       Stage 1 (statistics): task describes hypothesis testing. Returns stats_csv_path.
       Stage 2 (plotting):   task describes plot types. Call only after Stage 1 CSV exists.
+
+    Args:
+        task:         What to do — describe the hypothesis, groups to compare, or plot types.
+        input_csv:    Absolute path to the CSV file to analyze (raw measurements or Statistics_Results.csv).
+        output_dir:   Absolute path to the directory where scripts and outputs should be saved.
+        project_root: Absolute path to the project folder. 
+
     Returns an AnalystHandoff with script_path, outputs, stats_csv_path or figure_paths.
     """
+    sections = [
+        f"INPUT CSV: {input_csv}",
+        f"OUTPUT DIR: {output_dir}",
+    ]
+    # Inject ledger so the analyst knows the scientific goal (for axis labels),
+    # image calibration (for units like μm), and experimental conditions.
+    if project_root:
+        ledger_ctx = get_ledger_context(project_root)
+        if ledger_ctx:
+            sections.append(f"PROJECT STATE (use for axis labels, units, and context):\n{ledger_ctx}")
+    sections.append(f"TASK: {task}")
+
     result = _analyst_agent.invoke({
         "messages": [{
             "role": "user",
-            "content": (
-                f"INPUT CSV: {input_csv}\n"
-                f"OUTPUT DIR: {output_dir}\n\n"
-                f"TASK: {task}"
-            ),
+            "content": "\n\n".join(sections),
         }]
     })
     return result["structured_response"]
@@ -372,17 +410,30 @@ def qa_reporter(project_root: str) -> QAHandoff:
     Audit the completed project folder and generate QA_Checklist_Report.md.
 
     Call once at the end of every project after all scripts have run successfully.
-    Provide the absolute path to the project root folder.
+
+    Args:
+        project_root: Absolute path to the project root folder. The reporter reads all
+                      scripts, CSVs, and images to evaluate against workflow and image
+                      publishing standards.
+
     Returns a QAHandoff with checklist_path, pass/fail counts, and critical_failures.
     Relay critical_failures to the user verbatim.
     """
+    sections = [f"PROJECT ROOT: {project_root}"]
+    # Inject the full ledger — it contains the workflow summary, all parameters,
+    # all scripts, all outputs. This is exactly what the QA agent needs to audit.
+    ledger_ctx = get_ledger_context(project_root)
+    if ledger_ctx:
+        sections.append(f"WORKFLOW SUMMARY (from state ledger — use as primary reference):\n{ledger_ctx}")
+
     result = _qa_agent.invoke({
         "messages": [{
             "role": "user",
-            "content": f"PROJECT ROOT: {project_root}",
+            "content": "\n\n".join(sections),
         }]
     })
     return result["structured_response"]
+
 
 # @tool
 # def vlm_judge(
@@ -467,11 +518,15 @@ def init_agent():
         ContextEditingMiddleware(
             edits=[
                 ClearToolUsesEdit(
-                    trigger=50000,
-                    keep=10,
-                    clear_tool_inputs=False,
-                    exclude_tools=[],
-                    placeholder="[cleared]",
+                    trigger=35000,
+                    keep=8,
+                    clear_tool_inputs=True,
+                    exclude_tools=[
+                        "read_state_ledger",
+                        "update_state_ledger",
+                        "set_ledger_metadata",
+                    ],
+                    placeholder="[cleared — see state_ledger.json for project state]",
                 ),
             ],
         ),
@@ -509,6 +564,10 @@ def init_agent():
             get_script_info,
             setup_analysis_workspace,
             save_markdown,
+            # ── state ledger (persistent project memory) ─────────────────────
+            update_state_ledger,
+            read_state_ledger,
+            set_ledger_metadata,
         ],
         system_prompt=supervisor_prompt,
         subagents=[],
