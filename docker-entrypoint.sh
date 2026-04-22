@@ -34,7 +34,7 @@ for f in src.rglob('*'):
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(str(f), str(target))
         ok += 1
-    except PermissionError as e:
+    except (PermissionError, OSError) as e:
         fail += 1
         print(f'[entrypoint] WARNING: cannot seed {target.name}: {e}', flush=True)
 print(f'[entrypoint] seeded: {ok} copied, {skip} already present, {fail} permission-denied', flush=True)
