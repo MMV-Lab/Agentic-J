@@ -15,9 +15,26 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
+import re
+import shlex
 
 
-API_KEYS_FILE = "/app/data/api_keys.env"
+OPENAI_RE = re.compile(r"^sk-[A-Za-z0-9_\-]{20,200}$")
+OPENROUTER_RE = re.compile(r"^sk-or-v1-[A-Za-z0-9_\-]{20,200}$")
+
+
+def validate_key(key: str, is_openai: bool) -> bool:
+    # Block structural / dangerous chars first
+    if any(c in key for c in ['\n', '\r', '\0']):
+        return False
+
+    # Provider-specific format
+    if is_openai:
+        return bool(OPENAI_RE.fullmatch(key))
+    else:
+        return bool(OPENROUTER_RE.fullmatch(key))
+
+API_KEYS_FILE = "/home/imagentj/api_keys.env"
 
 
 class SetupWizard(QWidget):
@@ -43,7 +60,7 @@ class SetupWizard(QWidget):
 
         subtitle = QLabel(
             "To get started, enter your API key below.\n"
-            "It will be saved to <code>/app/data/api_keys.env</code> "
+            "It will be saved to <code>/home/imagentj/api_keys.env</code> "
             "and remembered across restarts."
         )
         subtitle.setTextFormat(Qt.RichText)
@@ -159,29 +176,20 @@ class SetupWizard(QWidget):
             self.key_input.setFocus()
             return
 
-        if self.radio_openai.isChecked() and not key.startswith("sk-"):
-            reply = QMessageBox.question(
-                self, "Unusual Key Format",
-                "OpenAI keys typically start with 'sk-'. Continue anyway?",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No,
-            )
-            if reply == QMessageBox.No:
-                return
+        is_openai = self.radio_openai.isChecked()
 
-        if self.radio_openrouter.isChecked() and not key.startswith("sk-or"):
-            reply = QMessageBox.question(
-                self, "Unusual Key Format",
-                "OpenRouter keys typically start with 'sk-or-'. Continue anyway?",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No,
+        if not validate_key(key, is_openai):
+            QMessageBox.warning(
+                self,
+                "Invalid Key",
+                "The API key format is invalid for the selected provider."
             )
-            if reply == QMessageBox.No:
-                return
-
+            self.key_input.setFocus()
+            return
+                
         env_var = "OPENAI_API_KEY" if self.radio_openai.isChecked() else "OPEN_ROUTER_API_KEY"
-        safe_key = key.replace('"', '\\"')
-        new_line = f'export {env_var}="{safe_key}"\n'
+        safe_key = shlex.quote(key)
+        new_line = f'export {env_var}={safe_key}\n'
 
         try:
             os.makedirs(os.path.dirname(API_KEYS_FILE), exist_ok=True)
@@ -202,8 +210,7 @@ class SetupWizard(QWidget):
         except OSError as exc:
             QMessageBox.critical(
                 self, "Write Error",
-                f"Could not write to {API_KEYS_FILE}:\n{exc}\n\n"
-                "Make sure the ./data directory is volume-mounted and writable.",
+                f"Could not write to {API_KEYS_FILE}:\n{exc}\n\n",
             )
             return
 
