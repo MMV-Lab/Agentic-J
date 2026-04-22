@@ -86,6 +86,18 @@ if [ ! -f "$FIJI_JARS/$REQUIRED_PROTOBUF" ]; then
     || echo "[entrypoint] WARNING: failed to download protobuf JAR — StarDist may not work"
 fi
 
+# ── Ensure Cellpose-SAM model is present ─────────────────────────────────────
+# cellpose 3.x does not list 'cpsam' in MODEL_NAMES so it must be a user model
+# (listed in gui_models.txt). The bind mount ./models:~/.cellpose/models shadows
+# the copy baked into the image, so download here on first start if missing.
+CPSAM_MODEL="/home/imagentj/.cellpose/models/cpsam"
+if [ ! -f "$CPSAM_MODEL" ]; then
+    echo "[entrypoint] Downloading cellpose-sam model (~300 MB, once only)..."
+    wget -q --show-progress -O "$CPSAM_MODEL" \
+        "https://www.cellpose.org/models/cpsam" \
+    && echo "[entrypoint] cpsam model downloaded" \
+    || { echo "[entrypoint] WARNING: failed to download cpsam — TrackMate Cellpose-SAM will not work"; rm -f "$CPSAM_MODEL"; }
+fi
 
 # ── JAR deduplication helper (called before and after applying updates) ───────
 # Removes older versions of any JAR when multiple versions of the same lib exist.
