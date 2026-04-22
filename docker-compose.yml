@@ -39,6 +39,7 @@ services:
       # Source code mount for development (remove in production image)
       - ./src:/app/src:ro
       - ./gui_runner.py:/app/gui_runner.py:ro
+      - ./setup_wizard.py:/app/setup_wizard.py:ro
       # Folder to save data
       - ./data:/app/data
       # Folder for skills
