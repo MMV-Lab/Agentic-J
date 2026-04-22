@@ -88,7 +88,7 @@ sleep 1
 echo "[entrypoint] noVNC is listening on http://localhost:6080"
 
 # ── Load persisted API keys (if any) ────────────────────────────────────────
-API_KEYS_FILE=/app/data/api_keys.env
+API_KEYS_FILE=/home/imagentj/api_keys.env
 if [ -f "$API_KEYS_FILE" ]; then
     echo "[entrypoint] Sourcing persisted API keys from $API_KEYS_FILE"
     . "$API_KEYS_FILE"
@@ -109,7 +109,7 @@ fi
 if [ -z "$OPENAI_API_KEY" ] && [ -z "$OPEN_ROUTER_API_KEY" ]; then
     echo "[entrypoint] WARNING: No API key is set. The agent will not work."
     echo "[entrypoint]          Set OPENAI_API_KEY or OPEN_ROUTER_API_KEY in .env, or"
-    echo "[entrypoint]          place 'export OPENAI_API_KEY=...' in ./data/api_keys.env"
+    echo "[entrypoint]          place 'export OPENAI_API_KEY=...' in /home/imagentj/api_keys.env"
 fi
 
 # ── Launch the application ───────────────────────────────────────────────────
