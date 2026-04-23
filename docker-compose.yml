@@ -55,6 +55,9 @@ services:
       - ./skills:/app/skills:ro
       # Entrypoint bind-mount so changes take effect without rebuilding
       - ./docker-entrypoint.sh:/docker-entrypoint.sh:ro
+      # Shim bind-mounts — host file is executable; avoids needing root chmod after cp
+      - ./micromamba_shim.sh:/usr/local/opt/micromamba/bin/micromamba:ro
+      - ./micromamba_shim.sh:/opt/micromamba/bin/micromamba:ro
     env_file:
       - path: .env
         required: false
