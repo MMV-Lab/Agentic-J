@@ -94,8 +94,8 @@ COPY patch_stardist/PatchStarDist.java /tmp/PatchStarDist.java
 RUN set -e \
     && FIJI=/opt/Fiji.app \
     # Locate the JDK bundled with Fiji
-    && JAVA_BIN=$(find "$FIJI/java" -name 'java'  -not -name '*.class' 2>/dev/null | head -1) \
-    && JAVAC_BIN=$(find "$FIJI/java" -name 'javac' 2>/dev/null | head -1) \
+    && JAVA_BIN=$(find "$FIJI/java" -type f -name 'java' 2>/dev/null | head -1) \
+    && JAVAC_BIN=$(find "$FIJI/java" -type f -name 'javac' 2>/dev/null | head -1) \
     && [ -n "$JAVA_BIN"  ] || JAVA_BIN=java \
     && [ -n "$JAVAC_BIN" ] || JAVAC_BIN=javac \
     && echo "[patch] Using java: $JAVA_BIN  javac: $JAVAC_BIN" \
@@ -201,11 +201,14 @@ RUN conda env create -f /tmp/environment.yml \
 ENV PATH=/opt/conda/envs/local_imagent_J/bin:$PATH
 ENV CONDA_DEFAULT_ENV=local_imagent_J
 
-# ── Conda env: cellpose  (PyTorch + Cellpose, served by TrackMate-Cellpose) ───
+# ── Conda env: cellpose  (PyTorch + Cellpose + Omnipose, served by TrackMate-Cellpose and TrackMate-Omnipose) ───
+# Omnipose 1.x is built on cellpose 3.x, so they share one env.
+# The micromamba shim routes both '-n cellpose' and '-n omnipose' here.
 RUN /opt/conda/bin/conda create -n cellpose python=3.10 -y \
     && /opt/conda/envs/cellpose/bin/pip install --no-cache-dir \
         torch torchvision --index-url https://download.pytorch.org/whl/cpu \
     && /opt/conda/envs/cellpose/bin/pip install --no-cache-dir 'cellpose[gui]==3.1.1.2' \
+    && /opt/conda/envs/cellpose/bin/pip install --no-cache-dir 'omnipose==1.1.4' \
     && /opt/conda/envs/cellpose/bin/cellpose --version \
     && /opt/conda/bin/conda clean -afy
 

@@ -415,7 +415,7 @@ class MetricsPanelWidget(QWidget):
         self._qa_checkbox.setChecked(False)
         self._qa_checkbox.setToolTip(
             "Enable the QA Reporter agent.\n"
-            "Runs a full audit at project end and generates\n"
+            "Runs a full audit at project end, checks for publication-readiness and generates\n"
             "QA_Checklist_Report.md. Off by default, \n"
             "as it adds significant cost per workflow."
         )
