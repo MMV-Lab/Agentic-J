@@ -482,6 +482,7 @@ class UsageTrackerCallback(BaseCallbackHandler):
         # Protected by _or_lock; updated once per query after the poll delay.
         self._or_conv_cost: float = 0.0
         self._or_lock = threading.Lock()
+        self._or_eager_poll_pending: bool = False
 
     def notify_workspace_created(self, output_str: str):
         """Called by the GUI from handle_event when setup_analysis_workspace completes."""
@@ -627,6 +628,35 @@ class UsageTrackerCallback(BaseCallbackHandler):
 
         threading.Thread(target=_finalize, daemon=True).start()
 
+    def _schedule_eager_or_poll(self, delay: float = 1.5) -> None:
+        """One-shot cost poll triggered by on_llm_end for mid-query UI updates."""
+        with self._or_lock:
+            if self._or_eager_poll_pending:
+                return
+            self._or_eager_poll_pending = True
+
+        fetcher = self._or_fetcher
+
+        def _poll():
+            time.sleep(delay)
+            with self._or_lock:
+                self._or_eager_poll_pending = False
+            session_cost = fetcher.get_session_delta()
+            if session_cost is None:
+                return
+            with self._or_lock:
+                if session_cost > self._or_conv_cost:
+                    increment          = session_cost - self._or_conv_cost
+                    self._or_conv_cost = session_cost
+                else:
+                    increment = 0.0
+            if increment > 0:
+                with self._m._lock:
+                    self._m.cost_usd += increment
+                self._emit()
+
+        threading.Thread(target=_poll, daemon=True).start()
+
     def get_report(self) -> dict:
         return self._logger.build_report()
 
@@ -705,6 +735,9 @@ class UsageTrackerCallback(BaseCallbackHandler):
                 entry["cost_usd"] = round(entry["cost_usd"] + cost, 6)
 
             self._emit()
+
+        if self._or_fetcher:
+            self._schedule_eager_or_poll()
 
     # ── Tool callbacks ─────────────────────────────────────────────────────
 
