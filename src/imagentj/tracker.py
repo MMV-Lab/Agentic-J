@@ -471,7 +471,9 @@ class UsageTrackerCallback(BaseCallbackHandler):
         self._q_model_breakdown: dict[str, dict] = {}
         # {"model_name": {"input": int, "output": int, "cost": float}}
         self._q_tool_log: list[dict] = []
-        # [{"tool": str, "status": "ok"|"error"|"soft_error"}]
+         # [{"tool": str, "status": "ok"|"error"|"soft_error", "detail": str|None, "code_preview": str|None}]
+
+        self._user_feedback: str = ""
 
         # ── OpenRouter session-level cost tracking (only when key is set) ──
         or_key = os.environ.get("OPEN_ROUTER_API_KEY", "")
@@ -513,6 +515,7 @@ class UsageTrackerCallback(BaseCallbackHandler):
             with self._or_lock:
                 self._or_conv_cost = 0.0
         self._bridge.updated.emit(self._m.snapshot())
+        self._user_feedback = ""
 
     def start_query(self, prompt: str, thread_id: str):
         self._thread_id = thread_id
@@ -629,6 +632,96 @@ class UsageTrackerCallback(BaseCallbackHandler):
 
     def get_report(self) -> dict:
         return self._logger.build_report()
+    
+    def set_user_feedback(self, text: str):
+        """Store user-provided feedback text for inclusion in error reports."""
+        self._user_feedback = text.strip()
+
+    def get_error_report(self, include_usage_stats: bool = True) -> dict:
+        """Build a structured error/feedback report for export to the dev team."""
+        import platform, sys as _sys
+        base_report = self._logger.build_report()
+        queries     = base_report.get("conversation", {}).get("queries", [])
+
+        error_events: list[dict] = []
+        for q in queries:
+            for entry in q.get("tool_call_log", []):
+                if entry.get("status") in ("soft_error", "error"):
+                    error_events.append({
+                        "query_timestamp": q.get("timestamp"),
+                        "prompt_preview":  q.get("prompt_preview"),
+                        "tool":            entry.get("tool"),
+                        "status":          entry.get("status"),
+                        "detail":          entry.get("detail"),
+                        "code_preview":    entry.get("code_preview"),
+                    })
+
+        report: dict = {
+            "report_type":   "error_feedback",
+            "generated_at":  time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "thread_id":     self._thread_id,
+            "user_feedback": self._user_feedback,
+            "error_summary": {
+                "total_errors":      sum(1 for e in error_events if e["status"] == "error"),
+                "total_soft_errors": sum(1 for e in error_events if e["status"] == "soft_error"),
+                "affected_queries":  len({e["query_timestamp"] for e in error_events}),
+            },
+            "error_events": error_events,
+            "system_info": {
+                "platform":       platform.platform(),
+                "python_version": _sys.version,
+                "os":             platform.system(),
+                "os_version":     platform.version(),
+                "machine":        platform.machine(),
+            },
+        }
+        if include_usage_stats:
+            report["usage_stats"] = base_report
+        return report
+    
+    def get_error_report_for_thread(
+        self, thread_id: str, include_usage_stats: bool = True
+    ) -> dict:
+        """Same as get_error_report() but for any stored thread, not just the active one."""
+        import platform, sys as _sys
+        base_report = self._logger.build_report(thread_id)
+        queries     = base_report.get("conversation", {}).get("queries", [])
+
+        error_events: list[dict] = []
+        for q in queries:
+            for entry in q.get("tool_call_log", []):
+                if entry.get("status") in ("soft_error", "error"):
+                    error_events.append({
+                        "query_timestamp": q.get("timestamp"),
+                        "prompt_preview":  q.get("prompt_preview"),
+                        "tool":            entry.get("tool"),
+                        "status":          entry.get("status"),
+                        "detail":          entry.get("detail"),
+                        "code_preview":    entry.get("code_preview"),
+                    })
+
+        report: dict = {
+            "report_type":   "error_feedback",
+            "generated_at":  time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "thread_id":     thread_id,
+            "user_feedback": self._user_feedback if thread_id == self._thread_id else "",
+            "error_summary": {
+                "total_errors":      sum(1 for e in error_events if e["status"] == "error"),
+                "total_soft_errors": sum(1 for e in error_events if e["status"] == "soft_error"),
+                "affected_queries":  len({e["query_timestamp"] for e in error_events}),
+            },
+            "error_events": error_events,
+            "system_info": {
+                "platform":       platform.platform(),
+                "python_version": _sys.version,
+                "os":             platform.system(),
+                "os_version":     platform.version(),
+                "machine":        platform.machine(),
+            },
+        }
+        if include_usage_stats:
+            report["usage_stats"] = base_report
+        return report
 
     # ── LLM callbacks ─────────────────────────────────────────────────────
 
@@ -712,9 +805,46 @@ class UsageTrackerCallback(BaseCallbackHandler):
         tool_name = (serialized or {}).get("name", "unknown")
         with self._m._lock:
             self._m.tool_calls += 1
+        # For execution tools, extract the full script code so it appears in error reports
+        code_preview = None
+        if tool_name in _EXECUTION_TOOLS:
+            try:
+                # LangChain may pass input_str as valid JSON or as Python dict repr
+                # (single-quoted keys). Try JSON first, then ast.literal_eval as fallback.
+                if isinstance(input_str, dict):
+                    args = input_str
+                elif isinstance(input_str, str):
+                    try:
+                        args = json.loads(input_str)
+                    except (json.JSONDecodeError, ValueError):
+                        import ast as _ast
+                        parsed = _ast.literal_eval(input_str)
+                        args = parsed if isinstance(parsed, dict) else {}
+                else:
+                    args = {}
+                if "code" in args:
+                    # run_script_safe / run_python_code — code is inline
+                    code_preview = args["code"]
+                elif "directory" in args and "filename" in args:
+                    # execute_script — code is on disk
+                    fpath = os.path.join(args["directory"], args["filename"])
+                    try:
+                        with open(fpath, "r", encoding="utf-8") as _fh:
+                            code_preview = _fh.read()
+                    except Exception:
+                        code_preview = f"<could not read {fpath}>"
+            except Exception:
+                pass
+
         # log the tool call — status filled in by on_tool_end / on_tool_error
-        self._q_tool_log.append({"tool": tool_name, "status": "ok"})
+        self._q_tool_log.append({
+            "tool":         tool_name,
+            "status":       "ok",
+            "detail":       None,
+            "code_preview": code_preview,
+        })
         self._emit()
+
 
     def on_tool_end(self, output: Any, **kwargs):
         tool_name  = (
@@ -726,18 +856,31 @@ class UsageTrackerCallback(BaseCallbackHandler):
         if tool_name in _EXECUTION_TOOLS and _SOFT_ERROR_RE.search(output_str):
             with self._m._lock:
                 self._m.soft_error_tool_calls += 1
+
+            # Extract a context snippet around the first keyword match
+            match = _SOFT_ERROR_RE.search(output_str)
+            detail_snippet = None
+            if match:
+                start = output_str.rfind("\n", 0, match.start()) + 1
+                end   = output_str.find("\n\n", match.start())
+                end   = end if end != -1 else min(match.start() + 400, len(output_str))
+                detail_snippet = output_str[start:end].strip()[:500]
+
             # update status on the last matching tool log entry
             for entry in reversed(self._q_tool_log):
                 if entry["tool"] == tool_name and entry["status"] == "ok":
                     entry["status"] = "soft_error"
+                    entry["detail"] = detail_snippet
                     break
             self._emit()
 
     def on_tool_error(self, error, **kwargs):
         with self._m._lock:
             self._m.failed_tool_calls += 1
+        detail = str(error)[:500] if error is not None else None
         if self._q_tool_log:
             self._q_tool_log[-1]["status"] = "error"
+            self._q_tool_log[-1]["detail"] = detail
         self._emit()
 
     def _emit(self):

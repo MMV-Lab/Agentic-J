@@ -1,0 +1,18 @@
+__pycache__
+**/__pycache__
+*.pyc
+.git
+.gitignore
+src/config/keys.py
+.env
+qdrant_data/
+*.log
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+# Models are bind-mounted at runtime — do not send to build context
+models/
+models.zip
