@@ -1218,7 +1218,10 @@ class ImageJAgentGUI(QWidget):
                     continue
 
                 # ── AI text (supervisor speaking to user) ─────────────────────
-                if content and not tool_calls:
+                # Show content whenever present — including when tool_calls is also
+                # set (the supervisor's MANDATORY NARRATION comes through as a
+                # message with both content and tool_calls on the same object).
+                if content:
                     self._stop_heartbeat()
                     self._status_bubble = None
 

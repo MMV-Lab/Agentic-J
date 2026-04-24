@@ -175,6 +175,7 @@ llm_supervisor = ChatOpenAI(
     api_key=api_key,
     base_url=base_url,
     temperature=0.,
+    reasoning_effort="low",
     verbose=True,
     callbacks=[shared_tracker],
 )
