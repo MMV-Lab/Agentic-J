@@ -1,6 +1,7 @@
 FROM continuumio/miniconda3:latest AS base-cpu
 ENV DEBIAN_FRONTEND=noninteractive
 FROM base-cpu AS cpu
+ARG TARGETARCH
 
 # ── Core system dependencies (rarely change) ─────────────────────────────────
 # Split from fonts to preserve cache when adding new fonts
@@ -26,7 +27,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     #                       JOCL needs for dlopen("libOpenCL.so") to succeed
     pocl-opencl-icd ocl-icd-libopencl1 ocl-icd-opencl-dev \
     # Utilities
-    wget unzip procps curl \
+    wget unzip procps curl build-essential cmake ninja-build \
     # Locale support — ilastik4ij sets LC_ALL=en_US.UTF-8 in the subprocess
     # environment; without this the locale warning is printed to every log line
     locales \
@@ -34,13 +35,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Install Fiji ──────────────────────────────────────────────────────────────
-RUN wget -q https://downloads.imagej.net/fiji/latest/fiji-latest-linux64-jdk.zip -O /tmp/fiji.zip \
+RUN set -e; \
+    if [ "$TARGETARCH" = "arm64" ]; then \
+        FIJI_ZIP=fiji-latest-linux-arm64-jdk.zip; \
+        FIJI_BINARY=fiji-linux-arm64; \
+    else \
+        FIJI_ZIP=fiji-latest-linux64-jdk.zip; \
+        FIJI_BINARY=fiji-linux-x64; \
+    fi; \
+    wget -q "https://downloads.imagej.net/fiji/latest/${FIJI_ZIP}" -O /tmp/fiji.zip \
     && unzip -q /tmp/fiji.zip -d /opt \
     && rm /tmp/fiji.zip \
     # Rename to .app to match standard ENV variables if you have them
     && mv /opt/Fiji /opt/Fiji.app \
-    # The actual binary name is fiji-linux-x64
-    && chmod +x /opt/Fiji.app/fiji-linux-x64
+    && chmod +x "/opt/Fiji.app/${FIJI_BINARY}" /opt/Fiji.app/fiji
 
 # ── Install plugins via update sites ─────────────────────────────────────────
 # Order matters: TensorFlow → CSBDeep → StarDist (dependency chain).
@@ -69,10 +77,10 @@ RUN printf '%s\n' \
     'BioVoxxel-3D-Box http://sites.imagej.net/bv3dbox/'\
     > /tmp/sites.txt \
     && while read -r name url; do \
-        DISPLAY="" /opt/Fiji.app/fiji-linux-x64 --headless --update add-update-site "$name" "$url" || true; \
+        DISPLAY="" /opt/Fiji.app/fiji --headless --update add-update-site "$name" "$url" || true; \
     done < /tmp/sites.txt \
     && rm /tmp/sites.txt \
-    && /opt/Fiji.app/fiji-linux-x64 --headless --update update
+    && /opt/Fiji.app/fiji --headless --update update
 
 # ── Apply staged updates into jars/ and plugins/ ─────────────────────────────
 # --update update only STAGES files into update/ — it does not apply them.
@@ -229,10 +237,16 @@ RUN /opt/conda/bin/conda create -n cellpose4 python=3.11 -y \
 # Python 3.11 + TF 2.15 is the most stable combo for CSBDeep
 # (uses tf.compat.v1 graph APIs, which became fragile in TF 2.17+).
 # numpy<2 required — NumPy 2.0 breaks csbdeep's C-extension assumptions.
-# tensorflow-cpu used here (CPU image); swap for tensorflow==2.15.* on GPU.
-RUN /opt/conda/bin/conda create -n stardist python=3.11 -y \
+# BuildKit provides TARGETARCH; arm64 uses the linux/aarch64 TensorFlow package
+# path, while amd64 keeps tensorflow-cpu for native x86_64 hosts.
+RUN if [ "$TARGETARCH" = "arm64" ]; then \
+        TF_PACKAGE='tensorflow==2.15.*'; \
+    else \
+        TF_PACKAGE='tensorflow-cpu==2.15.*'; \
+    fi \
+    && /opt/conda/bin/conda create -n stardist python=3.11 -y \
     && /opt/conda/envs/stardist/bin/pip install --no-cache-dir \
-        "tensorflow-cpu==2.15.*" \
+        "$TF_PACKAGE" \
         "csbdeep>=0.7.4" \
         "stardist>=0.9" \
         "numpy<2" \
@@ -304,7 +318,7 @@ RUN mkdir -p /home/imagentj/.imagej \
         > /home/imagentj/.imagej/trackmate-conda.prefs \
     && chown -R imagentj:imagentj /home/imagentj/.imagej
 
-RUN mkdir -p /app/qdrant_data /home/imagentj/.cellpose \
+RUN mkdir -p /app/qdrant_data /home/imagentj/.cellpose /home/imagentj/.cache \
     && chown -R imagentj:imagentj /app /home/imagentj /app/qdrant_data \
     && chown -R imagentj:imagentj /opt/Fiji.app \
     && chown -R imagentj:imagentj /opt/appose
