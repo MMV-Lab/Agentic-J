@@ -266,12 +266,10 @@ RUN mkdir -p /opt/appose \
 # TrackMate-Cellpose hardcodes the micromamba path. Older versions use
 # /usr/local/opt/micromamba/bin/micromamba; newer versions use /opt/micromamba/bin/micromamba.
 # Install the shim at both locations so either version works.
-COPY micromamba_shim.sh /usr/local/opt/micromamba/bin/micromamba
-RUN chmod +x /usr/local/opt/micromamba/bin/micromamba \
-    && ln -sf micromamba /usr/local/opt/micromamba/bin/conda \
+COPY --chmod=755 micromamba_shim.sh /usr/local/opt/micromamba/bin/micromamba
+RUN ln -sf micromamba /usr/local/opt/micromamba/bin/conda \
     && mkdir -p /opt/micromamba/bin \
     && cp /usr/local/opt/micromamba/bin/micromamba /opt/micromamba/bin/micromamba \
-    && chmod +x /opt/micromamba/bin/micromamba \
     && ln -sf micromamba /opt/micromamba/bin/conda
 
 # ── Fonts (separate layer - changes here won't invalidate conda cache) ───────
@@ -328,8 +326,7 @@ ENV JAVA_HOME=/opt/conda/envs/local_imagent_J
 ENV HOME=/home/imagentj
 
 
-COPY docker-entrypoint.sh /docker-entrypoint.sh
-RUN chmod +x /docker-entrypoint.sh
+COPY --chmod=755 docker-entrypoint.sh /docker-entrypoint.sh
 
 EXPOSE 6080
 
