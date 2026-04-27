@@ -1,6 +1,6 @@
 services:
   imagentj:
-    image: ${IMAGENTJ_IMAGE:-imagentj:cpu}
+    image: ${IMAGENTJ_IMAGE:-imagentj:cpu-mac-test}
     # Do not pin platform here: Docker/BuildKit builds for the host architecture
     # by default, and the Dockerfile routes arch-specific steps via TARGETARCH.
     build:

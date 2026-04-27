@@ -122,7 +122,12 @@ RUN set -e \
     && $JAVA_BIN  -cp "/tmp/patch-classes:$JAVASSIST" PatchStarDist \
     && rm -rf /tmp/patch-classes /tmp/stardist-patched-classes /tmp/PatchStarDist.java \
               /tmp/javassist.jar 2>/dev/null || true \
-    && echo "[patch] TrackMate-StarDist 2.0.0 ClassCastException fix applied"
+    && echo "[patch] TrackMate-StarDist 2.0.0 ClassCastException fix applied" \
+    # Save a copy of the patched JAR outside the fiji_jars volume mount point.
+    # The entrypoint uses this to re-apply the patch after volume seeding, because
+    # _seed_volume skips existing files so the unpatched JAR persists across rebuilds.
+    && mkdir -p /opt/fiji-patches \
+    && cp /opt/Fiji.app/jars/TrackMate-StarDist-2.0.0.jar /opt/fiji-patches/TrackMate-StarDist-2.0.0.jar.patched
 
 # ── Remove SPIM_Registration.jar (superseded by BigStitcher's multiview-reconstruction) ──
 # BigStitcher installs multiview-reconstruction.jar which registers the same menu
@@ -213,12 +218,17 @@ ENV CONDA_DEFAULT_ENV=local_imagent_J
 # Omnipose 1.x is built on cellpose 3.x, so they share one env.
 # The micromamba shim routes both '-n cellpose' and '-n omnipose' here.
 RUN /opt/conda/bin/conda create -n cellpose python=3.10 -y \
-    && /opt/conda/envs/cellpose/bin/pip install --no-cache-dir \
-        torch torchvision --index-url https://download.pytorch.org/whl/cpu \
+    && if [ "$TARGETARCH" = "arm64" ]; then \
+        /opt/conda/envs/cellpose/bin/pip install --no-cache-dir torch torchvision; \
+    else \
+        /opt/conda/envs/cellpose/bin/pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu; \
+    fi \
     && /opt/conda/envs/cellpose/bin/pip install --no-cache-dir 'cellpose[gui]==3.1.1.2' \
     && /opt/conda/envs/cellpose/bin/pip install --no-cache-dir 'omnipose==1.1.4' \
     && /opt/conda/envs/cellpose/bin/cellpose --version \
-    && /opt/conda/bin/conda clean -afy
+    && /opt/conda/bin/conda clean -afy \
+    && printf '#!/bin/bash\nexec /opt/conda/envs/cellpose/bin/cellpose "$@"\n' > /opt/conda/bin/cellpose \
+    && chmod +x /opt/conda/bin/cellpose
 
 # ── Conda env: cellpose4  (Cellpose 4.x + SAM, served by TrackMate Cellpose-SAM) ──
 # Separate env so cellpose 3.x (regular detection) and 4.x (SAM) can coexist.
@@ -226,8 +236,11 @@ RUN /opt/conda/bin/conda create -n cellpose python=3.10 -y \
 # selects 'cellpose4' in the Cellpose-SAM detector panel.
 # The micromamba shim routes '-n cellpose4' → /opt/conda/envs/cellpose4.
 RUN /opt/conda/bin/conda create -n cellpose4 python=3.11 -y \
-    && /opt/conda/envs/cellpose4/bin/pip install --no-cache-dir \
-        torch torchvision --index-url https://download.pytorch.org/whl/cpu \
+    && if [ "$TARGETARCH" = "arm64" ]; then \
+        /opt/conda/envs/cellpose4/bin/pip install --no-cache-dir torch torchvision; \
+    else \
+        /opt/conda/envs/cellpose4/bin/pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu; \
+    fi \
     && /opt/conda/envs/cellpose4/bin/pip install --no-cache-dir 'cellpose[gui]>=4.0' \
     && /opt/conda/envs/cellpose4/bin/cellpose --version \
     && /opt/conda/bin/conda clean -afy
