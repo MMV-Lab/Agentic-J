@@ -382,6 +382,17 @@ ENV QT_QPA_PLATFORM=xcb
 ENV JAVA_HOME=/opt/conda/envs/local_imagent_J
 ENV HOME=/home/imagentj
 
+# ── noVNC: default scaling mode → Local Scaling ──────────────────────────────
+# noVNC stores the resize/scaling preference in the browser's localStorage.
+# Patching the default in ui.js sets it for every fresh browser session without
+# the user needing to open the settings panel.
+RUN NOVNC_UI=/usr/share/novnc/app/ui.js; \
+    if [ -f "$NOVNC_UI" ]; then \
+        sed -i "s/initSetting('resize', 'off')/initSetting('resize', 'scale')/g" "$NOVNC_UI" \
+        && echo "[novnc] Default scaling mode set to 'scale' (Local Scaling)"; \
+    else \
+        echo "[novnc] WARNING: ui.js not found at $NOVNC_UI — scaling default not patched"; \
+    fi
 
 COPY docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
