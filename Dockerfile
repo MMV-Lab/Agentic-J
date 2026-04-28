@@ -202,6 +202,34 @@ RUN ls /opt/Fiji.app/jars/csbdeep-*.jar \
     && echo "OK: csbdeep and StarDist_ JARs verified" \
     || { echo "ERROR: CSBDeep or StarDist JARs missing — Maven download failed"; exit 1; }
 
+# ── For aarch64, install CSBDeep linux/arm64 TensorFlow Java single-JAR patch ────────────
+# The upstream CSBDeep Fiji JAR depends on TensorFlow Java 1.x JNI artifacts
+# that do not ship linux/aarch64 native libraries. Use the prebuilt single JAR
+# with an isolated TensorFlow Java 1.1.0 runtime (TensorFlow core 2.18.0)
+# bundled inside.
+ARG TARGETARCH
+ARG CSBDEEP_TFJAVA_JAR_URL="https://github.com/audreyeternal/CSBDeep/releases/download/csbdeep-tfjava-arm64-v0.6.0/csbdeep-0.6.0-tfjava-linux-arm64.jar"
+ARG CSBDEEP_TFJAVA_JAR_SHA256="065702602843af513ebcff8f423903d33755e6d2285456360f6a286444d8704e"
+RUN set -e; \
+    arch="${TARGETARCH:-$(uname -m)}"; \
+    case "$arch" in \
+        arm64|aarch64) \
+            echo "[csbdeep] Installing TensorFlow Java linux/arm64 single-JAR patch"; \
+            wget -q -O /tmp/csbdeep-0.6.0-tfjava-linux-arm64.jar "$CSBDEEP_TFJAVA_JAR_URL"; \
+            echo "$CSBDEEP_TFJAVA_JAR_SHA256  /tmp/csbdeep-0.6.0-tfjava-linux-arm64.jar" | sha256sum -c -; \
+            cp /tmp/csbdeep-0.6.0-tfjava-linux-arm64.jar /opt/Fiji.app/jars/csbdeep-0.6.0.jar; \
+            mkdir -p /opt/fiji-patches; \
+            cp /tmp/csbdeep-0.6.0-tfjava-linux-arm64.jar /opt/fiji-patches/csbdeep-0.6.0-tfjava-linux-arm64.jar; \
+            rm -f /tmp/csbdeep-0.6.0-tfjava-linux-arm64.jar; \
+            ;; \
+        amd64|x86_64) \
+            echo "[csbdeep] Skipping linux/arm64 CSBDeep patch on $arch"; \
+            ;; \
+        *) \
+            echo "[csbdeep] Skipping linux/arm64 CSBDeep patch on unsupported architecture: $arch"; \
+            ;; \
+    esac
+
 ENV FIJI_PATH=/opt/Fiji.app
 
 # ── Conda environment (heaviest layer - keep stable) ─────────────────────────
