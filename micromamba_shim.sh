@@ -40,11 +40,23 @@ if [ "$CMD" = "run" ]; then
         exec /opt/conda/bin/conda run --prefix /opt/conda/envs/"$ENV_NAME" "${ARGS[@]}"
     fi
 elif [ "$CMD" = "env" ] && [ "${2:-}" = "list" ]; then
-    # Print real env list, then inject a virtual 'omnipose' entry so TrackMate
-    # shows it in the dropdown. The run branch above routes '-n omnipose' to
-    # the cellpose env where omnipose is actually installed.
-    /opt/conda/bin/conda env list
-    echo "omnipose                 /opt/conda/envs/cellpose"
+    # Emit micromamba-style env list output — TrackMate-Cellpose parses this format.
+    # conda env list format differs (uses '#' comment headers) and may not be parsed.
+    # We emit the header micromamba uses, then list envs from conda, then add the
+    # virtual 'omnipose' entry so it appears in the TrackMate dropdown.
+    printf "  Name                  Active  Path\n"
+    printf -- "─%.0s" {1..62}; printf "\n"
+    /opt/conda/bin/conda env list --no-pip 2>/dev/null | grep -v "^#" | grep -v "^$" | while read -r name rest; do
+        active=" "
+        if echo "$rest" | grep -q "\*"; then
+            active="*"
+            path=$(echo "$rest" | sed 's/\*.*//' | tr -d ' ')
+        else
+            path=$(echo "$rest" | tr -d ' ')
+        fi
+        printf "  %-22s%-8s%s\n" "$name" "$active" "$path"
+    done
+    printf "  %-22s%-8s%s\n" "cellpose" " " "/opt/conda/envs/cellpose"
 else
     exec /opt/conda/bin/conda "$@"
 fi

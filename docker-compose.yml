@@ -1,10 +1,11 @@
 services:
   imagentj:
-    image: imagentj:cpu #-with-chat-history
-    # Fiji has no Linux arm64 binary — pin to amd64 so Apple Silicon uses Rosetta
-    platform: linux/amd64
+    image: ${IMAGENTJ_IMAGE:-imagentj:cpu-mac-test}
+    # Do not pin platform here: Docker/BuildKit builds for the host architecture
+    # by default, and the Dockerfile routes arch-specific steps via TARGETARCH.
     build:
       context: .
+      dockerfile: ${IMAGENTJ_DOCKERFILE:-Dockerfile}
       target: cpu
     ports:
       # Bind to localhost only by default for security

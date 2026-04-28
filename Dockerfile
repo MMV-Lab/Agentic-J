@@ -1,6 +1,7 @@
 FROM continuumio/miniconda3:latest AS base-cpu
 ENV DEBIAN_FRONTEND=noninteractive
 FROM base-cpu AS cpu
+ARG TARGETARCH
 
 # ── Core system dependencies (rarely change) ─────────────────────────────────
 # Split from fonts to preserve cache when adding new fonts
@@ -26,7 +27,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     #                       JOCL needs for dlopen("libOpenCL.so") to succeed
     pocl-opencl-icd ocl-icd-libopencl1 ocl-icd-opencl-dev \
     # Utilities
-    wget unzip procps curl \
+    wget unzip procps curl build-essential cmake ninja-build \
     # Locale support — ilastik4ij sets LC_ALL=en_US.UTF-8 in the subprocess
     # environment; without this the locale warning is printed to every log line
     locales \
@@ -34,13 +35,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Install Fiji ──────────────────────────────────────────────────────────────
-RUN wget -q https://downloads.imagej.net/fiji/latest/fiji-latest-linux64-jdk.zip -O /tmp/fiji.zip \
+RUN set -e; \
+    if [ "$TARGETARCH" = "arm64" ]; then \
+        FIJI_ZIP=fiji-latest-linux-arm64-jdk.zip; \
+        FIJI_BINARY=fiji-linux-arm64; \
+    else \
+        FIJI_ZIP=fiji-latest-linux64-jdk.zip; \
+        FIJI_BINARY=fiji-linux-x64; \
+    fi; \
+    wget -q "https://downloads.imagej.net/fiji/latest/${FIJI_ZIP}" -O /tmp/fiji.zip \
     && unzip -q /tmp/fiji.zip -d /opt \
     && rm /tmp/fiji.zip \
     # Rename to .app to match standard ENV variables if you have them
     && mv /opt/Fiji /opt/Fiji.app \
-    # The actual binary name is fiji-linux-x64
-    && chmod +x /opt/Fiji.app/fiji-linux-x64
+    && chmod +x "/opt/Fiji.app/${FIJI_BINARY}" /opt/Fiji.app/fiji
 
 # ── Install plugins via update sites ─────────────────────────────────────────
 # Order matters: TensorFlow → CSBDeep → StarDist (dependency chain).
@@ -69,10 +77,10 @@ RUN printf '%s\n' \
     'BioVoxxel-3D-Box http://sites.imagej.net/bv3dbox/'\
     > /tmp/sites.txt \
     && while read -r name url; do \
-        DISPLAY="" /opt/Fiji.app/fiji-linux-x64 --headless --update add-update-site "$name" "$url" || true; \
+        DISPLAY="" /opt/Fiji.app/fiji --headless --update add-update-site "$name" "$url" || true; \
     done < /tmp/sites.txt \
     && rm /tmp/sites.txt \
-    && /opt/Fiji.app/fiji-linux-x64 --headless --update update
+    && /opt/Fiji.app/fiji --headless --update update
 
 # ── Apply staged updates into jars/ and plugins/ ─────────────────────────────
 # --update update only STAGES files into update/ — it does not apply them.
@@ -114,7 +122,12 @@ RUN set -e \
     && $JAVA_BIN  -cp "/tmp/patch-classes:$JAVASSIST" PatchStarDist \
     && rm -rf /tmp/patch-classes /tmp/stardist-patched-classes /tmp/PatchStarDist.java \
               /tmp/javassist.jar 2>/dev/null || true \
-    && echo "[patch] TrackMate-StarDist 2.0.0 ClassCastException fix applied"
+    && echo "[patch] TrackMate-StarDist 2.0.0 ClassCastException fix applied" \
+    # Save a copy of the patched JAR outside the fiji_jars volume mount point.
+    # The entrypoint uses this to re-apply the patch after volume seeding, because
+    # _seed_volume skips existing files so the unpatched JAR persists across rebuilds.
+    && mkdir -p /opt/fiji-patches \
+    && cp /opt/Fiji.app/jars/TrackMate-StarDist-2.0.0.jar /opt/fiji-patches/TrackMate-StarDist-2.0.0.jar.patched
 
 # ── Remove SPIM_Registration.jar (superseded by BigStitcher's multiview-reconstruction) ──
 # BigStitcher installs multiview-reconstruction.jar which registers the same menu
@@ -189,6 +202,34 @@ RUN ls /opt/Fiji.app/jars/csbdeep-*.jar \
     && echo "OK: csbdeep and StarDist_ JARs verified" \
     || { echo "ERROR: CSBDeep or StarDist JARs missing — Maven download failed"; exit 1; }
 
+# ── For aarch64, install CSBDeep linux/arm64 TensorFlow Java single-JAR patch ────────────
+# The upstream CSBDeep Fiji JAR depends on TensorFlow Java 1.x JNI artifacts
+# that do not ship linux/aarch64 native libraries. Use the prebuilt single JAR
+# with an isolated TensorFlow Java 1.1.0 runtime (TensorFlow core 2.18.0)
+# bundled inside.
+ARG TARGETARCH
+ARG CSBDEEP_TFJAVA_JAR_URL="https://github.com/audreyeternal/CSBDeep/releases/download/csbdeep-tfjava-arm64-v0.6.0/csbdeep-0.6.0-tfjava-linux-arm64.jar"
+ARG CSBDEEP_TFJAVA_JAR_SHA256="065702602843af513ebcff8f423903d33755e6d2285456360f6a286444d8704e"
+RUN set -e; \
+    arch="${TARGETARCH:-$(uname -m)}"; \
+    case "$arch" in \
+        arm64|aarch64) \
+            echo "[csbdeep] Installing TensorFlow Java linux/arm64 single-JAR patch"; \
+            wget -q -O /tmp/csbdeep-0.6.0-tfjava-linux-arm64.jar "$CSBDEEP_TFJAVA_JAR_URL"; \
+            echo "$CSBDEEP_TFJAVA_JAR_SHA256  /tmp/csbdeep-0.6.0-tfjava-linux-arm64.jar" | sha256sum -c -; \
+            cp /tmp/csbdeep-0.6.0-tfjava-linux-arm64.jar /opt/Fiji.app/jars/csbdeep-0.6.0.jar; \
+            mkdir -p /opt/fiji-patches; \
+            cp /tmp/csbdeep-0.6.0-tfjava-linux-arm64.jar /opt/fiji-patches/csbdeep-0.6.0-tfjava-linux-arm64.jar; \
+            rm -f /tmp/csbdeep-0.6.0-tfjava-linux-arm64.jar; \
+            ;; \
+        amd64|x86_64) \
+            echo "[csbdeep] Skipping linux/arm64 CSBDeep patch on $arch"; \
+            ;; \
+        *) \
+            echo "[csbdeep] Skipping linux/arm64 CSBDeep patch on unsupported architecture: $arch"; \
+            ;; \
+    esac
+
 ENV FIJI_PATH=/opt/Fiji.app
 
 # ── Conda environment (heaviest layer - keep stable) ─────────────────────────
@@ -205,12 +246,17 @@ ENV CONDA_DEFAULT_ENV=local_imagent_J
 # Omnipose 1.x is built on cellpose 3.x, so they share one env.
 # The micromamba shim routes both '-n cellpose' and '-n omnipose' here.
 RUN /opt/conda/bin/conda create -n cellpose python=3.10 -y \
-    && /opt/conda/envs/cellpose/bin/pip install --no-cache-dir \
-        torch torchvision --index-url https://download.pytorch.org/whl/cpu \
+    && if [ "$TARGETARCH" = "arm64" ]; then \
+        /opt/conda/envs/cellpose/bin/pip install --no-cache-dir torch torchvision; \
+    else \
+        /opt/conda/envs/cellpose/bin/pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu; \
+    fi \
     && /opt/conda/envs/cellpose/bin/pip install --no-cache-dir 'cellpose[gui]==3.1.1.2' \
     && /opt/conda/envs/cellpose/bin/pip install --no-cache-dir 'omnipose==1.1.4' \
     && /opt/conda/envs/cellpose/bin/cellpose --version \
-    && /opt/conda/bin/conda clean -afy
+    && /opt/conda/bin/conda clean -afy \
+    && printf '#!/bin/bash\nexec /opt/conda/envs/cellpose/bin/cellpose "$@"\n' > /opt/conda/bin/cellpose \
+    && chmod +x /opt/conda/bin/cellpose
 
 # ── Conda env: cellpose4  (Cellpose 4.x + SAM, served by TrackMate Cellpose-SAM) ──
 # Separate env so cellpose 3.x (regular detection) and 4.x (SAM) can coexist.
@@ -218,8 +264,11 @@ RUN /opt/conda/bin/conda create -n cellpose python=3.10 -y \
 # selects 'cellpose4' in the Cellpose-SAM detector panel.
 # The micromamba shim routes '-n cellpose4' → /opt/conda/envs/cellpose4.
 RUN /opt/conda/bin/conda create -n cellpose4 python=3.11 -y \
-    && /opt/conda/envs/cellpose4/bin/pip install --no-cache-dir \
-        torch torchvision --index-url https://download.pytorch.org/whl/cpu \
+    && if [ "$TARGETARCH" = "arm64" ]; then \
+        /opt/conda/envs/cellpose4/bin/pip install --no-cache-dir torch torchvision; \
+    else \
+        /opt/conda/envs/cellpose4/bin/pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu; \
+    fi \
     && /opt/conda/envs/cellpose4/bin/pip install --no-cache-dir 'cellpose[gui]>=4.0' \
     && /opt/conda/envs/cellpose4/bin/cellpose --version \
     && /opt/conda/bin/conda clean -afy
@@ -229,10 +278,16 @@ RUN /opt/conda/bin/conda create -n cellpose4 python=3.11 -y \
 # Python 3.11 + TF 2.15 is the most stable combo for CSBDeep
 # (uses tf.compat.v1 graph APIs, which became fragile in TF 2.17+).
 # numpy<2 required — NumPy 2.0 breaks csbdeep's C-extension assumptions.
-# tensorflow-cpu used here (CPU image); swap for tensorflow==2.15.* on GPU.
-RUN /opt/conda/bin/conda create -n stardist python=3.11 -y \
+# BuildKit provides TARGETARCH; arm64 uses the linux/aarch64 TensorFlow package
+# path, while amd64 keeps tensorflow-cpu for native x86_64 hosts.
+RUN if [ "$TARGETARCH" = "arm64" ]; then \
+        TF_PACKAGE='tensorflow==2.15.*'; \
+    else \
+        TF_PACKAGE='tensorflow-cpu==2.15.*'; \
+    fi \
+    && /opt/conda/bin/conda create -n stardist python=3.11 -y \
     && /opt/conda/envs/stardist/bin/pip install --no-cache-dir \
-        "tensorflow-cpu==2.15.*" \
+        "$TF_PACKAGE" \
         "csbdeep>=0.7.4" \
         "stardist>=0.9" \
         "numpy<2" \
@@ -304,7 +359,7 @@ RUN mkdir -p /home/imagentj/.imagej \
         > /home/imagentj/.imagej/trackmate-conda.prefs \
     && chown -R imagentj:imagentj /home/imagentj/.imagej
 
-RUN mkdir -p /app/qdrant_data /home/imagentj/.cellpose \
+RUN mkdir -p /app/qdrant_data /home/imagentj/.cellpose /home/imagentj/.cache \
     && chown -R imagentj:imagentj /app /home/imagentj /app/qdrant_data \
     && chown -R imagentj:imagentj /opt/Fiji.app \
     && chown -R imagentj:imagentj /opt/appose
