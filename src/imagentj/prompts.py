@@ -703,6 +703,8 @@ imagej_coder_prompt = """
    - API VALIDATION: Use `inspect_java_class` if uncertain about a method signature.
    - Use `WaitForUserDialog` instead of `GenericDialog` for simple pauses.
    - Retrieve image via `#@ ImagePlus imp` or `IJ.openImage(path)
+   - If `imp.getType() == ImagePlus.COLOR_RGB`, split into R/G/B with `ChannelSplitter` before the channel-count check.
+
 
     ────────────────────────────────────────
     STRING & REGEX SAFETY
