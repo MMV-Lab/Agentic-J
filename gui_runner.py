@@ -8,12 +8,17 @@ import json
 import time
 import html as html_module
 import logging
+import smtplib
+import ssl
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.application import MIMEApplication
 import jpype
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout,
     QTextEdit, QPushButton, QLabel, QListWidget,
     QSplitter, QScrollArea, QMessageBox, QListWidgetItem,
-    QSizePolicy, QFrame, QGroupBox, QFileDialog,
+    QSizePolicy, QFrame, QGroupBox,
     QDialog, QDialogButtonBox, QPlainTextEdit, QCheckBox,
 )
 from PySide6.QtCore import QObject, Signal, Slot, QThread, Qt, QSize, QEvent, QTimer
@@ -471,6 +476,62 @@ class MetricsPanelWidget(QWidget):
         self._lbl_soft.setText(  f("Soft errors", str(data["soft_error_tool_calls"]), "#e67e22"))
 
 # ---------------------------------------------------------------------------
+# Email helper
+# ---------------------------------------------------------------------------
+
+_REPORT_EMAIL = "agentj.help@gmail.com"
+
+def _send_report_email(subject: str, body: str, attachments: list[tuple[str, bytes]]) -> None:
+    """Send a report email from agentj.help@gmail.com to itself via Gmail SMTP.
+
+    Raises RuntimeError if GMAIL_APP_PASSWORD is not set or sending fails.
+    attachments: list of (filename, bytes) pairs.
+    """
+    app_password = os.environ.get("GMAIL_APP_PASSWORD", "").replace(" ", "")
+    if not app_password:
+        raise RuntimeError(
+            "GMAIL_APP_PASSWORD is not set in your .env file.\n"
+            "Generate an App Password at:\n"
+            "  Google Account → Security → 2-Step Verification → App Passwords"
+        )
+
+    msg = MIMEMultipart()
+    msg["From"] = _REPORT_EMAIL
+    msg["To"] = _REPORT_EMAIL
+    msg["Subject"] = subject
+    msg.attach(MIMEText(body, "plain"))
+
+    for filename, data in attachments:
+        part = MIMEApplication(data, Name=filename)
+        part["Content-Disposition"] = f'attachment; filename="{filename}"'
+        msg.attach(part)
+
+    ctx = ssl.create_default_context()
+    import socket
+
+    # Resolve to IPv4 — Docker containers often lack IPv6 (errno 97).
+    smtp_ip = socket.getaddrinfo("smtp.gmail.com", 587, socket.AF_INET)[0][4][0]
+    smtp_ip_465 = socket.getaddrinfo("smtp.gmail.com", 465, socket.AF_INET)[0][4][0]
+
+    raw = msg.as_bytes()
+    try:
+        # Port 587 with STARTTLS (preferred)
+        with smtplib.SMTP(smtp_ip, 587, timeout=15) as smtp:
+            smtp._host = "smtp.gmail.com"  # starttls verifies against hostname, not IP
+            smtp.ehlo()
+            smtp.starttls(context=ctx)
+            smtp.ehlo()
+            smtp.login(_REPORT_EMAIL, app_password)
+            smtp.sendmail(_REPORT_EMAIL, _REPORT_EMAIL, raw)
+    except (OSError, smtplib.SMTPException):
+        # Port 465 implicit TLS fallback (some networks block 587)
+        with smtplib.SMTP_SSL(smtp_ip_465, 465, context=ctx, timeout=15) as smtp:
+            smtp._host = "smtp.gmail.com"
+            smtp.login(_REPORT_EMAIL, app_password)
+            smtp.sendmail(_REPORT_EMAIL, _REPORT_EMAIL, raw)
+
+
+# ---------------------------------------------------------------------------
 # Feedback / Error-Report dialog
 # ---------------------------------------------------------------------------
 
@@ -555,7 +616,7 @@ class FeedbackDialog(QDialog):
         layout.addWidget(info)
 
         btn_box = QDialogButtonBox()
-        btn_box.addButton("Save Report\u2026", QDialogButtonBox.AcceptRole)
+        btn_box.addButton("Send Report\u2026", QDialogButtonBox.AcceptRole)
         btn_box.addButton("Cancel", QDialogButtonBox.RejectRole)
         btn_box.accepted.connect(self._on_export)
         btn_box.rejected.connect(self.reject)
@@ -582,57 +643,58 @@ class FeedbackDialog(QDialog):
 
         include_usage = self._chk_usage.isChecked()
 
-        if len(selected) == 1:
-            # Single conversation → plain JSON
-            report = self._tracker_cb.get_error_report_for_thread(
-                selected[0], include_usage_stats=include_usage
-            )
-        
-            default_name = os.path.expanduser(
-                f"~/imagentj_issue_{time.strftime('%Y%m%d_%H%M%S')}.json"
-            )
-            path, _ = QFileDialog.getSaveFileName(
-                self, "Save Issue Report", default_name,
-                "JSON files (*.json);;All files (*)",
-            )
-            if not path:
-                return
-            try:
-                with open(path, "w", encoding="utf-8") as f:
-                    json.dump(report, f, indent=2, ensure_ascii=False)
-                QMessageBox.information(self, "Report Saved",
-                    f"Issue report saved to:\n{path}\n\nThank you for the feedback!")
-                self.accept()
-            except Exception as e:
-                log.exception(f"Failed to save issue report: {e}")
-                QMessageBox.warning(self, "Save Failed", str(e))
-        else:
-            # Multiple conversations → ZIP
-            default_name = os.path.expanduser(
-                f"~/imagentj_issue_{time.strftime('%Y%m%d_%H%M%S')}.zip"
-            )
-            path, _ = QFileDialog.getSaveFileName(
-                self, "Save Issue Report Bundle", default_name,
-                "ZIP archives (*.zip);;All files (*)",
-            )
-            if not path:
-                return
-            try:
-                import zipfile
-                with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
+        import io, zipfile as _zipfile
+        timestamp = time.strftime('%Y%m%d_%H%M%S')
+        feedback_text = self._text_edit.toPlainText().strip()
+        try:
+            if len(selected) == 1:
+                report = self._tracker_cb.get_error_report_for_thread(
+                    selected[0], include_usage_stats=include_usage
+                )
+                fname = f"report_{selected[0][:8]}_{timestamp}.json"
+                attachments = [(fname, json.dumps(report, indent=2, ensure_ascii=False).encode())]
+            else:
+                buf = io.BytesIO()
+                with _zipfile.ZipFile(buf, "w", _zipfile.ZIP_DEFLATED) as zf:
                     for thread_id in selected:
                         report = self._tracker_cb.get_error_report_for_thread(
                             thread_id, include_usage_stats=include_usage
                         )
-                        fname = f"report_{thread_id[:8]}.json"
-                        zf.writestr(fname, json.dumps(report, indent=2, ensure_ascii=False))
-                QMessageBox.information(self, "Report Saved",
-                    f"Bundle with {len(selected)} conversation(s) saved to:\n{path}"
-                    "\n\nThank you for the feedback!")
-                self.accept()
-            except Exception as e:
-                log.exception(f"Failed to save issue bundle: {e}")
-                QMessageBox.warning(self, "Save Failed", str(e))
+                        zf.writestr(f"report_{thread_id[:8]}.json",
+                                    json.dumps(report, indent=2, ensure_ascii=False))
+                fname = f"imagentj_issue_{timestamp}.zip"
+                attachments = [(fname, buf.getvalue())]
+
+            subject = f"[ImagentJ] Issue Report — {timestamp}"
+            body = f"User feedback:\n{feedback_text or '(none provided)'}\n\nAttached: {len(selected)} conversation(s)."
+            _send_report_email(subject, body, attachments)
+            QMessageBox.information(self, "Report Sent",
+                f"Issue report sent to {_REPORT_EMAIL}.\n\nThank you for the feedback!")
+            self.accept()
+        except Exception as e:
+            log.exception(f"Failed to send issue report: {e}")
+            reply = QMessageBox.warning(
+                self, "Send Failed",
+                f"Could not send the report by email:\n{e}\n\n"
+                "Would you like to save it to a file instead?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes,
+            )
+            if reply == QMessageBox.Yes:
+                default_name = os.path.expanduser(
+                    f"~/imagentj_issue_{time.strftime('%Y%m%d_%H%M%S')}"
+                    f"{'zip' if len(attachments) == 1 and attachments[0][0].endswith('.zip') else 'json'}"
+                )
+                path, _ = QFileDialog.getSaveFileName(
+                    self, "Save Issue Report", default_name,
+                    "All files (*)",
+                )
+                if path:
+                    with open(path, "wb") as f:
+                        f.write(attachments[0][1])
+                    QMessageBox.information(self, "Report Saved",
+                        f"Report saved to:\n{path}\n\nPlease send it manually to {_REPORT_EMAIL}.")
+                    self.accept()
         
 
 
@@ -966,6 +1028,7 @@ class ImageJAgentGUI(QWidget):
     # ------------------------------------------------------------------
 
     def _save_report(self):
+        from PySide6.QtWidgets import QFileDialog
         path, _ = QFileDialog.getSaveFileName(
             self, "Save Usage Report",
             os.path.expanduser("~/imagentj_usage_report.json"),
