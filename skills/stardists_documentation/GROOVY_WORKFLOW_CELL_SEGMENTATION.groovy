@@ -40,7 +40,8 @@
  *   PERCENTILE_BOTTOM  — lower clip for normalisation (default 1.0)
  *   PERCENTILE_TOP     — upper clip for normalisation (default 99.8)
  *   PROB_THRESH        — detection probability threshold (raise to reduce FP)
- *   NMS_THRESH         — NMS overlap threshold (lower to separate touching cells)
+ *   NMS_THRESH         — NMS IoU threshold. Higher = less suppression (touching cells both kept).
+ *                        Lower = more suppression (collapses duplicate detections of one cell).
  *   N_TILES            — increase if Fiji throws an out-of-memory error
  *   EXCLUDE_BOUNDARY   — suppress detections within this many px of image edge
  */
@@ -79,8 +80,9 @@ double  PERCENTILE_TOP      = 99.8      // upper clip percentile for normalisati
 double  PROB_THRESH         = 0.5       // probability threshold (0–1)
                                         // raise (e.g. 0.7) to get fewer, more confident detections
                                         // lower (e.g. 0.3) to detect more, possibly including FP
-double  NMS_THRESH          = 0.4       // non-maximum suppression overlap threshold (0–1)
-                                        // lower (e.g. 0.2) to separate touching cells better
+double  NMS_THRESH          = 0.4       // NMS IoU threshold (0–1). A pair with IoU > this is suppressed.
+                                        // raise (e.g. 0.6) when touching cells are merging into one detection
+                                        // lower (e.g. 0.2) when one cell is split into multiple detections
 
 int     N_TILES             = 1         // increase for large images: 4 (2×2), 9 (3×3), 16 (4×4)
 int     EXCLUDE_BOUNDARY    = 2         // px from image border where detections are suppressed

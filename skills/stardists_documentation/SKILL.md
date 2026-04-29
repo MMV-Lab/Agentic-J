@@ -168,8 +168,8 @@ Two distinct failure modes:
 |-------------|-----|
 | Too many small false positives | Raise `probThresh` (e.g. 0.5 → 0.7) |
 | Real cells being missed | Lower `probThresh` (e.g. 0.5 → 0.3) |
-| Touching nuclei merging into one | Lower `nmsThresh` (e.g. 0.4 → 0.2) |
-| Nuclei split into multiple objects | Raise `nmsThresh` (e.g. 0.4 → 0.6) |
+| Touching nuclei merging into one | Raise `nmsThresh` (e.g. 0.4 → 0.6) — higher IoU threshold = less suppression, so both touching nuclei survive |
+| Nuclei split into multiple objects | Lower `nmsThresh` (e.g. 0.4 → 0.2) — lower IoU threshold = more aggressive suppression, so duplicate detections of the same nucleus collapse |
 | Edge cells missing | Set `excludeBoundary = 0` |
 | Out-of-memory crash | Increase `nTiles` (try 4, 9, or 16) |
 | Model mismatch for image type | Use `Versatile (H&E nuclei)` for histology |
