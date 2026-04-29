@@ -1,6 +1,6 @@
 ---
 name: stardists_documentation
-description: StarDist is a Fiji/ImageJ plugin for cell and nuclei detection using deep-learning star-convex polygon models. Apply pre-trained or custom models to 2D microscopy images. **2D only** — the Fiji plugin has no 3D stack support. Default models only for NUCLEI in fluorescence or H&E histology images. Custom models must be in CSBDeep `.zip` format and compatible with StarDist 2D. See the full documentation for installation, scripting, parameter tuning, and troubleshooting.Read the files listed at the end of this SKILL for verified commands, GUI walkthroughs, scripting examples, and common pitfalls. 
+description: StarDist is a Fiji/ImageJ plugin for cell and nuclei detection using deep-learning star-convex polygon models. Apply pre-trained or custom models to 2D microscopy images. **2D only** — the Fiji plugin has no 3D stack support. Default models only for NUCLEI in fluorescence or H&E histology images. Custom models must be in CSBDeep `.zip` format and compatible with StarDist 2D. See the full documentation for installation, scripting, parameter tuning, and troubleshooting.Read the files listed at the end of this SKILL for verified commands, GUI walkthroughs, scripting examples, and common pitfalls. RGB only for H&E model.
 ---
 
 Install via Fiji update sites: **CSBDeep** + **StarDist** + **TensorFlow** (all three required).
@@ -84,7 +84,7 @@ IJ.log("Cells: " + cellCount)
 |--------|---------|
 | `"Versatile (fluorescent nuclei)"` | Fluorescence DAPI/Hoechst nuclei |
 | `"DSB 2018 (from StarDist 2D paper)"` | Alternative fluorescence model |
-| `"Versatile (H&E nuclei)"` | Brightfield H&E histology nuclei |
+| `"Versatile (H&E nuclei)"` | Brightfield H&E histology nuclei, RGB images|
 | `"Model (.zip) from File"` | Custom model — set `modelFile` to path |
 | `"Model (.zip) from URL"` | Custom model — set `modelFile` to URL |
 
@@ -131,10 +131,14 @@ rm.reset()
 IJ.run("Clear Results", "")
 ```
 
-### Pitfall 5 — Single grayscale channel only (RGB and multi-channel both fail)
+### Pitfall 5 — Single grayscale channel only for certain models (RGB and multi-channel both fail)
 
-The `Versatile (fluorescent nuclei)` model expects a **single-channel grayscale**
-image. Two distinct failure modes:
+The `Versatile (fluorescent nuclei)` model expects a **single-channel grayscale** image.
+
+For H&E, use `Versatile (H&E nuclei)` instead and DO NOT convert RGB for the H&E nuclei model, it expects RGB input.
+
+
+Two distinct failure modes:
 
 1. **RGB images** (`bitDepth == 24`, `type == ImagePlus.COLOR_RGB`) — the detector
    returns a null prediction and the run yields zero ROIs (or throws
@@ -145,8 +149,7 @@ image. Two distinct failure modes:
        IJ.run(imp, "8-bit", "")    // luminosity → single 8-bit channel
    }
    ```
-   For H&E, use `Versatile (H&E nuclei)` instead and **do not** convert — that
-   model expects the original RGB.
+
 
 2. **Multi-channel composites** (`getNChannels() > 1`) — StarDist silently uses
    the first channel. Extract the target channel before running:
