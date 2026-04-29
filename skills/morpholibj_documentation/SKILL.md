@@ -14,6 +14,9 @@ Each step uses a separate, verified MorphoLibJ command. This pipeline is fully s
 (see `GROOVY_WORKFLOW_CELL_SEGMENTATION.groovy`) and has a GUI walkthrough
 (see `UI_WORKFLOW_CELL_SEGMENTATION.md`).
 
+Always determine threshold direction from the image before running Otsu — never hardcode `dark`/`light`."*
+
+
 ---
 
 ## Verified Command Quick Reference
