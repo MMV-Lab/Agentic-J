@@ -13,6 +13,7 @@ Design principles:
 
 import json
 import os
+import tempfile
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -29,16 +30,32 @@ def _ledger_path(project_root: str) -> str:
 
 def _load_ledger(project_root: str) -> dict:
     path = _ledger_path(project_root)
-    if os.path.exists(path):
+    if not os.path.exists(path):
+        return {}
+    try:
         with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
-    return {}
+    except (json.JSONDecodeError, ValueError):
+        # Corrupted or empty file (e.g. from a partial/interrupted write).
+        # Return empty so the caller re-initialises rather than crashing.
+        return {}
 
 
 def _save_ledger(project_root: str, ledger: dict) -> None:
+    # Atomic write: serialise to a temp file in the same directory, then
+    # replace the target. os.replace() is atomic on POSIX, so readers never
+    # see a partially-written or empty file.
     path = _ledger_path(project_root)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(ledger, f, indent=2, ensure_ascii=False)
+    dir_ = os.path.dirname(path)
+    os.makedirs(dir_, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=dir_, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(ledger, f, indent=2, ensure_ascii=False)
+        os.replace(tmp, path)
+    except Exception:
+        os.unlink(tmp)
+        raise
 
 
 def _now_iso() -> str:
