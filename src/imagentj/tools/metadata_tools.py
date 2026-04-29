@@ -504,6 +504,26 @@ class ImageMetadataAnalyzer:
             return {}
         suggestions: Dict[str, Any] = {}
         suggestions['otsu_like_estimate'] = self.intensity_stats['mean'] + self.intensity_stats['std']
+
+        # Background-mode heuristic — drives the "dark" suffix on IJ.setAutoThreshold.
+        # If most pixels are dark (median sits in the lower half of the dynamic range),
+        # the image is bright-foreground-on-dark-background (typical fluorescence) and
+        # the threshold call needs the "dark" suffix. Otherwise (brightfield, H&E,
+        # phase-contrast where objects are dark on bright background) — no suffix.
+        i_min = self.intensity_stats.get('min')
+        i_max = self.intensity_stats.get('max')
+        median = self.intensity_stats.get('median', self.intensity_stats.get('mean'))
+        if i_min is not None and i_max is not None and median is not None and i_max > i_min:
+            mid = (i_min + i_max) / 2.0
+            if median <= mid:
+                suggestions['background_mode']     = 'dark'
+                suggestions['threshold_suffix']    = ' dark'
+                suggestions['threshold_call_hint'] = 'IJ.setAutoThreshold(imp, "Otsu dark")  // bright signal on dark BG'
+            else:
+                suggestions['background_mode']     = 'bright'
+                suggestions['threshold_suffix']    = ''
+                suggestions['threshold_call_hint'] = 'IJ.setAutoThreshold(imp, "Otsu")  // dark signal on bright BG (brightfield/H&E)'
+
         if self.intensity_stats.get('q3') is not None:
             suggestions['threshold_conservative'] = self.intensity_stats['q95']
             suggestions['threshold_moderate']     = self.intensity_stats['q3']
@@ -652,6 +672,19 @@ def _suggest_threshold_from_stats(stats: Dict[str, Any],
         'normalization_range':        [stats['min'], stats['max']],
         'robust_normalization_range': [stats['min'], stats['q99']],
     }
+    # Background-mode heuristic — drives the "dark" suffix on IJ.setAutoThreshold.
+    i_min, i_max, median = stats.get('min'), stats.get('max'), stats.get('median', stats.get('mean'))
+    if i_min is not None and i_max is not None and median is not None and i_max > i_min:
+        mid = (i_min + i_max) / 2.0
+        if median <= mid:
+            suggestions['background_mode']     = 'dark'
+            suggestions['threshold_suffix']    = ' dark'
+            suggestions['threshold_call_hint'] = 'IJ.setAutoThreshold(imp, "Otsu dark")  // bright signal on dark BG'
+        else:
+            suggestions['background_mode']     = 'bright'
+            suggestions['threshold_suffix']    = ''
+            suggestions['threshold_call_hint'] = 'IJ.setAutoThreshold(imp, "Otsu")  // dark signal on bright BG (brightfield/H&E)'
+
     x_info = calibration.get('X')
     if x_info and x_info.get('unit') not in (None, 'pixel'):
         x_scale = x_info['scale']

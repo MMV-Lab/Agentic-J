@@ -713,7 +713,17 @@ imagej_coder_prompt = """
    - API VALIDATION: Use `inspect_java_class` if uncertain about a method signature.
    - Use `WaitForUserDialog` instead of `GenericDialog` for simple pauses.
    - Retrieve image via `#@ ImagePlus imp` or `IJ.openImage(path)
-   - If `imp.getType() == ImagePlus.COLOR_RGB`, split into R/G/B with `ChannelSplitter` before the channel-count check.
+   - GROOVY PATTERNS — apply unconditionally:
+     • Thresholding: never hardcode `" dark"`. Pick at runtime:
+       `def s = imp.getStatistics(); IJ.setAutoThreshold(imp, "Otsu" + (s.median <= (s.min+s.max)/2 ? " dark" : ""))`.
+       PROJECT STATE `background_mode` overrides the runtime check if present.
+     • RGB: `getNChannels()` returns 1 for 24-bit RGB. Branch on
+       `imp.getType() == ImagePlus.COLOR_RGB` BEFORE any channel-count check, then
+       `ChannelSplitter.split(imp)` to get R/G/B as `ImagePlus[3]`.
+     • Imports: `ImageCalculator`, `Duplicator`, `ChannelSplitter`, `RoiManager`,
+       `ResultsTable`, `Measurements`, `WindowManager` each need their own
+       `import ij.plugin.* / ij.measure.* / ij.*` line — Groovy does not auto-resolve them.
+     For full snippets and rarer pitfalls, see `/app/skills/imagej_groovy_patterns/SKILL.md`.
 
 
     ────────────────────────────────────────
@@ -755,6 +765,9 @@ imagej_debugger_prompt = """
           your fix MUST keep using that plugin. Do not "fix" a failure by swapping it for
           an alternative (e.g., replacing TurboReg with SIFT). Repair the call, the imports,
           or the parameters within the recommended plugin's API.
+      0b. Search `/app/skills/imagej_groovy_patterns/SKILL.md` by symptom
+          (e.g. `unable to resolve class`, `inverted mask`, `nChannels==1 for RGB`).
+          If a section matches, apply that canonical fix verbatim before debugging further.
       1. Preserve original intent.
       2. Make MINIMUM changes required for correctness.
       3. ROOT CAUSE ANALYSIS:

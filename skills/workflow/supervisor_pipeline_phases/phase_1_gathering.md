@@ -13,7 +13,10 @@
 
 4. LEDGER: After gathering is complete, call set_ledger_metadata to record:
    - scientific_goal (one sentence)
-   - image_metadata (bit depth, pixel size, channels, number of images)
+   - image_metadata (bit depth, pixel size, channels, number of images,
+     and `background_mode` from `threshold_suggestions` — `"dark"` for fluorescence,
+     `"bright"` for brightfield/H&E. The coder reads this to pick the `"Otsu dark"` vs
+     `"Otsu"` suffix; if omitted, it falls back to a runtime stats check)
    - relevant_skill (use the skill_folder from plugin_manager's recommendation)
    - recommended_plugin (use the recommended_plugin name from plugin_manager).
      This is propagated to the coder, which must use this plugin and not silently
