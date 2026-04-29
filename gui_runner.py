@@ -507,17 +507,28 @@ def _send_report_email(subject: str, body: str, attachments: list[tuple[str, byt
         msg.attach(part)
 
     ctx = ssl.create_default_context()
-    # Connect via resolved IPv4 (Docker containers often have IPv6 disabled,
-    # errno 97), but restore the hostname so STARTTLS certificate check passes.
     import socket
+
+    # Resolve to IPv4 — Docker containers often lack IPv6 (errno 97).
     smtp_ip = socket.getaddrinfo("smtp.gmail.com", 587, socket.AF_INET)[0][4][0]
-    with smtplib.SMTP(smtp_ip, 587) as smtp:
-        smtp._host = "smtp.gmail.com"  # needed so starttls verifies against hostname
-        smtp.ehlo()
-        smtp.starttls(context=ctx)
-        smtp.ehlo()
-        smtp.login(_REPORT_EMAIL, app_password)
-        smtp.sendmail(_REPORT_EMAIL, _REPORT_EMAIL, msg.as_bytes())
+    smtp_ip_465 = socket.getaddrinfo("smtp.gmail.com", 465, socket.AF_INET)[0][4][0]
+
+    raw = msg.as_bytes()
+    try:
+        # Port 587 with STARTTLS (preferred)
+        with smtplib.SMTP(smtp_ip, 587, timeout=15) as smtp:
+            smtp._host = "smtp.gmail.com"  # starttls verifies against hostname, not IP
+            smtp.ehlo()
+            smtp.starttls(context=ctx)
+            smtp.ehlo()
+            smtp.login(_REPORT_EMAIL, app_password)
+            smtp.sendmail(_REPORT_EMAIL, _REPORT_EMAIL, raw)
+    except (OSError, smtplib.SMTPException):
+        # Port 465 implicit TLS fallback (some networks block 587)
+        with smtplib.SMTP_SSL(smtp_ip_465, 465, context=ctx, timeout=15) as smtp:
+            smtp._host = "smtp.gmail.com"
+            smtp.login(_REPORT_EMAIL, app_password)
+            smtp.sendmail(_REPORT_EMAIL, _REPORT_EMAIL, raw)
 
 
 # ---------------------------------------------------------------------------
@@ -662,7 +673,28 @@ class FeedbackDialog(QDialog):
             self.accept()
         except Exception as e:
             log.exception(f"Failed to send issue report: {e}")
-            QMessageBox.warning(self, "Send Failed", str(e))
+            reply = QMessageBox.warning(
+                self, "Send Failed",
+                f"Could not send the report by email:\n{e}\n\n"
+                "Would you like to save it to a file instead?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes,
+            )
+            if reply == QMessageBox.Yes:
+                default_name = os.path.expanduser(
+                    f"~/imagentj_issue_{time.strftime('%Y%m%d_%H%M%S')}"
+                    f"{'zip' if len(attachments) == 1 and attachments[0][0].endswith('.zip') else 'json'}"
+                )
+                path, _ = QFileDialog.getSaveFileName(
+                    self, "Save Issue Report", default_name,
+                    "All files (*)",
+                )
+                if path:
+                    with open(path, "wb") as f:
+                        f.write(attachments[0][1])
+                    QMessageBox.information(self, "Report Saved",
+                        f"Report saved to:\n{path}\n\nPlease send it manually to {_REPORT_EMAIL}.")
+                    self.accept()
         
 
 
