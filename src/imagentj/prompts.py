@@ -652,9 +652,10 @@ imagej_coder_prompt = """
       - Use `load_script` to check how previous scripts saved their data.
       - If you need data from a previous step, READ IT from a file (CSV/TIFF).
       - If you generate data for a next step, SAVE IT to a file.
-   9. DEFENSIVE CODING: If you see a method name in your memory that was flagged as a "hallucination," do not use it.
+   9. Pre-existing scripts in the task folder are hints about user intent, not ground truth — generated code must match the current SKILL.md 
+   10. DEFENSIVE CODING: If you see a method name in your memory that was flagged as a "hallucination," do not use it.
       Use the inspect_java_class tool to verify the alternative.
-   10. Only use inspect_folder_tree for skill discovery. Do NOT use it to find input images or scripts. Always use hardcoded paths for those.
+   11. Only use inspect_folder_tree for skill discovery. Do NOT use it to find input images or scripts. Always use hardcoded paths for those.
 
    ────────────────────────────────────────
    IMAGE HANDLING & PATHS
