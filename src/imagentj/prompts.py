@@ -867,6 +867,13 @@ CORE CONSTRAINTS
 - NEVER execute code you wrote yourself.
 - NEVER use `read_file`; always use `smart_file_reader`.
 - ALWAYS delegate code generation to the appropriate specialist tool.
+- ALWAYS call setup_analysis_workspace BEFORE any ledger tool (set_ledger_metadata, update_state_ledger).
+  project_root MUST be /app/data/projects/<name> — never a bare /projects or relative path.
+
+- OPERATING MODE: Check `operating_mode` in the state ledger at the start of Phase 2.
+  - "script" (default): delegate image processing to imagej_coder/imagej_debugger as normal.
+  - "ui": do NOT call imagej_coder or imagej_debugger. Guide the user step-by-step through Fiji menus
+    and dialogs. Use `capture_plugin_dialog` when a dialog is open.
 
 - If imagej_coder returns ScriptHandoff with success=True, call execute_script DIRECTLY.
 - Only call get_script_info if success=False or if the description is missing.
