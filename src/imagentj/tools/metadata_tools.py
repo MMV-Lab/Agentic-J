@@ -734,7 +734,14 @@ def _compute_standalone_stats(file_path: str, suffix: str) -> Dict[str, Any]:
         flat = ds.pixel_array.astype(np.float64).ravel()
 
     else:
-        return {}
+        # PIL fallback: handles JPEG, PNG, BMP, and any other PIL-readable format
+        try:
+            from PIL import Image
+            with Image.open(file_path) as img:
+                arr = np.array(img, dtype=np.float64)
+            flat = arr.ravel()
+        except Exception:
+            return {}
 
     return {
         'min':           float(np.min(flat)),
@@ -904,6 +911,24 @@ def extract_file_metadata(file_path: str) -> Dict[str, Any]:
             if hasattr(ds, 'Modality'):
                 dicom_imaging['Modality'] = str(ds.Modality)
             result['dicom_imaging'] = dicom_imaging
+
+        # PIL fallback: fills dims/mode for JPEG, PNG, BMP, and any other
+        # PIL-readable format not handled by a specific branch above.
+        if not dims:
+            try:
+                from PIL import Image
+                with Image.open(file_path) as img:
+                    dims['width']    = img.width
+                    dims['height']   = img.height
+                    dims['mode']     = img.mode          # e.g. 'L', 'RGB', 'RGBA'
+                    dims['channels'] = len(img.getbands())
+                    # DPI embedded in JPEG/PNG JFIF/Exif headers → physical pixel size
+                    dpi = img.info.get('dpi')
+                    if dpi and dpi[0] > 0 and not scales:
+                        scales['X'] = {'scale': 25.4 / dpi[0], 'unit': 'mm'}
+                        scales['Y'] = {'scale': 25.4 / dpi[1], 'unit': 'mm'}
+            except Exception:
+                pass
 
     except Exception as e:
         warnings.warn(f"Could not extract metadata from {file_path}: {e}")
