@@ -934,18 +934,7 @@ This lets you re-retrieve efficiently later and pass findings to the coder witho
 ────────────────────────────────────────
 PIPELINE (MANDATORY — follow phases in order)
 ────────────────────────────────────────
-BEFORE entering any phase, load its instructions via smart_file_reader.
-
-  Phase 1 (Gather info)    → /app/skills/workflow/supervisor_pipeline_phases/phase_1_gathering.md
-  Phase 2 (Plan pipeline)  → /app/skills/workflow/supervisor_pipeline_phases/phase_2_planning.md
-  Phase 3 (Setup folders)  → /app/skills/workflow/supervisor_pipeline_phases/phase_3_setup.md
-  Phase 4a (IO check)      → /app/skills/workflow/supervisor_pipeline_phases/phase_4a_io_check.md
-  Phase 4b (Processing)    → /app/skills/workflow/supervisor_pipeline_phases/phase_4b_processing.md
-  Phase 4c (Statistics)    → /app/skills/workflow/supervisor_pipeline_phases/phase_4c_statistics.md
-  Phase 4d (Plotting)      → /app/skills/workflow/supervisor_pipeline_phases/phase_4d_plotting.md
-  Phase 5 (Summarize)      → /app/skills/workflow/supervisor_pipeline_phases/phase_5_summarization.md
-  Phase 6 (Documentation)  → /app/skills/workflow/supervisor_pipeline_phases/phase_6_documentation.md
-{{QA_PHASE}}
+{{PIPELINE_PHASES}}
 ────────────────────────────────────────
 DEBUGGING LOOPS
 ────────────────────────────────────────
@@ -977,13 +966,51 @@ USER INTERACTION
 """
 
 _QA_TOOL_ENTRY = "- qa_reporter: Audits the completed project folder and generates QA_Checklist_Report.md. Called once at project end."
-_QA_PHASE = "  Phase 7 (QA checklist)   → /app/skills/workflow/supervisor_pipeline_phases/phase_7_qa.md"
+
+# Phase files are inlined at prompt-build time so the supervisor never needs
+# to read them via tool calls (saves 5-10 tool calls per run).
+_PHASES_DIR = (
+    __import__("pathlib").Path(__file__).parent.parent.parent
+    / "skills" / "workflow" / "supervisor_pipeline_phases"
+)
+
+_PHASE_FILES = [
+    ("Phase 1 — Gather requirements", "phase_1_gathering.md"),
+    ("Phase 2 — Plan pipeline",       "phase_2_planning.md"),
+    ("Phase 3 — Setup folders",       "phase_3_setup.md"),
+    ("Phase 4a — IO check",           "phase_4a_io_check.md"),
+    ("Phase 4b — Processing",         "phase_4b_processing.md"),
+    ("Phase 4c — Statistics",         "phase_4c_statistics.md"),
+    ("Phase 4d — Plotting",           "phase_4d_plotting.md"),
+    ("Phase 5 — Summarise",           "phase_5_summarization.md"),
+    ("Phase 6 — Document",            "phase_6_documentation.md"),
+]
+_QA_PHASE_FILE = ("Phase 7 — QA checklist", "phase_7_qa.md")
+
+
+def _build_pipeline_phases(include_qa: bool) -> str:
+    files = list(_PHASE_FILES)
+    if include_qa:
+        files.append(_QA_PHASE_FILE)
+    parts = []
+    for label, filename in files:
+        path = _PHASES_DIR / filename
+        try:
+            content = path.read_text(encoding="utf-8").strip()
+        except FileNotFoundError:
+            content = f"[phase file not found: {path}]"
+        parts.append(f"══ {label} ══\n{content}")
+    return "\n\n".join(parts)
 
 
 def build_supervisor_prompt(enable_qa: bool = False) -> str:
     qa_tool = _QA_TOOL_ENTRY if enable_qa else ""
-    qa_phase = _QA_PHASE if enable_qa else ""
-    return _supervisor_prompt_base.replace("{{QA_TOOL_ENTRY}}", qa_tool).replace("{{QA_PHASE}}", qa_phase)
+    pipeline_phases = _build_pipeline_phases(include_qa=enable_qa)
+    return (
+        _supervisor_prompt_base
+        .replace("{{QA_TOOL_ENTRY}}", qa_tool)
+        .replace("{{PIPELINE_PHASES}}", pipeline_phases)
+    )
 
 
 supervisor_prompt = build_supervisor_prompt(enable_qa=False)
