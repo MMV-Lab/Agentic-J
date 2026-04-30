@@ -843,6 +843,9 @@ When asked to find a plugin for a task:
    Consider the image type from the PROJECT STATE (bit depth, channels, modality).
 
 3. CHECK INSTALLATION: Call check_plugin_installed on the top candidate.
+   If a skill folder exists for the plugin (your skills middleware lists it),
+   it is already installed and configured in this container — set
+   `installation_status="not_needed"` regardless of `check_plugin_installed`.
 
 4. CHECK SKILL DOCS: Look for a matching skill folder in your available skills.
    If a skill exists, read the SKILL.md to extract:
@@ -934,7 +937,7 @@ SPECIALIST TOOLS
   Returns: recommended_plugin, is_installed, skill_folder, relevance_reasoning, installation_status.
   NOTE: Automatically receives the state ledger for image metadata matching.
   AFTER receiving a recommendation: record BOTH the plugin name and skill folder in the ledger via
-    set_ledger_metadata(recommended_plugin=<name>, relevant_skill=<skill_folder>).
+    set_ledger_metadata(recommended_plugin=<name>, relevant_skill=<skill_folder>) — both in the SAME call. Never split them across calls; if you call plugin_manager again later, record the new pair in one call so the most recent recommended_plugin always matches the most recent relevant_skill.
     The coder reads this and is required to use the recommended plugin — do not silently
     let the coder pick an alternative (e.g., SIFT when TurboReg was recommended).
   If installation_status="user_approval_needed", ask the user, then call plugin_manager("INSTALL <name>", project_root).
