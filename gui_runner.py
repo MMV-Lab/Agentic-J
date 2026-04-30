@@ -27,6 +27,7 @@ from queue import Queue
 from imagentj.agents import init_agent
 from imagentj.imagej_context import get_ij
 from imagentj.chat_history import ChatHistoryManager
+from imagentj.tools.analyst_tools import kill_running_processes
 
 from imagentj.benchmark_gui_hooks import is_benchmark_mode, setup_benchmark_gui
 
@@ -714,6 +715,7 @@ class AgentWorker(QObject):
         self.tracker_callback = tracker_callback
         self.tasks            = Queue()
         self._stop_requested  = False
+        self._current_gen     = None  # reference to the active LangGraph stream generator
 
     @Slot()
     def start(self):
@@ -732,14 +734,20 @@ class AgentWorker(QObject):
                 "configurable": {"thread_id": self.thread_id},
                 "callbacks":    [self.tracker_callback],
             }
-            for event in self.supervisor.stream(
+            gen = self.supervisor.stream(
                 {"messages": [{"role": "user", "content": user_input}]},
                 config=config,
                 stream_mode="updates",
-            ):
-                if self._stop_requested:
-                    break
-                self.event_received.emit(event)
+            )
+            self._current_gen = gen
+            try:
+                for event in gen:
+                    if self._stop_requested:
+                        gen.close()  # stop the LangGraph generator (prevents next LLM call)
+                        break
+                    self.event_received.emit(event)
+            finally:
+                self._current_gen = None
         except Exception as e:
             log.exception(f"_run_prompt exception: {e}")
             self.error.emit(str(e))
@@ -752,6 +760,17 @@ class AgentWorker(QObject):
 
     def request_stop(self):
         self._stop_requested = True
+        # Kill any running subprocesses immediately (Python scripts, etc.)
+        killed = kill_running_processes()
+        if killed:
+            log.info(f"Stop: killed {killed} running subprocess(es)")
+        # Close the generator if it's between events (prevents next LLM turn)
+        gen = self._current_gen
+        if gen is not None:
+            try:
+                gen.close()
+            except Exception:
+                pass
 
 
 # ---------------------------------------------------------------------------

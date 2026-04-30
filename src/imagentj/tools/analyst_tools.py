@@ -3,8 +3,42 @@ import pandas as pd
 import subprocess
 import textwrap
 import io
+import threading
 from langchain_core.tools import tool
 import tempfile
+
+# ---------------------------------------------------------------------------
+# Global process registry — lets the Stop button kill running subprocesses
+# ---------------------------------------------------------------------------
+_registry_lock = threading.Lock()
+_running_processes: list[subprocess.Popen] = []
+
+
+def _register_process(proc: subprocess.Popen) -> None:
+    with _registry_lock:
+        _running_processes.append(proc)
+
+
+def _unregister_process(proc: subprocess.Popen) -> None:
+    with _registry_lock:
+        try:
+            _running_processes.remove(proc)
+        except ValueError:
+            pass
+
+
+def kill_running_processes() -> int:
+    """Kill all tracked subprocesses. Called by the Stop button. Returns count killed."""
+    killed = 0
+    with _registry_lock:
+        for proc in list(_running_processes):
+            try:
+                proc.kill()
+                killed += 1
+            except Exception:
+                pass
+        _running_processes.clear()
+    return killed
 
 @tool
 def inspect_csv_header(file_path: str):
@@ -80,15 +114,25 @@ def run_python_code(code: str, output_directory: str):
         f.write(full_script)
 
     try:
-        result = subprocess.run(
+        proc = subprocess.Popen(
             ["python", script_path],
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=60
         )
-        if result.returncode != 0:
-            return f"CRASH DETECTED IN PYTHON:\nSTDOUT: {result.stdout}\nSTDERR: {result.stderr}"
-        return f"SUCCESS:\n{result.stdout}"
+        _register_process(proc)
+        try:
+            stdout, stderr = proc.communicate(timeout=600)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            stdout, stderr = proc.communicate()
+            return "SYSTEM ERROR: Python script timed out after 600 seconds."
+        finally:
+            _unregister_process(proc)
+
+        if proc.returncode != 0:
+            return f"CRASH DETECTED IN PYTHON:\nSTDOUT: {stdout}\nSTDERR: {stderr}"
+        return f"SUCCESS:\n{stdout}"
     except Exception as e:
         return f"SYSTEM ERROR: {str(e)}"
     
