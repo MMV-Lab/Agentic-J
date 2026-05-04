@@ -27,7 +27,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     #                       JOCL needs for dlopen("libOpenCL.so") to succeed
     pocl-opencl-icd ocl-icd-libopencl1 ocl-icd-opencl-dev \
     # Utilities
-    wget unzip procps curl build-essential cmake ninja-build \
+    wget unzip procps curl \
     # Locale support — ilastik4ij sets LC_ALL=en_US.UTF-8 in the subprocess
     # environment; without this the locale warning is printed to every log line
     locales \
@@ -245,14 +245,22 @@ ENV CONDA_DEFAULT_ENV=local_imagent_J
 # ── Conda env: cellpose  (PyTorch + Cellpose + Omnipose, served by TrackMate-Cellpose and TrackMate-Omnipose) ───
 # Omnipose 1.x is built on cellpose 3.x, so they share one env.
 # The micromamba shim routes both '-n cellpose' and '-n omnipose' here.
+# Snapshot (2026-04-30): Python 3.10.20, cellpose 3.1.1.2, omnipose 1.1.4, torch 2.11.0+cpu
 RUN /opt/conda/bin/conda create -n cellpose python=3.10 -y \
     && if [ "$TARGETARCH" = "arm64" ]; then \
-        /opt/conda/envs/cellpose/bin/pip install --no-cache-dir torch torchvision; \
+        /opt/conda/envs/cellpose/bin/pip install --no-cache-dir \
+            'torch==2.11.0' 'torchvision==0.26.0'; \
     else \
-        /opt/conda/envs/cellpose/bin/pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu; \
+        /opt/conda/envs/cellpose/bin/pip install --no-cache-dir \
+            'torch==2.11.0' 'torchvision==0.26.0' \
+            --index-url https://download.pytorch.org/whl/cpu; \
     fi \
-    && /opt/conda/envs/cellpose/bin/pip install --no-cache-dir 'cellpose[gui]==3.1.1.2' \
-    && /opt/conda/envs/cellpose/bin/pip install --no-cache-dir 'omnipose==1.1.4' \
+    && /opt/conda/envs/cellpose/bin/pip install --no-cache-dir \
+        'cellpose[gui]==3.1.1.2' \
+        'omnipose==1.1.4' \
+        'langchain-core==1.2.16' \
+        'langgraph-checkpoint-sqlite==3.0.3' \
+        'pydantic==2.12.5' \
     && /opt/conda/envs/cellpose/bin/cellpose --version \
     && /opt/conda/bin/conda clean -afy \
     && printf '#!/bin/bash\nexec /opt/conda/envs/cellpose/bin/cellpose "$@"\n' > /opt/conda/bin/cellpose \
@@ -263,13 +271,22 @@ RUN /opt/conda/bin/conda create -n cellpose python=3.10 -y \
 # TrackMate's CondaCLIConfigurator lists all conda envs in a dropdown — the user
 # selects 'cellpose4' in the Cellpose-SAM detector panel.
 # The micromamba shim routes '-n cellpose4' → /opt/conda/envs/cellpose4.
+# Snapshot (2026-04-30): Python 3.11.15, cellpose 4.1.1, segment-anything 1.0, torch 2.11.0+cpu
 RUN /opt/conda/bin/conda create -n cellpose4 python=3.11 -y \
     && if [ "$TARGETARCH" = "arm64" ]; then \
-        /opt/conda/envs/cellpose4/bin/pip install --no-cache-dir torch torchvision; \
+        /opt/conda/envs/cellpose4/bin/pip install --no-cache-dir \
+            'torch==2.11.0' 'torchvision==0.26.0'; \
     else \
-        /opt/conda/envs/cellpose4/bin/pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu; \
+        /opt/conda/envs/cellpose4/bin/pip install --no-cache-dir \
+            'torch==2.11.0' 'torchvision==0.26.0' \
+            --index-url https://download.pytorch.org/whl/cpu; \
     fi \
-    && /opt/conda/envs/cellpose4/bin/pip install --no-cache-dir 'cellpose[gui]>=4.0' \
+    && /opt/conda/envs/cellpose4/bin/pip install --no-cache-dir \
+        'cellpose[gui]==4.1.1' \
+        'segment-anything==1.0' \
+        'langchain-core==1.2.16' \
+        'langgraph-checkpoint-sqlite==3.0.3' \
+        'pydantic==2.12.5' \
     && /opt/conda/envs/cellpose4/bin/cellpose --version \
     && /opt/conda/bin/conda clean -afy
 
@@ -277,20 +294,24 @@ RUN /opt/conda/bin/conda create -n cellpose4 python=3.11 -y \
 # Separate env so TF version is independent of the main Python env.
 # Python 3.11 + TF 2.15 is the most stable combo for CSBDeep
 # (uses tf.compat.v1 graph APIs, which became fragile in TF 2.17+).
-# numpy<2 required — NumPy 2.0 breaks csbdeep's C-extension assumptions.
-# BuildKit provides TARGETARCH; arm64 uses the linux/aarch64 TensorFlow package
-# path, while amd64 keeps tensorflow-cpu for native x86_64 hosts.
+# Snapshot (2026-04-30): Python 3.11.15, stardist 0.9.2, csbdeep 0.8.2,
+#   tensorflow-cpu 2.15.1, numpy 1.26.4
+# arm64 uses generic 'tensorflow' (no -cpu suffix) — the linux/aarch64 TF wheel
+# is not published under the tensorflow-cpu name.
 RUN if [ "$TARGETARCH" = "arm64" ]; then \
-        TF_PACKAGE='tensorflow==2.15.*'; \
+        TF_PACKAGE='tensorflow==2.15.1'; \
     else \
-        TF_PACKAGE='tensorflow-cpu==2.15.*'; \
+        TF_PACKAGE='tensorflow-cpu==2.15.1'; \
     fi \
     && /opt/conda/bin/conda create -n stardist python=3.11 -y \
     && /opt/conda/envs/stardist/bin/pip install --no-cache-dir \
         "$TF_PACKAGE" \
-        "csbdeep>=0.7.4" \
-        "stardist>=0.9" \
-        "numpy<2" \
+        "csbdeep==0.8.2" \
+        "stardist==0.9.2" \
+        "numpy==1.26.4" \
+        "langchain-core==1.2.16" \
+        "langgraph-checkpoint-sqlite==3.0.3" \
+        "pydantic==2.12.5" \
     && /opt/conda/bin/conda clean -afy
 
 # Verify the StarDist Python stack imports correctly
