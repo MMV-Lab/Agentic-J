@@ -1,6 +1,6 @@
 services:
   imagentj:
-    image: imagentj:cpu #-with-chat-history
+    image: imagentj:cpu-offline
     build:
       context: .
       target: cpu
