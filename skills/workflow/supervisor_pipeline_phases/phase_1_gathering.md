@@ -6,6 +6,12 @@
    - extract_image_metadata(sample_image_path)
    - rag_retrieve_docs(relevant_query)
    - plugin_manager(task="<describe the scientific goal>", project_root="<path>")
+     MANDATORY — call it on EVERY new project, even when you think the task is
+     "easy enough" for stock `IJ.run` commands (Find Maxima, Analyze Particles,
+     auto-thresholding, etc.). The manager's response provenance — including
+     `recommended_plugin=None` — must be recorded in the ledger. Without this
+     record, downstream phases have no skill pointer for the debugger to
+     reference.
      The plugin manager searches the registry, checks installation, reads skill docs,
      and returns a structured recommendation. ALWAYS prefer a plugin over custom code.
 

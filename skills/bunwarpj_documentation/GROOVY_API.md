@@ -110,11 +110,25 @@ Guidance:
 ```groovy
 def sourceCopy = new Duplicator().run(sourceImp)
 bUnwarpJ_.applyTransformToSource("/path/direct_elastic.txt", targetImp, sourceCopy)
+// `sourceCopy` is now the warped image. Use it directly:
+sourceCopy.setTitle("warped")
+IJ.saveAsTiff(sourceCopy, "/path/warped.tif")
 ```
 
 Behavior:
 
-- `applyTransformToSource(...)` updates `sourceCopy` in place.
+- `applyTransformToSource(...)` updates `sourceCopy` **in place** and returns
+  `null` / `void`. **Do NOT capture or use its return value.**
+
+  ```groovy
+  // WRONG — returns null in this build, downstream code will fail with
+  //         "bUnwarpJ returned null warped image(s)":
+  def warped = bUnwarpJ_.applyTransformToSource(transformPath, targetImp, sourceCopy)
+
+  // CORRECT — call for the side effect; sourceCopy IS the warped image:
+  bUnwarpJ_.applyTransformToSource(transformPath, targetImp, sourceCopy)
+  // sourceCopy is now warped; save/show it directly.
+  ```
 - The transformed copy matches the target image geometry.
 - This is the safer scripted reapply path than the title-based macro methods.
 
