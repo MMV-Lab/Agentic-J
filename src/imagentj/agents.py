@@ -10,6 +10,7 @@ from langchain.agents.middleware import (
     ClearToolUsesEdit,
     FilesystemFileSearchMiddleware,
 )
+from langchain.agents.structured_output import ToolStrategy
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import MemorySaver
@@ -237,7 +238,7 @@ def _make_coder_agent(model, name, system_prompt):
             inspect_folder_tree,   # lets agent survey /app/skills/ before reading
         ],
         system_prompt=system_prompt,
-        response_format=ScriptHandoff,
+        response_format=ToolStrategy(schema=ScriptHandoff, handle_errors=True),
         name=name,
         middleware=[
             FilesystemFileSearchMiddleware(
@@ -269,7 +270,7 @@ _analyst_agent = create_agent(
         get_script_info,
     ],
     system_prompt=python_analyst_prompt,
-    response_format=AnalystHandoff,
+    response_format=ToolStrategy(schema=AnalystHandoff, handle_errors=True),
     name="python_data_analyst",
 )
 
@@ -284,7 +285,7 @@ _qa_agent = create_agent(
         load_script,
     ],
     system_prompt=qa_reporter_prompt,
-    response_format=QAHandoff,
+    response_format=ToolStrategy(schema=QAHandoff, handle_errors=True),
     name="qa_reporter",
 )
 

@@ -66,8 +66,8 @@ import java.util.regex.Pattern
 
 // ── PARAMETERS ───────────────────────────────────────────────────────────────
 def imageName          = ''
-def targetChannel      = 1
-def optionalChannel    = 0
+def targetChannel      = '0'   // STRING — Cellpose CLI semantics: 0=gray, 1=R, 2=G, 3=B
+def optionalChannel    = '0'   // STRING — 0=don't use second channel
 def cellDiameter       = 30.0d
 def cellposeModel      = 'cyto3'
 def customModelPath    = ''
@@ -198,8 +198,8 @@ try {
         'CELLPOSE_MODEL_NAME'            : cellposeEnvName,
         'CELLPOSE_MODEL'                 : cellposeModel,
         'CELLPOSE_CUSTOM_MODEL_FILEPATH' : customModelPath,
-        'TARGET_CHANNEL'                 : String.valueOf(targetChannel),
-        'OPTIONAL_CHANNEL_2'             : String.valueOf(optionalChannel),
+        'TARGET_CHANNEL'                 : targetChannel,    // String — see C10
+        'OPTIONAL_CHANNEL_2'             : optionalChannel,  // String
         'CELL_DIAMETER'                  : 30.0d,
         'USE_GPU'                        : useGpu,
         'SIMPLIFY_CONTOURS'              : simplifyContours,

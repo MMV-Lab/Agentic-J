@@ -42,8 +42,8 @@ import fiji.plugin.trackmate.cellpose.CellposeSAMDetectorFactory
 | `CELLPOSE_CUSTOM_MODEL_FILEPATH` | String | `""` | Absolute path to a custom `.pth` model; set to `""` to use a pretrained model |
 | `CELLPOSE_MODEL` | String | `cyto3` | Pretrained model string — see **Available Models** section below |
 | `CELLPOSE_MODEL_NAME` | String | `""` | Conda environment name — only relevant when `CELLPOSE_PYTHON_FILEPATH` points to the `conda` binary rather than a Python interpreter |
-| `TARGET_CHANNEL` | int | `1` | 1-based ImageJ channel index to segment |
-| `OPTIONAL_CHANNEL_2` | int | `0` | Second channel (nuclei hint for cyto3); `0` to skip |
+| `TARGET_CHANNEL` | **String** | `"0"` | Cellpose CLI channel selector (NOT 1-based ImageJ index). Values: `"0"`=grayscale, `"1"`=red, `"2"`=green, `"3"`=blue. **Must be a String** — `int` is silently rejected at `checkSettings`. |
+| `OPTIONAL_CHANNEL_2` | **String** | `"0"` | Second Cellpose channel for two-channel models like `cyto3`. Values: `"0"`=don't use, `"1"`=red, `"2"`=green, `"3"`=blue. **Must be a String.** |
 | `CELL_DIAMETER` | double | `30.0` | Expected cell diameter **in physical units** (µm if calibrated) |
 | `USE_GPU` | boolean | `false` | Enable GPU; falls back to CPU silently if unavailable |
 | `SIMPLIFY_CONTOURS` | boolean | `true` | Smooth/simplify mask outlines |
@@ -71,8 +71,8 @@ settings.detectorSettings = [
     'CELLPOSE_MODEL_NAME'            : 'cellpose',   // conda env name (safety net if plugin falls back to conda)
     'CELLPOSE_MODEL'                 : 'cyto3',
     'CELLPOSE_CUSTOM_MODEL_FILEPATH' : '',
-    'TARGET_CHANNEL'                 : 1,
-    'OPTIONAL_CHANNEL_2'             : 0,
+    'TARGET_CHANNEL'                 : '0',    // STRING — Cellpose CLI: 0=gray, 1=R, 2=G, 3=B
+    'OPTIONAL_CHANNEL_2'             : '0',    // STRING — 0=don't use
     'CELL_DIAMETER'                  : 30.0,   // physical units (µm)
     'USE_GPU'                        : false,
     'SIMPLIFY_CONTOURS'              : true,
@@ -178,8 +178,8 @@ settings.detectorSettings = [
     'CELLPOSE_MODEL_NAME'            : 'cellpose',   // conda env name (safety net)
     'CELLPOSE_MODEL'                 : 'cyto3',
     'CELLPOSE_CUSTOM_MODEL_FILEPATH' : '',
-    'TARGET_CHANNEL'                 : 1,
-    'OPTIONAL_CHANNEL_2'             : 0,
+    'TARGET_CHANNEL'                 : '0',    // STRING
+    'OPTIONAL_CHANNEL_2'             : '0',    // STRING
     'CELL_DIAMETER'                  : 30.0,
     'USE_GPU'                        : false,
     'SIMPLIFY_CONTOURS'              : true,
@@ -201,7 +201,7 @@ if installed separately; otherwise use the same `cellpose` env with a recent ver
 |-----|------|---------|-------------|
 | `CELLPOSE_PYTHON_FILEPATH` | String | `/opt/conda/bin/conda` | Path to conda executable |
 | `CELLPOSE_CUSTOM_MODEL_FILEPATH` | String | `""` | Custom model path; `""` for `cpsam` |
-| `TARGET_CHANNEL` | int | `1` | 1-based channel to segment; `0` = full image |
+| `TARGET_CHANNEL` | **String** | `"0"` | Cellpose-SAM channel selector. Values: `"0"`=grayscale (full image), `"1"`=red, `"2"`=green, `"3"`=blue. **Must be a String.** |
 | `USE_GPU` | boolean | `false` | Enable GPU |
 | `SIMPLIFY_CONTOURS` | boolean | `true` | Smooth outlines |
 
@@ -212,7 +212,7 @@ settings.detectorFactory = new CellposeSAMDetectorFactory()
 settings.detectorSettings = [
     'CELLPOSE_PYTHON_FILEPATH'       : '/opt/conda/envs/cellpose/bin/python',
     'CELLPOSE_CUSTOM_MODEL_FILEPATH' : '',
-    'TARGET_CHANNEL'                 : 1,
+    'TARGET_CHANNEL'                 : '0',    // STRING — Cellpose CLI semantics
     'USE_GPU'                        : false,
     'SIMPLIFY_CONTOURS'              : true,
 ]
@@ -287,3 +287,61 @@ even if you only intend to run detection.
 ### Pitfall C6 — `initialSpotFilterValue` must be set
 Same requirement as all TrackMate detectors: set `settings.initialSpotFilterValue`
 before calling `process()`, even if `0.0`.
+
+### Pitfall C10 — `TARGET_CHANNEL` and `OPTIONAL_CHANNEL_2` must be Strings (not int)
+
+Unlike the LoG/DoG detectors (which use **`int` 1-based ImageJ channel**),
+the Cellpose detector backs `TARGET_CHANNEL` with a string-valued
+`Configurator$ChoiceArgument` whose values are Cellpose CLI channel
+selectors: `"0"` (grayscale), `"1"` (red), `"2"` (green), `"3"` (blue).
+
+```groovy
+// WRONG — int silently fails or maps to a wrong default at checkSettings:
+'TARGET_CHANNEL'      : 1,
+'OPTIONAL_CHANNEL_2'  : 0,
+
+// CORRECT — String, Cellpose CLI semantics (NOT 1-based ImageJ):
+'TARGET_CHANNEL'      : '0',   // grayscale — use for single-channel images
+'OPTIONAL_CHANNEL_2'  : '0',   // 0 = don't use second channel
+```
+
+**Verified at runtime** by reading `factory.getDefaultSettings()`:
+`TARGET_CHANNEL`'s default is `"0"` of class `java.lang.String`. The
+underlying `CellposeCLI.DEFAULT_TARGET_CHANNEL` field is also `String`.
+
+For a multi-channel ImageJ image where you want only the red channel:
+`'TARGET_CHANNEL': '1'`. For the cyto3 model with a nuclear hint channel:
+`'TARGET_CHANNEL': '2', 'OPTIONAL_CHANNEL_2': '3'` (cyto on green, nuclei on blue).
+
+---
+
+## Settings-Map Key Reality Check (verified at runtime)
+
+`factory.getDefaultSettings()` from this build (`TrackMate-Cellpose-1.0.1`)
+returns ONLY these keys:
+
+| Key | Default | Type |
+|---|---|---|
+| `CONDA_ENV` | `"base"` | String |
+| `CELLPOSE_MODEL` | `"cyto3"` | String |
+| `CELLPOSE_MODEL_FILEPATH` | `""` | String |
+| `TARGET_CHANNEL` | `"0"` | String |
+| `OPTIONAL_CHANNEL_2` | `"0"` | String |
+| `CELL_DIAMETER` | `30.0` | Double |
+| `USE_GPU` | `true` | Boolean |
+| `SIMPLIFY_CONTOURS` | `true` | Boolean |
+| `PRETRAINED_OR_CUSTOM` | `"CELLPOSE_MODEL"` | String |
+
+Notes on legacy/aliased keys appearing in older examples:
+- **`CELLPOSE_PYTHON_FILEPATH`** — NOT in the settings map. The python
+  binary path is configured globally via the TrackMate Conda preference
+  (`Edit › Options › Configure TrackMate Conda path…`) or via the
+  `/opt/conda → /opt/miniconda3` symlink fix from Pitfall C1. Passing
+  it in the settings map is silently ignored.
+- **`CELLPOSE_MODEL_NAME`** → use `CONDA_ENV` instead. The conda env name
+  defaults to `"base"`; set this explicitly to the env that has cellpose
+  installed (e.g. `"cellpose"`).
+- **`CELLPOSE_CUSTOM_MODEL_FILEPATH`** → the actual key value is
+  `CELLPOSE_MODEL_FILEPATH` (the constant *name* contains "CUSTOM" but
+  the constant *value* does not). Both names may work in some builds; use
+  `CELLPOSE_MODEL_FILEPATH` to match `getDefaultSettings()` exactly.
