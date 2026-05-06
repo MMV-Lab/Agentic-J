@@ -270,7 +270,8 @@ RUN /opt/conda/bin/conda create -n cellpose4 python=3.11 -y \
         /opt/conda/envs/cellpose4/bin/pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu; \
     fi \
     && /opt/conda/envs/cellpose4/bin/pip install --no-cache-dir 'cellpose[gui]>=4.0' \
-    && /opt/conda/envs/cellpose4/bin/cellpose --version \
+    && /opt/conda/envs/cellpose4/bin/python -c \
+        "import cellpose; print('[OK] cellpose', cellpose.version)" \
     && /opt/conda/bin/conda clean -afy
 
 # ── Conda env: stardist  (TensorFlow + CSBDeep + StarDist inference) ─────────
