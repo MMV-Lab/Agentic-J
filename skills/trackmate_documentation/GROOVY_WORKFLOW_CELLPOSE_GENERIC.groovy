@@ -15,10 +15,10 @@
  *
  * REQUIREMENTS
  *   - Fiji/ImageJ with TrackMate and TrackMate-Cellpose installed.
- *   - Cellpose callable from one of these backends (auto-detected in this order):
- *       1) micromamba: /usr/local/opt/micromamba/bin/micromamba run -n base cellpose --version
- *       2) conda:      /opt/conda/bin/conda run -n cellpose python -m cellpose --version
- *       3) python:     /opt/conda/envs/cellpose/bin/python -m cellpose --version
+ *   - Cellpose reachable through the micromamba shim at
+ *       /usr/local/opt/micromamba/bin/micromamba run -n base cellpose --version
+ *     (the shim re-routes -n base → the real cellpose env). Verify with the
+ *     command above before running this script.
  *
  * INPUT
  *   - Active image in Fiji (preferred), OR set imageName to a specific open window title.
@@ -49,8 +49,8 @@ import fiji.plugin.trackmate.TrackMate
 import fiji.plugin.trackmate.Logger
 import fiji.plugin.trackmate.SpotCollection
 import fiji.plugin.trackmate.cellpose.CellposeDetectorFactory
-import fiji.plugin.trackmate.tracking.jaqaman.SparseLAPTrackerFactory
 import fiji.plugin.trackmate.features.FeatureFilter
+// NOTE: tracker factory is loaded via reflection (Pitfall C5) — no hardcoded import.
 import fiji.plugin.trackmate.io.TmXmlWriter
 import ij.IJ
 import ij.ImagePlus
@@ -65,9 +65,12 @@ import java.nio.file.StandardCopyOption
 import java.util.regex.Pattern
 
 // ── PARAMETERS ───────────────────────────────────────────────────────────────
+// targetChannel/optionalChannel use the **Cellpose 0-based convention**:
+//   0 = grayscale, 1/2/3 = R/G/B. NOT the 1-based ImageJ channel index used by
+//   the LoG/StarDist detectors elsewhere in TrackMate.
 def imageName          = ''
-def targetChannel      = '0'   // STRING — Cellpose CLI semantics: 0=gray, 1=R, 2=G, 3=B
-def optionalChannel    = '0'   // STRING — 0=don't use second channel
+def targetChannel      = 0
+def optionalChannel    = 0
 def cellDiameter       = 30.0d
 def cellposeModel      = 'cyto3'
 def customModelPath    = ''
@@ -125,95 +128,60 @@ try {
     model.setLogger(Logger.IJ_LOGGER)
     def settings = new Settings(imp)
 
-    // Backend preflight: micromamba -> conda -> python
-    def cellposePath = '/opt/conda/envs/cellpose/bin/python'
-    def cellposeEnvName = 'cellpose'
-    boolean selected = false
-
-    def runPreflight = { String[] cmd ->
+    // Verify the micromamba shim can reach cellpose before we hand off to TrackMate.
+    try {
+        String[] cmd = ['/usr/local/opt/micromamba/bin/micromamba', 'run', '-n', 'base', 'cellpose', '--version'] as String[]
+        IJ.log('[INFO] Cellpose preflight: ' + cmd.join(' '))
         def proc = new ProcessBuilder(cmd).redirectErrorStream(true).start()
         def outText = proc.inputStream.getText('UTF-8')
         int exitCode = proc.waitFor()
-        return [ok: (exitCode == 0), exitCode: exitCode, output: outText]
-    }
-
-    try {
-        String[] cmd = ['/usr/local/opt/micromamba/bin/micromamba', 'run', '-n', 'base', 'cellpose', '--version'] as String[]
-        IJ.log('[INFO] Cellpose preflight (micromamba): ' + cmd.join(' '))
-        def res = runPreflight(cmd)
-        if (res.ok) {
-            cellposePath = '/usr/local/opt/micromamba/bin/micromamba'
-            cellposeEnvName = 'cellpose'
-            selected = true
-            IJ.log('[INFO] Selected micromamba backend. Version: ' + (res.output == null ? '' : res.output.trim()))
+        if (exitCode != 0) {
+            IJ.log('[WARN] Cellpose preflight failed (exit=' + exitCode + '). Output: ' + (outText == null ? '' : outText.trim()))
         } else {
-            IJ.log('[WARN] Micromamba preflight failed (exit=' + res.exitCode + '). Output: ' + (res.output == null ? '' : res.output.trim()))
+            IJ.log('[INFO] Cellpose version: ' + (outText == null ? '' : outText.trim()))
         }
     } catch (Exception e) {
-        IJ.log('[WARN] Micromamba preflight exception: ' + e.getMessage())
+        IJ.log('[WARN] Cellpose preflight exception: ' + e.getMessage())
     }
-
-    if (!selected) {
-        try {
-            String[] cmd = ['/opt/conda/bin/conda', 'run', '-n', 'cellpose', 'python', '-m', 'cellpose', '--version'] as String[]
-            IJ.log('[INFO] Cellpose preflight (conda): ' + cmd.join(' '))
-            def res = runPreflight(cmd)
-            if (res.ok) {
-                cellposePath = '/opt/conda/bin/conda'
-                cellposeEnvName = 'cellpose'
-                selected = true
-                IJ.log('[INFO] Selected conda backend. Version: ' + (res.output == null ? '' : res.output.trim()))
-            } else {
-                IJ.log('[WARN] Conda preflight failed (exit=' + res.exitCode + '). Output: ' + (res.output == null ? '' : res.output.trim()))
-            }
-        } catch (Exception e) {
-            IJ.log('[WARN] Conda preflight exception: ' + e.getMessage())
-        }
-    }
-
-    if (!selected) {
-        try {
-            String[] cmd = ['/opt/conda/envs/cellpose/bin/python', '-m', 'cellpose', '--version'] as String[]
-            IJ.log('[INFO] Cellpose preflight (python): ' + cmd.join(' '))
-            def res = runPreflight(cmd)
-            if (res.ok) {
-                cellposePath = '/opt/conda/envs/cellpose/bin/python'
-                cellposeEnvName = 'cellpose'
-                IJ.log('[INFO] Selected direct python backend. Version: ' + (res.output == null ? '' : res.output.trim()))
-            } else {
-                IJ.log('[WARN] Python preflight failed (exit=' + res.exitCode + '). Output: ' + (res.output == null ? '' : res.output.trim()))
-                IJ.log('[WARN] Proceeding with fallback python path anyway.')
-            }
-        } catch (Exception e) {
-            IJ.log('[WARN] Python preflight exception: ' + e.getMessage())
-            IJ.log('[WARN] Proceeding with fallback python path anyway.')
-        }
-    }
-
-    IJ.log("[INFO] Final Cellpose command selection: CELLPOSE_PYTHON_FILEPATH='${cellposePath}', CELLPOSE_MODEL_NAME='${cellposeEnvName}'")
 
     settings.detectorFactory = new CellposeDetectorFactory()
     settings.detectorSettings = [
-        'CELLPOSE_PYTHON_FILEPATH'       : cellposePath,
-        'CELLPOSE_MODEL_NAME'            : cellposeEnvName,
-        'CELLPOSE_MODEL'                 : cellposeModel,
-        'CELLPOSE_CUSTOM_MODEL_FILEPATH' : customModelPath,
-        'TARGET_CHANNEL'                 : targetChannel,    // String — see C10
-        'OPTIONAL_CHANNEL_2'             : optionalChannel,  // String
-        'CELL_DIAMETER'                  : 30.0d,
-        'USE_GPU'                        : useGpu,
-        'SIMPLIFY_CONTOURS'              : simplifyContours,
+        'CONDA_ENV'                : 'base',
+        'CELLPOSE_MODEL'           : cellposeModel,
+        'CELLPOSE_MODEL_FILEPATH'  : customModelPath,
+        'PRETRAINED_OR_CUSTOM'     : (customModelPath != null && !customModelPath.isEmpty()) ? 'CUSTOM_MODEL' : 'CELLPOSE_MODEL',
+        'TARGET_CHANNEL'           : String.valueOf(targetChannel),
+        'OPTIONAL_CHANNEL_2'       : String.valueOf(optionalChannel),
+        'CELL_DIAMETER'            : (double) cellDiameter,
+        'USE_GPU'                  : useGpu,
+        'SIMPLIFY_CONTOURS'        : simplifyContours,
     ]
-    settings.detectorSettings['CELL_DIAMETER'] = (double) cellDiameter
 
     settings.initialSpotFilterValue = 0.0d
     settings.addAllAnalyzers()
 
-    settings.trackerFactory = new SparseLAPTrackerFactory()
-    settings.trackerSettings = settings.trackerFactory.getDefaultSettings()
-    settings.trackerSettings['LINKING_MAX_DISTANCE'] = (double) linkingDist
+    // C5 — reflection-based tracker factory loader (handles sparselap→jaqaman rename).
+    String[] trackerCandidates = [
+        'fiji.plugin.trackmate.tracking.jaqaman.SparseLAPTrackerFactory',
+        'fiji.plugin.trackmate.tracking.jaqaman.SimpleSparseLAPTrackerFactory',
+        'fiji.plugin.trackmate.tracking.sparselap.SparseLAPTrackerFactory',
+    ]
+    def trackerFactory = null
+    for (String cn : trackerCandidates) {
+        try {
+            trackerFactory = Class.forName(cn).getDeclaredConstructor().newInstance()
+            IJ.log('[INFO] Tracker factory: ' + cn); break
+        } catch (Throwable ignored) { }
+    }
+    if (trackerFactory == null) {
+        IJ.log('[ERROR] No SparseLAP/SimpleSparseLAP factory found; aborting.')
+        println('FINAL STATUS: FAILURE - No tracker factory.'); return
+    }
+    settings.trackerFactory  = trackerFactory
+    settings.trackerSettings = trackerFactory.getDefaultSettings()
+    settings.trackerSettings['LINKING_MAX_DISTANCE']     = (double) linkingDist
     settings.trackerSettings['GAP_CLOSING_MAX_DISTANCE'] = (double) gapClosingDist
-    settings.trackerSettings['MAX_FRAME_GAP'] = maxFrameGap
+    settings.trackerSettings['MAX_FRAME_GAP']            = (Integer) maxFrameGap
     settings.addTrackFilter(new FeatureFilter('NUMBER_SPOTS', (double) minTrackLength, true))
 
     def trackmate = new TrackMate(model, settings)

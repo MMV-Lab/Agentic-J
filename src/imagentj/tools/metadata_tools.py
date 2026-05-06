@@ -504,6 +504,26 @@ class ImageMetadataAnalyzer:
             return {}
         suggestions: Dict[str, Any] = {}
         suggestions['otsu_like_estimate'] = self.intensity_stats['mean'] + self.intensity_stats['std']
+
+        # Background-mode heuristic — drives the "dark" suffix on IJ.setAutoThreshold.
+        # If most pixels are dark (median sits in the lower half of the dynamic range),
+        # the image is bright-foreground-on-dark-background (typical fluorescence) and
+        # the threshold call needs the "dark" suffix. Otherwise (brightfield, H&E,
+        # phase-contrast where objects are dark on bright background) — no suffix.
+        i_min = self.intensity_stats.get('min')
+        i_max = self.intensity_stats.get('max')
+        median = self.intensity_stats.get('median', self.intensity_stats.get('mean'))
+        if i_min is not None and i_max is not None and median is not None and i_max > i_min:
+            mid = (i_min + i_max) / 2.0
+            if median <= mid:
+                suggestions['background_mode']     = 'dark'
+                suggestions['threshold_suffix']    = ' dark'
+                suggestions['threshold_call_hint'] = 'IJ.setAutoThreshold(imp, "Otsu dark")  // bright signal on dark BG'
+            else:
+                suggestions['background_mode']     = 'bright'
+                suggestions['threshold_suffix']    = ''
+                suggestions['threshold_call_hint'] = 'IJ.setAutoThreshold(imp, "Otsu")  // dark signal on bright BG (brightfield/H&E)'
+
         if self.intensity_stats.get('q3') is not None:
             suggestions['threshold_conservative'] = self.intensity_stats['q95']
             suggestions['threshold_moderate']     = self.intensity_stats['q3']
@@ -652,6 +672,19 @@ def _suggest_threshold_from_stats(stats: Dict[str, Any],
         'normalization_range':        [stats['min'], stats['max']],
         'robust_normalization_range': [stats['min'], stats['q99']],
     }
+    # Background-mode heuristic — drives the "dark" suffix on IJ.setAutoThreshold.
+    i_min, i_max, median = stats.get('min'), stats.get('max'), stats.get('median', stats.get('mean'))
+    if i_min is not None and i_max is not None and median is not None and i_max > i_min:
+        mid = (i_min + i_max) / 2.0
+        if median <= mid:
+            suggestions['background_mode']     = 'dark'
+            suggestions['threshold_suffix']    = ' dark'
+            suggestions['threshold_call_hint'] = 'IJ.setAutoThreshold(imp, "Otsu dark")  // bright signal on dark BG'
+        else:
+            suggestions['background_mode']     = 'bright'
+            suggestions['threshold_suffix']    = ''
+            suggestions['threshold_call_hint'] = 'IJ.setAutoThreshold(imp, "Otsu")  // dark signal on bright BG (brightfield/H&E)'
+
     x_info = calibration.get('X')
     if x_info and x_info.get('unit') not in (None, 'pixel'):
         x_scale = x_info['scale']
@@ -734,7 +767,14 @@ def _compute_standalone_stats(file_path: str, suffix: str) -> Dict[str, Any]:
         flat = ds.pixel_array.astype(np.float64).ravel()
 
     else:
-        return {}
+        # PIL fallback: handles JPEG, PNG, BMP, and any other PIL-readable format
+        try:
+            from PIL import Image
+            with Image.open(file_path) as img:
+                arr = np.array(img, dtype=np.float64)
+            flat = arr.ravel()
+        except Exception:
+            return {}
 
     return {
         'min':           float(np.min(flat)),
@@ -904,6 +944,24 @@ def extract_file_metadata(file_path: str) -> Dict[str, Any]:
             if hasattr(ds, 'Modality'):
                 dicom_imaging['Modality'] = str(ds.Modality)
             result['dicom_imaging'] = dicom_imaging
+
+        # PIL fallback: fills dims/mode for JPEG, PNG, BMP, and any other
+        # PIL-readable format not handled by a specific branch above.
+        if not dims:
+            try:
+                from PIL import Image
+                with Image.open(file_path) as img:
+                    dims['width']    = img.width
+                    dims['height']   = img.height
+                    dims['mode']     = img.mode          # e.g. 'L', 'RGB', 'RGBA'
+                    dims['channels'] = len(img.getbands())
+                    # DPI embedded in JPEG/PNG JFIF/Exif headers → physical pixel size
+                    dpi = img.info.get('dpi')
+                    if dpi and dpi[0] > 0 and not scales:
+                        scales['X'] = {'scale': 25.4 / dpi[0], 'unit': 'mm'}
+                        scales['Y'] = {'scale': 25.4 / dpi[1], 'unit': 'mm'}
+            except Exception:
+                pass
 
     except Exception as e:
         warnings.warn(f"Could not extract metadata from {file_path}: {e}")

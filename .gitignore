@@ -24,7 +24,6 @@ qdrant_data/*
 
 scripts/saved_scripts/
 
-rag_config.py
 
 src/scripts/saved_scripts/
 

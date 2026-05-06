@@ -1,6 +1,11 @@
 # TrackMate-Cellpose — SCRIPTING API REFERENCE (Groovy)
 
-All patterns here are verified from:
+All settings keys and import paths in this document have been verified against
+the **installed JARs in this image** by runtime introspection
+(`getDeclaredConstructor().newInstance().getDefaultSettings()` on each factory).
+See `skills/_tests/test_trackmate_cellpose_introspect.groovy`.
+
+Reference URLs (may be out-of-date for the version installed here):
 - https://imagej.net/plugins/trackmate/detectors/trackmate-cellpose
 - https://imagej.net/plugins/trackmate/detectors/trackmate-cellpose-advanced
 - https://imagej.net/plugins/trackmate/detectors/trackmate-cellpose-sam
@@ -8,6 +13,12 @@ All patterns here are verified from:
 
 > Requires the **TrackMate-Cellpose** Fiji update site and the `cellpose` conda
 > environment at `/opt/conda/envs/cellpose` (baked into the image via Dockerfile).
+>
+> The image installs a **micromamba shim** at
+> `/usr/local/opt/micromamba/bin/micromamba` that intercepts the calls
+> TrackMate-Cellpose makes (`micromamba run -n base ...`) and routes them to the
+> correct conda env. See `micromamba_shim.sh`. You normally do **not** need to
+> override `CONDA_ENV` from its default value of `base`.
 
 ---
 
@@ -26,26 +37,34 @@ Settings key names below are derived from the upstream source and documentation.
 import fiji.plugin.trackmate.cellpose.CellposeDetectorFactory
 
 // Cellpose advanced (adds flow/probability threshold controls)
-import fiji.plugin.trackmate.cellpose.advanced.CellposeAdvancedDetectorFactory
+// NOTE: class is AdvancedCellposeDetectorFactory (NOT CellposeAdvancedDetectorFactory).
+import fiji.plugin.trackmate.cellpose.advanced.AdvancedCellposeDetectorFactory
 
 // Cellpose-SAM (cpsam model — Cellpose 4.x)
-import fiji.plugin.trackmate.cellpose.CellposeSAMDetectorFactory
+// NOTE: lives in the `.sam` sub-package, NOT directly under `.cellpose`.
+import fiji.plugin.trackmate.cellpose.sam.CellposeSAMDetectorFactory
 ```
 
 ---
 
 ## CellposeDetectorFactory — Settings Keys
 
+These are the **exact keys** returned by `getDefaultSettings()` on the JAR
+installed in this image. There is **no** `CELLPOSE_PYTHON_FILEPATH`,
+`CELLPOSE_MODEL_NAME`, or `CELLPOSE_CUSTOM_MODEL_FILEPATH` — those names from
+older docs are silently ignored, and `TARGET_CHANNEL` of the wrong type (Integer
+instead of String) raises `IllegalArgumentException` from `process()`.
+
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `CELLPOSE_PYTHON_FILEPATH` | String | `/opt/conda/envs/cellpose/bin/python` | Path to the **Python interpreter** inside the cellpose env (preferred), or to the `conda` binary (requires knowing the env name separately) |
-| `CELLPOSE_CUSTOM_MODEL_FILEPATH` | String | `""` | Absolute path to a custom `.pth` model; set to `""` to use a pretrained model |
+| `CONDA_ENV` | String | `base` | Conda env name passed to the micromamba shim. Leave at `base` — the shim routes it to the real cellpose env. |
 | `CELLPOSE_MODEL` | String | `cyto3` | Pretrained model string — see **Available Models** section below |
-| `CELLPOSE_MODEL_NAME` | String | `""` | Conda environment name — only relevant when `CELLPOSE_PYTHON_FILEPATH` points to the `conda` binary rather than a Python interpreter |
-| `TARGET_CHANNEL` | **String** | `"0"` | Cellpose CLI channel selector (NOT 1-based ImageJ index). Values: `"0"`=grayscale, `"1"`=red, `"2"`=green, `"3"`=blue. **Must be a String** — `int` is silently rejected at `checkSettings`. |
-| `OPTIONAL_CHANNEL_2` | **String** | `"0"` | Second Cellpose channel for two-channel models like `cyto3`. Values: `"0"`=don't use, `"1"`=red, `"2"`=green, `"3"`=blue. **Must be a String.** |
-| `CELL_DIAMETER` | double | `30.0` | Expected cell diameter **in physical units** (µm if calibrated) |
-| `USE_GPU` | boolean | `false` | Enable GPU; falls back to CPU silently if unavailable |
+| `CELLPOSE_MODEL_FILEPATH` | String | `""` | Absolute path to a custom `.pth` model; set to `""` to use a pretrained model. **NOTE:** key is `CELLPOSE_MODEL_FILEPATH`, not `CELLPOSE_CUSTOM_MODEL_FILEPATH`. |
+| `PRETRAINED_OR_CUSTOM` | String | `CELLPOSE_MODEL` | Selector — `"CELLPOSE_MODEL"` to use the pretrained string in `CELLPOSE_MODEL`, or `"CUSTOM_MODEL"` to load `CELLPOSE_MODEL_FILEPATH`. |
+| `TARGET_CHANNEL` | **String** | `"0"` | 0-based channel index, **as a String**. Passing an `Integer` causes `IllegalArgumentException: 'Target channel' expects String. Got Integer`. |
+| `OPTIONAL_CHANNEL_2` | **String** | `"0"` | Second channel (nuclei hint for cyto3) as String; `"0"` to skip. |
+| `CELL_DIAMETER` | double | `30.0` | Expected cell diameter **in physical units** (µm if calibrated). Use `30.0d` literal in Groovy — bare `30.0` is `BigDecimal` and will fail at `process()`. |
+| `USE_GPU` | boolean | `true` | Default is **true**; set `false` for CPU. Falls back silently if GPU is unavailable. |
 | `SIMPLIFY_CONTOURS` | boolean | `true` | Smooth/simplify mask outlines |
 
 ### Minimal Groovy example
@@ -67,24 +86,24 @@ model.setLogger(Logger.IJ_LOGGER)
 def settings = new Settings(imp)
 settings.detectorFactory = new CellposeDetectorFactory()
 settings.detectorSettings = [
-    'CELLPOSE_PYTHON_FILEPATH'       : '/opt/conda/envs/cellpose/bin/python',
-    'CELLPOSE_MODEL_NAME'            : 'cellpose',   // conda env name (safety net if plugin falls back to conda)
-    'CELLPOSE_MODEL'                 : 'cyto3',
-    'CELLPOSE_CUSTOM_MODEL_FILEPATH' : '',
-    'TARGET_CHANNEL'                 : '0',    // STRING — Cellpose CLI: 0=gray, 1=R, 2=G, 3=B
-    'OPTIONAL_CHANNEL_2'             : '0',    // STRING — 0=don't use
-    'CELL_DIAMETER'                  : 30.0,   // physical units (µm)
-    'USE_GPU'                        : false,
-    'SIMPLIFY_CONTOURS'              : true,
+    'CONDA_ENV'                : 'base',         // routed by micromamba shim
+    'CELLPOSE_MODEL'           : 'cyto3',
+    'CELLPOSE_MODEL_FILEPATH'  : '',
+    'PRETRAINED_OR_CUSTOM'     : 'CELLPOSE_MODEL',
+    'TARGET_CHANNEL'           : '0',            // String, 0-based
+    'OPTIONAL_CHANNEL_2'       : '0',            // String
+    'CELL_DIAMETER'            : 30.0d,          // Double — bare 30.0 is BigDecimal
+    'USE_GPU'                  : false,
+    'SIMPLIFY_CONTOURS'        : true,
 ]
 settings.initialSpotFilterValue = 0.0
 settings.addAllAnalyzers()
 
 settings.trackerFactory = new SparseLAPTrackerFactory()
 settings.trackerSettings = settings.trackerFactory.getDefaultSettings()
-settings.trackerSettings['LINKING_MAX_DISTANCE']     = 40.0
-settings.trackerSettings['GAP_CLOSING_MAX_DISTANCE'] = 40.0
-settings.trackerSettings['MAX_FRAME_GAP']            = 2
+settings.trackerSettings['LINKING_MAX_DISTANCE']     = 40.0d
+settings.trackerSettings['GAP_CLOSING_MAX_DISTANCE'] = 40.0d
+settings.trackerSettings['MAX_FRAME_GAP']            = (Integer) 2
 
 def trackmate = new TrackMate(model, settings)
 if (!trackmate.checkInput() || !trackmate.process()) {
@@ -156,7 +175,7 @@ Nothing works well                       →  fine-tune cyto3 with ~500 annotate
 
 ---
 
-## CellposeAdvancedDetectorFactory — Additional Settings Keys
+## AdvancedCellposeDetectorFactory — Additional Settings Keys
 
 Inherits all keys from `CellposeDetectorFactory`, plus:
 
@@ -164,29 +183,29 @@ Inherits all keys from `CellposeDetectorFactory`, plus:
 |-----|------|---------|-------------|
 | `FLOW_THRESHOLD` | double | `0.4` | Mean-squared-flow error cutoff. Lower = fewer, more regular shapes. `0` = disable flow validation. |
 | `CELL_PROB_THRESHOLD` | double | `0.0` | Neural network confidence cutoff. Range −6 to +6. Lower = more/larger cells; higher = fewer/smaller. |
-| `RESAMPLE` | boolean | `true` | Reconstruct masks at original image resolution. Set `false` for faster (but less accurate) processing. |
+| `NO_RESAMPLE` | boolean | `false` | **Inverted-sense flag.** `false` = resample to original resolution (default, accurate). `true` = skip resampling (faster, less accurate). The legacy docs called this `RESAMPLE` with opposite polarity — that key does **not** exist. |
 
 ### Advanced example (key additions only)
 
 ```groovy
-import fiji.plugin.trackmate.cellpose.advanced.CellposeAdvancedDetectorFactory
+import fiji.plugin.trackmate.cellpose.advanced.AdvancedCellposeDetectorFactory
 import fiji.plugin.trackmate.tracking.jaqaman.SparseLAPTrackerFactory
 
-settings.detectorFactory = new CellposeAdvancedDetectorFactory()
+settings.detectorFactory = new AdvancedCellposeDetectorFactory()
 settings.detectorSettings = [
-    'CELLPOSE_PYTHON_FILEPATH'       : '/opt/conda/envs/cellpose/bin/python',
-    'CELLPOSE_MODEL_NAME'            : 'cellpose',   // conda env name (safety net)
-    'CELLPOSE_MODEL'                 : 'cyto3',
-    'CELLPOSE_CUSTOM_MODEL_FILEPATH' : '',
-    'TARGET_CHANNEL'                 : '0',    // STRING
-    'OPTIONAL_CHANNEL_2'             : '0',    // STRING
-    'CELL_DIAMETER'                  : 30.0,
-    'USE_GPU'                        : false,
-    'SIMPLIFY_CONTOURS'              : true,
+    'CONDA_ENV'                : 'base',
+    'CELLPOSE_MODEL'           : 'cyto3',
+    'CELLPOSE_MODEL_FILEPATH'  : '',
+    'PRETRAINED_OR_CUSTOM'     : 'CELLPOSE_MODEL',
+    'TARGET_CHANNEL'           : '0',
+    'OPTIONAL_CHANNEL_2'       : '0',
+    'CELL_DIAMETER'            : 30.0d,
+    'USE_GPU'                  : false,
+    'SIMPLIFY_CONTOURS'        : true,
     // Advanced-only keys:
-    'FLOW_THRESHOLD'                 : 0.4,
-    'CELL_PROB_THRESHOLD'            : 0.0,
-    'RESAMPLE'                       : true,
+    'FLOW_THRESHOLD'           : 0.4d,
+    'CELL_PROB_THRESHOLD'      : 0.0d,
+    'NO_RESAMPLE'              : false,   // false = resample (default, accurate)
 ]
 ```
 
@@ -194,27 +213,36 @@ settings.detectorSettings = [
 
 ## CellposeSAMDetectorFactory — Settings Keys
 
-Uses the `cpsam` model from Cellpose 4.x. Requires the `cellpose-sam` conda environment
-if installed separately; otherwise use the same `cellpose` env with a recent version.
+Uses the `cpsam` model from Cellpose 4.x. The micromamba shim routes
+`CONDA_ENV='base'` to the `cellpose4` env (which contains the cpsam model)
+when `CELLPOSE_MODEL = 'cpsam'`. Lives in
+`fiji.plugin.trackmate.cellpose.sam.CellposeSAMDetectorFactory`.
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `CELLPOSE_PYTHON_FILEPATH` | String | `/opt/conda/bin/conda` | Path to conda executable |
-| `CELLPOSE_CUSTOM_MODEL_FILEPATH` | String | `""` | Custom model path; `""` for `cpsam` |
-| `TARGET_CHANNEL` | **String** | `"0"` | Cellpose-SAM channel selector. Values: `"0"`=grayscale (full image), `"1"`=red, `"2"`=green, `"3"`=blue. **Must be a String.** |
-| `USE_GPU` | boolean | `false` | Enable GPU |
-| `SIMPLIFY_CONTOURS` | boolean | `true` | Smooth outlines |
+| `CONDA_ENV` | String | `base` | Conda env (routed by the shim). |
+| `CELLPOSE_MODEL` | String | `cpsam` | Model name. |
+| `CELLPOSE_MODEL_FILEPATH` | String | `""` | Custom model path; `""` for the pretrained `cpsam`. |
+| `PRETRAINED_OR_CUSTOM` | String | `CELLPOSE_MODEL` | `"CELLPOSE_MODEL"` or `"CUSTOM_MODEL"`. |
+| `TARGET_CHANNEL` | **String** | `"0"` | 0-based channel index, as String. |
+| `USE_GPU` | boolean | `true` | Enable GPU. |
+| `SIMPLIFY_CONTOURS` | boolean | `true` | Smooth outlines. |
+
+(There is no `OPTIONAL_CHANNEL_2` or `CELL_DIAMETER` for SAM — cpsam does not
+need a diameter prior.)
 
 ```groovy
-import fiji.plugin.trackmate.cellpose.CellposeSAMDetectorFactory
+import fiji.plugin.trackmate.cellpose.sam.CellposeSAMDetectorFactory
 
 settings.detectorFactory = new CellposeSAMDetectorFactory()
 settings.detectorSettings = [
-    'CELLPOSE_PYTHON_FILEPATH'       : '/opt/conda/envs/cellpose/bin/python',
-    'CELLPOSE_CUSTOM_MODEL_FILEPATH' : '',
-    'TARGET_CHANNEL'                 : '0',    // STRING — Cellpose CLI semantics
-    'USE_GPU'                        : false,
-    'SIMPLIFY_CONTOURS'              : true,
+    'CONDA_ENV'                : 'base',
+    'CELLPOSE_MODEL'           : 'cpsam',
+    'CELLPOSE_MODEL_FILEPATH'  : '',
+    'PRETRAINED_OR_CUSTOM'     : 'CELLPOSE_MODEL',
+    'TARGET_CHANNEL'           : '0',
+    'USE_GPU'                  : false,
+    'SIMPLIFY_CONTOURS'        : true,
 ]
 ```
 
@@ -222,34 +250,59 @@ settings.detectorSettings = [
 
 ## Cellpose-Specific Pitfalls
 
-### Pitfall C1 — TrackMate v8+ auto-detects conda but misses `/opt/conda`
+### Pitfall C1 — How conda actually gets called: the micromamba shim
 
-In **TrackMate-Cellpose v8+** the conda path is auto-detected by
-`CLIUtils.findDefaultCondaPath()`, which searches a fixed list of paths including
-`/opt/miniconda3/bin/conda`, `/opt/anaconda3/bin/conda`, etc. — but **not**
-`/opt/conda/bin/conda`, which is where `continuumio/miniconda3` (our Docker base image)
-installs conda.
+TrackMate-Cellpose v8+ does not invoke a Python interpreter directly. It builds a
+command of the form
+`/usr/local/opt/micromamba/bin/micromamba run -n <CONDA_ENV> cellpose ...`
+(macOS-style hardcoded path).
 
-When none of the search paths are found, it falls through to the hardcoded macOS default:
-`/usr/local/opt/micromamba/bin/micromamba` — which does not exist in the container,
-causing:
+This image satisfies that command with a **shell shim** at
+`/usr/local/opt/micromamba/bin/micromamba` (see `micromamba_shim.sh` in the repo
+root) that:
+- Translates `-n base` → the real cellpose env
+- Translates `-n omnipose` → the cellpose env (omnipose ships in the same env)
+- Detects `--pretrained_model cpsam` and routes to the `cellpose4` env
+
+For Groovy callers this means:
+
+- Leave `CONDA_ENV = 'base'`. The shim handles the routing.
+- **Do not** set `CELLPOSE_PYTHON_FILEPATH` (no such key — see settings table).
+- **Do not** add a `/opt/miniconda3` symlink — that path is not consulted in this
+  build of TrackMate-Cellpose.
+
+Verify the shim end-to-end:
+```bash
+/usr/local/opt/micromamba/bin/micromamba run -n base cellpose --version
+```
+
+### Pitfall C1.5 — Groovy `BigDecimal` literals fail tracker validation
+
+In Groovy, the literal `30.0` is a `java.math.BigDecimal`, not `Double`.
+TrackMate's `checkInput()` validates the type of every settings value; passing a
+`BigDecimal` for a key declared `Double` fails with:
 
 ```
-java.io.IOException: Cannot run program "/usr/local/opt/micromamba/bin/micromamba"
+Value for parameter LINKING_MAX_DISTANCE is not of the right class.
+Expected java.lang.Double, got java.math.BigDecimal.
 ```
 
-**Fix — add a symlink in the Dockerfile** (already present in this image):
+**Always suffix double literals with `d`** (or use explicit `(double)` casts):
 
-```dockerfile
-RUN ln -s /opt/conda /opt/miniconda3
+```groovy
+// WRONG — BigDecimal
+settings.trackerSettings['LINKING_MAX_DISTANCE'] = 30.0
+settings.detectorSettings['CELL_DIAMETER']       = 20.0
+
+// CORRECT — Double
+settings.trackerSettings['LINKING_MAX_DISTANCE'] = 30.0d
+settings.detectorSettings['CELL_DIAMETER']       = 20.0d
+settings.trackerSettings['MAX_FRAME_GAP']        = (Integer) 1
 ```
 
-This makes `/opt/miniconda3/bin/conda` resolve to the real conda binary, which
-`findDefaultCondaPath()` finds on its first try. No GUI configuration or preference
-setting is needed.
-
-**DO NOT** try to set this via `PrefService` from a Groovy script — the SciJava context
-is not accessible from the Fiji scripting environment in the standard way.
+This applies to **every** Double-typed key (`CELL_DIAMETER`, `FLOW_THRESHOLD`,
+`CELL_PROB_THRESHOLD`, all distance-based tracker keys, `RADIUS`, `THRESHOLD`,
+etc.).
 
 ### Pitfall C2 — Cell diameter is in physical units
 Like all TrackMate detectors, `CELL_DIAMETER` uses calibrated units (µm).
@@ -264,84 +317,154 @@ The first run downloads model weights (~100–300 MB) to `/home/imagentj/.cellpo
 This directory is persisted via the `cellpose_models` Docker named volume.
 Subsequent runs are instant (offline).
 
-### Pitfall C5 — Tracker package changed in TrackMate v8+
+### Pitfall C5 — Tracker package changed in TrackMate v8+; use a reflection loader
 
 TrackMate v8 moved all tracker classes from `fiji.plugin.trackmate.tracking.sparselap`
 to `fiji.plugin.trackmate.tracking.jaqaman`. Using the old package causes `ClassNotFoundException`.
-`SimpleSparseLAPTrackerFactory` was **moved, not removed**.
+`SimpleSparseLAPTrackerFactory` was **moved, not removed**. Hard-coding either path is
+brittle; future TrackMate versions may rename again.
+
+`settings.trackerFactory` must always be set — `checkInput()` fails with a null tracker
+even if you only intend to run detection. Symptoms:
+
+```
+The tracker factory is null.
+unable to resolve class SparseLAPTrackerFactory
+unable to resolve class ManualTrackerFactory
+```
 
 ```groovy
-// WRONG (old sparselap package — causes ClassNotFoundException in v8+):
-import fiji.plugin.trackmate.tracking.sparselap.SimpleSparseLAPTrackerFactory
+// WRONG — old sparselap package; ClassNotFoundException in v8+:
 import fiji.plugin.trackmate.tracking.sparselap.SparseLAPTrackerFactory
 
-// CORRECT (v8+):
+// WRONG — ManualTrackerFactory does not live at this path; never import it:
+import fiji.plugin.trackmate.tracking.ManualTrackerFactory
+
+// CORRECT (v8+ direct import — works in current builds):
 import fiji.plugin.trackmate.tracking.jaqaman.SimpleSparseLAPTrackerFactory
 import fiji.plugin.trackmate.tracking.jaqaman.SparseLAPTrackerFactory
 import fiji.plugin.trackmate.tracking.jaqaman.LAPUtils
 ```
 
-`settings.trackerFactory` must always be set — `checkInput()` fails with a null tracker
-even if you only intend to run detection.
+**Recommended — version-agnostic reflection loader.** Tries each known class
+name at runtime and uses whichever one resolves, so the script survives
+TrackMate package renames without an edit:
+
+```groovy
+def buildTrackerFactoryAndSettings() {
+    String[] candidates = [
+        'fiji.plugin.trackmate.tracking.jaqaman.SparseLAPTrackerFactory',
+        'fiji.plugin.trackmate.tracking.jaqaman.SimpleSparseLAPTrackerFactory',
+        'fiji.plugin.trackmate.tracking.jaqaman.LAPTrackerFactory',
+        'fiji.plugin.trackmate.tracking.sparselap.SparseLAPTrackerFactory',
+        'fiji.plugin.trackmate.tracking.sparselap.SimpleSparseLAPTrackerFactory',
+    ]
+    for (String cn : candidates) {
+        try {
+            Class cls = Class.forName(cn)
+            def factory = cls.getDeclaredConstructor().newInstance()
+            return [factory, factory.getDefaultSettings()]
+        } catch (Throwable t) { /* try next */ }
+    }
+    return null
+}
+
+def bundle = buildTrackerFactoryAndSettings()
+if (bundle == null) { IJ.log('[ERROR] No tracker factory available'); return }
+settings.trackerFactory  = bundle[0]
+settings.trackerSettings = bundle[1]
+```
+
+### Pitfall C7 — Cellpose mask is a file in /tmp, not an ImagePlus
+
+After `trackmate.process()`, TrackMate-Cellpose does NOT open the segmentation
+result as a window — it writes the Cellpose label image to a temp folder and
+parses spots from it internally. Searching `WindowManager` for a "mask" image
+returns nothing.
+
+Symptom:
+```
+[ERROR] Could not locate Cellpose mask image generated by TrackMate-Cellpose.
+```
+
+The output lives at `/tmp/TrackMate-cellpose_<random>/<basename>_cp_masks.{png,tif}`.
+Read it directly:
+
+```groovy
+def findNewestTrackMateCellposeDir() {
+    def best = null; long bestT = Long.MIN_VALUE
+    new File('/tmp').listFiles()?.each { d ->
+        if (d.isDirectory() && d.name.startsWith('TrackMate-cellpose_')
+                && d.lastModified() > bestT) {
+            bestT = d.lastModified(); best = d
+        }
+    }
+    return best
+}
+
+def findBestMaskFile(File dir) {
+    dir?.listFiles()?.findAll { it.isFile() &&
+        (it.name.toLowerCase() =~ /(_cp_masks|cp_masks|_masks)\.(tif|tiff|png)$/)
+    }?.sort { -it.lastModified() }?.first()
+}
+
+File cpDir   = findNewestTrackMateCellposeDir()
+File maskFile = findBestMaskFile(cpDir)
+ImagePlus labelImp = IJ.openImage(maskFile.getAbsolutePath())
+```
+
+Convert to a binary mask with `IJ.setThreshold(labelImp, 1, 65535)` +
+`IJ.run(maskImp, "Convert to Mask", "")`.
+
+### Pitfall C8 — `SpotRoi` is not an `ij.gui.Roi`; spots may yield 0 ROIs
+
+TrackMate's `Spot.getRoi()` returns a `fiji.plugin.trackmate.SpotRoi`, NOT an
+`ij.gui.Roi`. Adding it to `RoiManager` raises:
+```
+RoiManager.addRoi() expected an ij.gui.Roi but received fiji.plugin.trackmate.SpotRoi
+```
+
+Even after converting via reflection (`getRoi()` / `toPolygon()`), Cellpose
+detections may yield zero usable contours in some builds — you'll see
+`ROIs extracted ... 0` even though `model.getSpots().getNSpots(true) > 0`.
+
+**Don't try to extract ROIs from spots for Cellpose pipelines.** Use the mask
+file from Pitfall C7 as the ground-truth output, and derive any ROIs you need
+from the label image (`LabelImages.findAllLabels` + per-label processing) or
+from the binary mask via `Analyze Particles…`.
+
+### Pitfall C9 — MorphoLibJ classes may not be importable in every build
+
+`inra.ijpb.measure.region2d.IntensityMeasures` and a few sibling classes
+sometimes fail at compile time even when MorphoLibJ is installed:
+```
+unable to resolve class inra.ijpb.measure.region2d.IntensityMeasures
+```
+
+For label-image measurements, prefer plain pixel iteration (no MorphoLibJ
+import required):
+
+```groovy
+def computeAreaCentroidPerLabel(ImagePlus labelImp) {
+    def ip = labelImp.getProcessor()
+    def acc = [:] // label → [count, sumX, sumY]
+    for (int y = 0; y < labelImp.height; y++) {
+        for (int x = 0; x < labelImp.width; x++) {
+            int lbl = (int) ip.getPixelValue(x, y)
+            if (lbl <= 0) continue
+            def v = acc.get(lbl) ?: [0d, 0d, 0d]
+            v[0]++; v[1] += x; v[2] += y
+            acc.put(lbl, v)
+        }
+    }
+    return acc
+}
+```
+
+If you genuinely need MorphoLibJ, use the same reflection pattern as the
+tracker loader (`Class.forName('inra.ijpb.measure.region2d.IntensityMeasures')`)
+so the script degrades to the pixel-iteration fallback when the class is absent.
 
 ### Pitfall C6 — `initialSpotFilterValue` must be set
 Same requirement as all TrackMate detectors: set `settings.initialSpotFilterValue`
 before calling `process()`, even if `0.0`.
-
-### Pitfall C10 — `TARGET_CHANNEL` and `OPTIONAL_CHANNEL_2` must be Strings (not int)
-
-Unlike the LoG/DoG detectors (which use **`int` 1-based ImageJ channel**),
-the Cellpose detector backs `TARGET_CHANNEL` with a string-valued
-`Configurator$ChoiceArgument` whose values are Cellpose CLI channel
-selectors: `"0"` (grayscale), `"1"` (red), `"2"` (green), `"3"` (blue).
-
-```groovy
-// WRONG — int silently fails or maps to a wrong default at checkSettings:
-'TARGET_CHANNEL'      : 1,
-'OPTIONAL_CHANNEL_2'  : 0,
-
-// CORRECT — String, Cellpose CLI semantics (NOT 1-based ImageJ):
-'TARGET_CHANNEL'      : '0',   // grayscale — use for single-channel images
-'OPTIONAL_CHANNEL_2'  : '0',   // 0 = don't use second channel
-```
-
-**Verified at runtime** by reading `factory.getDefaultSettings()`:
-`TARGET_CHANNEL`'s default is `"0"` of class `java.lang.String`. The
-underlying `CellposeCLI.DEFAULT_TARGET_CHANNEL` field is also `String`.
-
-For a multi-channel ImageJ image where you want only the red channel:
-`'TARGET_CHANNEL': '1'`. For the cyto3 model with a nuclear hint channel:
-`'TARGET_CHANNEL': '2', 'OPTIONAL_CHANNEL_2': '3'` (cyto on green, nuclei on blue).
-
----
-
-## Settings-Map Key Reality Check (verified at runtime)
-
-`factory.getDefaultSettings()` from this build (`TrackMate-Cellpose-1.0.1`)
-returns ONLY these keys:
-
-| Key | Default | Type |
-|---|---|---|
-| `CONDA_ENV` | `"base"` | String |
-| `CELLPOSE_MODEL` | `"cyto3"` | String |
-| `CELLPOSE_MODEL_FILEPATH` | `""` | String |
-| `TARGET_CHANNEL` | `"0"` | String |
-| `OPTIONAL_CHANNEL_2` | `"0"` | String |
-| `CELL_DIAMETER` | `30.0` | Double |
-| `USE_GPU` | `true` | Boolean |
-| `SIMPLIFY_CONTOURS` | `true` | Boolean |
-| `PRETRAINED_OR_CUSTOM` | `"CELLPOSE_MODEL"` | String |
-
-Notes on legacy/aliased keys appearing in older examples:
-- **`CELLPOSE_PYTHON_FILEPATH`** — NOT in the settings map. The python
-  binary path is configured globally via the TrackMate Conda preference
-  (`Edit › Options › Configure TrackMate Conda path…`) or via the
-  `/opt/conda → /opt/miniconda3` symlink fix from Pitfall C1. Passing
-  it in the settings map is silently ignored.
-- **`CELLPOSE_MODEL_NAME`** → use `CONDA_ENV` instead. The conda env name
-  defaults to `"base"`; set this explicitly to the env that has cellpose
-  installed (e.g. `"cellpose"`).
-- **`CELLPOSE_CUSTOM_MODEL_FILEPATH`** → the actual key value is
-  `CELLPOSE_MODEL_FILEPATH` (the constant *name* contains "CUSTOM" but
-  the constant *value* does not). Both names may work in some builds; use
-  `CELLPOSE_MODEL_FILEPATH` to match `getDefaultSettings()` exactly.

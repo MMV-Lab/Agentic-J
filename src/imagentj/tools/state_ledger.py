@@ -30,44 +30,38 @@ def _ledger_path(project_root: str) -> str:
 
 def _load_ledger(project_root: str) -> dict:
     path = _ledger_path(project_root)
-    if os.path.exists(path):
+    if not os.path.exists(path):
+        return {}
+    try:
         with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
-    return {}
+    except (json.JSONDecodeError, ValueError):
+        # Corrupted or empty file (e.g. from a partial/interrupted write).
+        # Return empty so the caller re-initialises rather than crashing.
+        return {}
 
 
 def _save_ledger(project_root: str, ledger: dict) -> None:
-    # Enforce that project_root is under /app/data/projects/. The /app/data/tasks/
-    # tree is read-only input data; saving a ledger there fails silently and
-    # then mkstemp raises a confusing ENOENT. Catch it here with a clear message
-    # the supervisor can act on.
-    norm = os.path.normpath(project_root)
-    if not norm.startswith("/app/data/projects/"):
+    # Guard: project_root must be inside /app/data to avoid writing to system paths.
+    # The supervisor sometimes guesses a path before setup_analysis_workspace is called.
+    if not os.path.normpath(project_root).startswith("/app/data"):
         raise ValueError(
-            f"project_root '{project_root}' is not under /app/data/projects/. "
-            "Call setup_analysis_workspace(project_name) first — it creates "
-            "the project directory at /app/data/projects/<name> and is the only "
-            "valid parent for state_ledger.json."
-        )
-    if not os.path.isdir(norm):
-        raise FileNotFoundError(
-            f"Project directory '{norm}' does not exist. "
-            "Call setup_analysis_workspace(project_name) BEFORE any ledger tool."
+            f"project_root '{project_root}' is outside /app/data. "
+            "Call setup_analysis_workspace first to create the project folder."
         )
     # Atomic write: serialise to a temp file in the same directory, then
-    # replace the target. os.replace() is atomic on POSIX, so concurrent
-    # writers (the supervisor often issues set_ledger_metadata and
-    # update_state_ledger in the same parallel-tool turn) never produce a
-    # half-written or two-objects-concatenated file.
+    # replace the target. os.replace() is atomic on POSIX, so readers never
+    # see a partially-written or empty file.
     path = _ledger_path(project_root)
-    fd, tmp = tempfile.mkstemp(dir=norm, suffix=".tmp")
+    dir_ = os.path.dirname(path)
+    os.makedirs(dir_, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=dir_, suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(ledger, f, indent=2, ensure_ascii=False)
         os.replace(tmp, path)
     except Exception:
-        try: os.unlink(tmp)
-        except OSError: pass
+        os.unlink(tmp)
         raise
 
 
@@ -81,6 +75,7 @@ def _format_ledger(ledger: dict) -> str:
 
     lines.append(f"PROJECT: {ledger.get('project_root', 'unknown')}")
     lines.append(f"SCIENTIFIC GOAL: {ledger.get('scientific_goal', '[not set]')}")
+    lines.append(f"OPERATING MODE: {ledger.get('operating_mode', '[not set]')}")
     lines.append(f"CURRENT PHASE: {ledger.get('current_phase', '[not set]')}")
 
     # Pipeline plan
@@ -113,6 +108,17 @@ def _format_ledger(ledger: dict) -> str:
             if s.get("output_paths"):
                 line += f"  outputs={s['output_paths']}"
             lines.append(line)
+
+    # Recommended plugin (must be respected by coder)
+    rec = ledger.get("recommended_plugin")
+    if rec:
+        lines.append(
+            f"RECOMMENDED PLUGIN: {rec}  "
+            f"← USE THIS PLUGIN. Do not substitute an alternative "
+            f"(e.g., do not use SIFT when TurboReg is recommended). "
+            f"If the recommended plugin is genuinely unusable for the task, "
+            f"state the reason explicitly in the script's documentation."
+        )
 
     # Skill paths identified
     skills = ledger.get("relevant_skills", [])
@@ -207,10 +213,7 @@ def update_state_ledger(
         entry["parameters"] = parameters
 
     ledger["completed_steps"].append(entry)
-    try:
-        _save_ledger(project_root, ledger)
-    except (ValueError, FileNotFoundError) as e:
-        return f"LEDGER_SAVE_ERROR: {e}"
+    _save_ledger(project_root, ledger)
 
     return _format_ledger(ledger)
 
@@ -238,10 +241,12 @@ def read_state_ledger(project_root: str) -> str:
 def set_ledger_metadata(
     project_root: str,
     scientific_goal: Optional[str] = None,
+    operating_mode: Optional[str] = None,
     pipeline_plan: Optional[list[str]] = None,
     key_decision: Optional[str] = None,
     image_metadata: Optional[dict] = None,
     relevant_skill: Optional[str] = None,
+    recommended_plugin: Optional[str] = None,
     rag_reference: Optional[dict] = None,
 ) -> str:
     """
@@ -255,6 +260,9 @@ def set_ledger_metadata(
         project_root:    Absolute path to the project folder.
         scientific_goal: One-sentence description of what the user wants to achieve.
                          Example: "Count and measure nuclei in DAPI-stained HeLa cells across 3 drug conditions"
+        operating_mode:  How the user wants to work: "script" (automated Groovy scripts, default)
+                         or "ui" (step-by-step guidance through the Fiji GUI).
+                         Set this once in Phase 1 after asking the user.
         pipeline_plan:   Ordered list of processing step names.
                          Example: ["preprocessing", "thresholding", "watershed_segmentation", "measurement"]
         key_decision:    A single decision to append to the decisions log.
@@ -263,6 +271,9 @@ def set_ledger_metadata(
                          Example: {"bit_depth": 16, "pixel_size_um": 0.325, "channels": 3, "n_images": 24}
         relevant_skill:  Path to a skill folder to record as relevant.
                          Example: "/app/skills/morpholibj/"
+        recommended_plugin: Name of the plugin recommended by plugin_manager.
+                         The coder MUST prefer this plugin over alternatives.
+                         Example: "TurboReg", "StarDist", "TrackMate"
         rag_reference:   Compact summary of a RAG retrieval. Store the query (for re-retrieval)
                          and a one-line finding (for quick reference). One reference per call.
                          Example: {"query": "otsu thresholding fiji", "step": "thresholding",
@@ -276,6 +287,9 @@ def set_ledger_metadata(
 
     if scientific_goal is not None:
         ledger["scientific_goal"] = scientific_goal
+
+    if operating_mode is not None:
+        ledger["operating_mode"] = operating_mode
 
     if pipeline_plan is not None:
         ledger["pipeline_plan"] = pipeline_plan
@@ -294,6 +308,9 @@ def set_ledger_metadata(
         if relevant_skill not in ledger["relevant_skills"]:
             ledger["relevant_skills"].append(relevant_skill)
 
+    if recommended_plugin is not None:
+        ledger["recommended_plugin"] = recommended_plugin
+
     if rag_reference is not None:
         ledger.setdefault("rag_references", [])
         # Avoid duplicates for the same query+step combination
@@ -306,11 +323,5 @@ def set_ledger_metadata(
                 "finding": rag_reference.get("finding", ""),
             })
 
-    try:
-        _save_ledger(project_root, ledger)
-    except (ValueError, FileNotFoundError) as e:
-        # Return as a clear tool-result string so the supervisor can self-correct
-        # (e.g. realise it forgot setup_analysis_workspace) instead of the
-        # exception propagating up and killing the streaming loop.
-        return f"LEDGER_SAVE_ERROR: {e}"
+    _save_ledger(project_root, ledger)
     return _format_ledger(ledger)

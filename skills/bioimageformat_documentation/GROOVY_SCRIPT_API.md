@@ -328,12 +328,82 @@ for (i = 0; i < list.length; i++) {
 
 ## Exporting from a Script
 
-Saving an image with Bio-Formats from a script uses `IJ.run("Bio-Formats Exporter", ...)`:
+There are TWO supported ways to write OME-TIFF from a Groovy script. Both are
+verified against Fiji's bundled Bio-Formats. Pick ONE — do not mix them.
 
-```javascript
-// IJ Macro
-run("Bio-Formats Exporter", "outfile=/path/to/output.ome.tiff");
+### Option 1 — `IJ.run` against the active ImagePlus (recommended for most cases)
+
+```groovy
+import ij.IJ
+
+def outPath = "/path/to/output.ome.tiff"          // .ome.tiff or .ome.btf for >4 GB
+new java.io.File(outPath).parentFile.mkdirs()
+new java.io.File(outPath).delete()                // exporter will NOT overwrite silently
+
+// imp must already be the active/visible image
+IJ.run(imp, "Bio-Formats Exporter",
+       "save=[" + outPath + "] compression=Uncompressed windowless=true")
 ```
 
-From Groovy, use `IJ.run()` similarly, or use the standard `IJ.saveAsTiff()` for
-plain TIFF (which uses ImageJ's built-in writer, not Bio-Formats).
+**Confirmed option keys** (macro-style, same in Groovy):
+
+| Key                         | Values                                            | Notes                                  |
+|-----------------------------|---------------------------------------------------|----------------------------------------|
+| `save=[<path>]`             | absolute path, wrap in `[ ]` for spaces           | Required                               |
+| `compression=`              | `Uncompressed`, `LZW`, `JPEG`, `JPEG-2000`        | Default `Uncompressed`                 |
+| `windowless=true`           | flag                                              | Suppress confirm/overwrite dialogs     |
+| `export=[<path>]`           | alternative key for older builds                  | Use only if `save=` is silently no-op  |
+
+**Pitfalls:**
+- `outfile=` is NOT a real key — the correct key is `save=`.
+- `IJ.run("Bio-Formats Exporter", "...")` (no `imp` arg) writes whatever image
+  currently holds focus, which is brittle. Always pass `imp` as the first arg.
+- The exporter is silent on failure: it can return without writing the file.
+  After the call, verify with `assert new File(outPath).exists()`.
+- If the file already exists, the exporter aborts with a dialog. Delete or
+  rotate the path BEFORE calling, or use `windowless=true` to force overwrite.
+
+### Option 2 — Programmatic `OMETiffWriter` (headless / large stacks / pyramids)
+
+```groovy
+import loci.formats.out.OMETiffWriter
+import loci.formats.services.OMEXMLService
+import loci.common.services.ServiceFactory
+import loci.formats.MetadataTools
+
+def outPath = "/path/to/output.ome.tiff"
+new java.io.File(outPath).delete()
+
+def service = new ServiceFactory().getInstance(OMEXMLService.class)
+def meta    = service.createOMEXMLMetadata()
+MetadataTools.populateMetadata(meta, 0, null,
+    imp.getStack().getProcessor(1).isLittleEndian() ?: false,
+    "XYCZT",
+    "uint" + imp.getBitDepth(),
+    imp.getWidth(), imp.getHeight(),
+    imp.getNSlices(), imp.getNChannels(), imp.getNFrames(),
+    imp.getNChannels())
+
+def writer = new OMETiffWriter()
+writer.setMetadataRetrieve(meta)
+writer.setId(outPath)
+def stack = imp.getStack()
+for (int i = 1; i <= stack.size(); i++) {
+    writer.saveBytes(i - 1, stack.getProcessor(i).getPixels() as byte[])
+}
+writer.close()
+```
+
+Use this when you need true headless writes (no GUI), tiled output, BigTIFF
+control, or you are streaming planes from disk and never want the full stack
+in memory.
+
+### Do NOT use
+
+- `new loci.plugins.out.Exporter().run(path, imp)` — **the class has no such
+  method**. `Exporter.run(String)` exists for GUI invocation only and reads its
+  parameters from the macro recorder. Calling `run(path, imp)` raises
+  `MissingMethodException` at runtime.
+- `IJ.saveAsTiff(imp, path)` — writes ImageJ-flavored TIFF, not OME-TIFF.
+  Strips OME metadata.
+- `File › Save As › Tiff…` — same as above, not OME-TIFF.

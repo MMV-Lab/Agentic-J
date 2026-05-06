@@ -123,6 +123,16 @@ Virtual stack: `opts.setVirtual(true)`
 7. **Paths with spaces in macros** → wrap the path in `[square brackets]`:
    `open=[/data/my folder/file.nd2]`
 
+8. **Writing OME-TIFF from Groovy** → use ONE of these two verified patterns
+   (see `GROOVY_SCRIPT_API.md` § Exporting from a Script):
+   - `IJ.run(imp, "Bio-Formats Exporter", "save=[" + path + "] compression=Uncompressed windowless=true")`
+   - or programmatic `loci.formats.out.OMETiffWriter` for headless/large stacks.
+
+   Do NOT call `new loci.plugins.out.Exporter().run(path, imp)` — that method
+   does not exist and raises `MissingMethodException` at runtime. Do NOT use
+   `IJ.saveAsTiff` (writes ImageJ TIFF, strips OME metadata). The exporter is
+   silent on failure — always verify `new File(path).exists()` after the call.
+
 ---
 
 ## Output Format Decision Guide

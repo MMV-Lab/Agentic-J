@@ -141,7 +141,8 @@ or (if installed) with MorphoLibJ's label utilities:
 | Plugin not found in menu | StarDist not installed | Help ▶ Update… → tick CSBDeep, StarDist, TensorFlow → Apply → Restart |
 | Out-of-memory / crash | Image too large for single inference | Increase **Number of Tiles** (try 4, 9, or 16) |
 | Too many false detections | `probThresh` too low | Raise **Probability/Score Threshold** (e.g. 0.5 → 0.7) |
-| Adjacent objects not separated | `nmsThresh` too high | Lower **Overlap Threshold** (e.g. 0.4 → 0.3) |
+| Adjacent (touching) objects merged into one | `nmsThresh` too low — one of the pair is suppressed | Raise **Overlap Threshold** (e.g. 0.4 → 0.6) |
+| One object split into multiple detections | `nmsThresh` too high — duplicate predictions not suppressed | Lower **Overlap Threshold** (e.g. 0.4 → 0.2) |
 | Objects at image edge missing | `excludeBoundary` too high | Set **Boundary Exclusion** to 0 |
 | Poor segmentation with built-in model | Image type mismatch | Use `Versatile (fluorescent nuclei)` for fluorescence; `Versatile (H&E nuclei)` for histology |
 | All output is background (label = 0) | Wrong channel active | Extract / select the nuclear channel before running |

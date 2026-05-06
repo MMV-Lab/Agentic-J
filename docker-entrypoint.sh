@@ -86,6 +86,13 @@ esac
 rm -f /tmp/.X1-lock
 rm -f /tmp/.X11-unix/X1
 
+# ── Clean up stale Qdrant lock file ──────────────────────────────────────────
+# Qdrant local mode creates /app/qdrant_data/.lock on startup. If the container
+# previously crashed, or the file was created by a different user (e.g. rstudio-server),
+# the lock becomes stale and blocks RAG initialization with [Errno 13] Permission denied.
+# The parent directory is world-writable, so rm works regardless of the lock's owner.
+rm -f /app/qdrant_data/.lock && echo "[entrypoint] Removed stale Qdrant lock" || true
+
 # ── Ensure Nashorn JavaScript engine JAR is present ──────────────────────────
 # Java 15+ removed the built-in Nashorn engine. Rhino (also installed) covers
 # generic JSR-223 JS, but Fiji macros that request the engine by the name

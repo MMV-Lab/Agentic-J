@@ -1,4 +1,5 @@
 import json
+import re
 import subprocess
 from pathlib import Path
 from langchain.tools import tool
@@ -204,17 +205,22 @@ def check_plugin_installed(plugin_name: str) -> dict:
     fiji_path = Path(FIJI_JAVA_HOME)
     search_dirs = [fiji_path / "plugins", fiji_path / "jars"]
 
-    # Normalize search term
+    # Normalize search term (full concatenated form)
     search_term = plugin_name.lower().replace(" ", "").replace("-", "").replace("_", "")
+
+    # Also build individual tokens for plugins whose JARs are split by word
+    # e.g. "Bio-Formats" → ["bio", "formats"] so "formats-api-*.jar" is matched
+    search_tokens = [t for t in re.split(r'[\s\-_]+', plugin_name.lower()) if len(t) > 2]
 
     found_files = []
     for search_dir in search_dirs:
         if not search_dir.exists():
             continue
         for jar_file in search_dir.glob("**/*.jar"):
-            # Normalize filename for comparison
             normalized_name = jar_file.stem.lower().replace("-", "").replace("_", "")
-            if search_term in normalized_name or normalized_name in search_term:
+            if (search_term in normalized_name
+                    or normalized_name in search_term
+                    or any(token in normalized_name for token in search_tokens)):
                 found_files.append(str(jar_file))
 
     if found_files:

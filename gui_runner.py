@@ -8,12 +8,17 @@ import json
 import time
 import html as html_module
 import logging
+import smtplib
+import ssl
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.application import MIMEApplication
 import jpype
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout,
     QTextEdit, QPushButton, QLabel, QListWidget,
     QSplitter, QScrollArea, QMessageBox, QListWidgetItem,
-    QSizePolicy, QFrame, QGroupBox, QFileDialog,
+    QSizePolicy, QFrame, QGroupBox,
     QDialog, QDialogButtonBox, QPlainTextEdit, QCheckBox,
 )
 from PySide6.QtCore import QObject, Signal, Slot, QThread, Qt, QSize, QEvent, QTimer
@@ -22,6 +27,8 @@ from queue import Queue
 from imagentj.agents import init_agent
 from imagentj.imagej_context import get_ij
 from imagentj.chat_history import ChatHistoryManager
+from imagentj.tools.analyst_tools import kill_running_processes
+import imagentj.stop_signal as stop_signal
 
 from imagentj.benchmark_gui_hooks import is_benchmark_mode, setup_benchmark_gui
 
@@ -39,14 +46,14 @@ intro_message = """Hello I am ImageJ agent, some call me ImagentJ :)
 I can design a step-by-step protocol and, if useful, generate a runnable Groovy macro (and execute/test it if you want).
 
 To get started, please share:
-- **Goal:** what you want measured/segmented/processed.
-- **Example data:** 1-2 sample images (file type), single image or batch?
-- **Targets:** what objects/features to detect; which channel(s) matter.
-- **Preprocessing:** background/flat-field correction, denoising needs?
-- **Outputs:** tables/measurements, labeled masks/overlays, ROIs, saved images.
-- **Constraints:** plugins available (e.g., Fiji with Bio-Formats, MorpholibJ, TrackMate, StarDist), OS, any runtime limits.
+- **Goal:** what you want measured/segmented/processed/counted etc.
+- **Image details:** 1-2 sample images (file type), single image or batch?
+- **File location:** file/folder path or is the image open in the window.
+- **Outputs:** tables/measurements, labeled masks/overlays, ROIs, saved images, what format.
+- **Solving approach (UI/script):** do you want to go click-by-click via user interface or do you want scripts to run in the background for you?
+- **Plugin preference:** are there specific plugin/models you want to use.
 
-If you're unsure, tell me the biological question and show one representative image."""
+If you're unsure, tell me what task do you want to solve and provide one representative image."""
 
 os.environ["LANGCHAIN_CALLBACKS_BACKGROUND"] = "true"
 
@@ -471,6 +478,62 @@ class MetricsPanelWidget(QWidget):
         self._lbl_soft.setText(  f("Soft errors", str(data["soft_error_tool_calls"]), "#e67e22"))
 
 # ---------------------------------------------------------------------------
+# Email helper
+# ---------------------------------------------------------------------------
+
+_REPORT_EMAIL = "agentj.help@gmail.com"
+
+def _send_report_email(subject: str, body: str, attachments: list[tuple[str, bytes]]) -> None:
+    """Send a report email from agentj.help@gmail.com to itself via Gmail SMTP.
+
+    Raises RuntimeError if GMAIL_APP_PASSWORD is not set or sending fails.
+    attachments: list of (filename, bytes) pairs.
+    """
+    app_password = os.environ.get("GMAIL_APP_PASSWORD", "").replace(" ", "")
+    if not app_password:
+        raise RuntimeError(
+            "GMAIL_APP_PASSWORD is not set in your .env file.\n"
+            "Generate an App Password at:\n"
+            "  Google Account → Security → 2-Step Verification → App Passwords"
+        )
+
+    msg = MIMEMultipart()
+    msg["From"] = _REPORT_EMAIL
+    msg["To"] = _REPORT_EMAIL
+    msg["Subject"] = subject
+    msg.attach(MIMEText(body, "plain"))
+
+    for filename, data in attachments:
+        part = MIMEApplication(data, Name=filename)
+        part["Content-Disposition"] = f'attachment; filename="{filename}"'
+        msg.attach(part)
+
+    ctx = ssl.create_default_context()
+    import socket
+
+    # Resolve to IPv4 — Docker containers often lack IPv6 (errno 97).
+    smtp_ip = socket.getaddrinfo("smtp.gmail.com", 587, socket.AF_INET)[0][4][0]
+    smtp_ip_465 = socket.getaddrinfo("smtp.gmail.com", 465, socket.AF_INET)[0][4][0]
+
+    raw = msg.as_bytes()
+    try:
+        # Port 587 with STARTTLS (preferred)
+        with smtplib.SMTP(smtp_ip, 587, timeout=15) as smtp:
+            smtp._host = "smtp.gmail.com"  # starttls verifies against hostname, not IP
+            smtp.ehlo()
+            smtp.starttls(context=ctx)
+            smtp.ehlo()
+            smtp.login(_REPORT_EMAIL, app_password)
+            smtp.sendmail(_REPORT_EMAIL, _REPORT_EMAIL, raw)
+    except (OSError, smtplib.SMTPException):
+        # Port 465 implicit TLS fallback (some networks block 587)
+        with smtplib.SMTP_SSL(smtp_ip_465, 465, context=ctx, timeout=15) as smtp:
+            smtp._host = "smtp.gmail.com"
+            smtp.login(_REPORT_EMAIL, app_password)
+            smtp.sendmail(_REPORT_EMAIL, _REPORT_EMAIL, raw)
+
+
+# ---------------------------------------------------------------------------
 # Feedback / Error-Report dialog
 # ---------------------------------------------------------------------------
 
@@ -555,7 +618,7 @@ class FeedbackDialog(QDialog):
         layout.addWidget(info)
 
         btn_box = QDialogButtonBox()
-        btn_box.addButton("Save Report\u2026", QDialogButtonBox.AcceptRole)
+        btn_box.addButton("Send Report\u2026", QDialogButtonBox.AcceptRole)
         btn_box.addButton("Cancel", QDialogButtonBox.RejectRole)
         btn_box.accepted.connect(self._on_export)
         btn_box.rejected.connect(self.reject)
@@ -582,57 +645,58 @@ class FeedbackDialog(QDialog):
 
         include_usage = self._chk_usage.isChecked()
 
-        if len(selected) == 1:
-            # Single conversation → plain JSON
-            report = self._tracker_cb.get_error_report_for_thread(
-                selected[0], include_usage_stats=include_usage
-            )
-        
-            default_name = os.path.expanduser(
-                f"~/imagentj_issue_{time.strftime('%Y%m%d_%H%M%S')}.json"
-            )
-            path, _ = QFileDialog.getSaveFileName(
-                self, "Save Issue Report", default_name,
-                "JSON files (*.json);;All files (*)",
-            )
-            if not path:
-                return
-            try:
-                with open(path, "w", encoding="utf-8") as f:
-                    json.dump(report, f, indent=2, ensure_ascii=False)
-                QMessageBox.information(self, "Report Saved",
-                    f"Issue report saved to:\n{path}\n\nThank you for the feedback!")
-                self.accept()
-            except Exception as e:
-                log.exception(f"Failed to save issue report: {e}")
-                QMessageBox.warning(self, "Save Failed", str(e))
-        else:
-            # Multiple conversations → ZIP
-            default_name = os.path.expanduser(
-                f"~/imagentj_issue_{time.strftime('%Y%m%d_%H%M%S')}.zip"
-            )
-            path, _ = QFileDialog.getSaveFileName(
-                self, "Save Issue Report Bundle", default_name,
-                "ZIP archives (*.zip);;All files (*)",
-            )
-            if not path:
-                return
-            try:
-                import zipfile
-                with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
+        import io, zipfile as _zipfile
+        timestamp = time.strftime('%Y%m%d_%H%M%S')
+        feedback_text = self._text_edit.toPlainText().strip()
+        try:
+            if len(selected) == 1:
+                report = self._tracker_cb.get_error_report_for_thread(
+                    selected[0], include_usage_stats=include_usage
+                )
+                fname = f"report_{selected[0][:8]}_{timestamp}.json"
+                attachments = [(fname, json.dumps(report, indent=2, ensure_ascii=False).encode())]
+            else:
+                buf = io.BytesIO()
+                with _zipfile.ZipFile(buf, "w", _zipfile.ZIP_DEFLATED) as zf:
                     for thread_id in selected:
                         report = self._tracker_cb.get_error_report_for_thread(
                             thread_id, include_usage_stats=include_usage
                         )
-                        fname = f"report_{thread_id[:8]}.json"
-                        zf.writestr(fname, json.dumps(report, indent=2, ensure_ascii=False))
-                QMessageBox.information(self, "Report Saved",
-                    f"Bundle with {len(selected)} conversation(s) saved to:\n{path}"
-                    "\n\nThank you for the feedback!")
-                self.accept()
-            except Exception as e:
-                log.exception(f"Failed to save issue bundle: {e}")
-                QMessageBox.warning(self, "Save Failed", str(e))
+                        zf.writestr(f"report_{thread_id[:8]}.json",
+                                    json.dumps(report, indent=2, ensure_ascii=False))
+                fname = f"imagentj_issue_{timestamp}.zip"
+                attachments = [(fname, buf.getvalue())]
+
+            subject = f"[ImagentJ] Issue Report — {timestamp}"
+            body = f"User feedback:\n{feedback_text or '(none provided)'}\n\nAttached: {len(selected)} conversation(s)."
+            _send_report_email(subject, body, attachments)
+            QMessageBox.information(self, "Report Sent",
+                f"Issue report sent to {_REPORT_EMAIL}.\n\nThank you for the feedback!")
+            self.accept()
+        except Exception as e:
+            log.exception(f"Failed to send issue report: {e}")
+            reply = QMessageBox.warning(
+                self, "Send Failed",
+                f"Could not send the report by email:\n{e}\n\n"
+                "Would you like to save it to a file instead?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes,
+            )
+            if reply == QMessageBox.Yes:
+                default_name = os.path.expanduser(
+                    f"~/imagentj_issue_{time.strftime('%Y%m%d_%H%M%S')}"
+                    f"{'zip' if len(attachments) == 1 and attachments[0][0].endswith('.zip') else 'json'}"
+                )
+                path, _ = QFileDialog.getSaveFileName(
+                    self, "Save Issue Report", default_name,
+                    "All files (*)",
+                )
+                if path:
+                    with open(path, "wb") as f:
+                        f.write(attachments[0][1])
+                    QMessageBox.information(self, "Report Saved",
+                        f"Report saved to:\n{path}\n\nPlease send it manually to {_REPORT_EMAIL}.")
+                    self.accept()
         
 
 
@@ -662,6 +726,7 @@ class AgentWorker(QObject):
             if prompt is None:
                 break
             self._stop_requested = False
+            stop_signal.clear()
             self._run_prompt(prompt)
 
     def _run_prompt(self, user_input: str):
@@ -670,12 +735,14 @@ class AgentWorker(QObject):
                 "configurable": {"thread_id": self.thread_id},
                 "callbacks":    [self.tracker_callback],
             }
-            for event in self.supervisor.stream(
+            gen = self.supervisor.stream(
                 {"messages": [{"role": "user", "content": user_input}]},
                 config=config,
                 stream_mode="updates",
-            ):
+            )
+            for event in gen:
                 if self._stop_requested:
+                    gen.close()
                     break
                 self.event_received.emit(event)
         except Exception as e:
@@ -690,6 +757,11 @@ class AgentWorker(QObject):
 
     def request_stop(self):
         self._stop_requested = True
+        stop_signal.request_stop()
+        # Kill any running subprocesses immediately (Python scripts, etc.)
+        killed = kill_running_processes()
+        if killed:
+            log.info(f"Stop: killed {killed} running subprocess(es)")
 
 
 # ---------------------------------------------------------------------------
@@ -966,6 +1038,7 @@ class ImageJAgentGUI(QWidget):
     # ------------------------------------------------------------------
 
     def _save_report(self):
+        from PySide6.QtWidgets import QFileDialog
         path, _ = QFileDialog.getSaveFileName(
             self, "Save Usage Report",
             os.path.expanduser("~/imagentj_usage_report.json"),
@@ -1062,6 +1135,8 @@ class ImageJAgentGUI(QWidget):
 
     def on_stop(self):
         if hasattr(self, 'worker') and self.worker:
+            self._stop_heartbeat()      # kill rotating prompts immediately
+            self._status_bubble = None  # next set_status creates a fresh line
             self.chat_scroll.add_message('system', "Stopping agent...")
             self.worker.request_stop()
             self.set_status("Stopping...")

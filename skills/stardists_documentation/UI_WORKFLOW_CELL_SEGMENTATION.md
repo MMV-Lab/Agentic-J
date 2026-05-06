@@ -227,8 +227,8 @@ Start with the defaults. Then adjust one parameter at a time:
 |-------------|--------|
 | Too many small noise detections | Raise `probThresh` (e.g. 0.5 → 0.65 → 0.8) |
 | Real cells being missed | Lower `probThresh` (e.g. 0.5 → 0.35 → 0.2) |
-| Touching nuclei merging into one | Lower `nmsThresh` (e.g. 0.4 → 0.2) |
-| Nuclei being split into multiple detections | Raise `nmsThresh` (e.g. 0.4 → 0.5) |
+| Touching nuclei merging into one | Raise `nmsThresh` (e.g. 0.4 → 0.6) — higher IoU threshold = less suppression, so both touching nuclei survive |
+| Nuclei being split into multiple detections | Lower `nmsThresh` (e.g. 0.4 → 0.2) — lower IoU threshold = more aggressive suppression, so duplicate detections of the same nucleus collapse |
 | Edge cells incorrectly excluded | Set `excludeBoundary` to `0` |
 | Very dim cells missed | Lower `percentileTop` (e.g. 99.8 → 99.0) |
 | Background areas detected as cells | Raise `percentileBottom` (e.g. 1.0 → 5.0) |

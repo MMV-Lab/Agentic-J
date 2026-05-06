@@ -40,8 +40,8 @@
  *
  * TROUBLESHOOTING
  * - "Input movie missing": verify the hardcoded image path exists.
- * - Cellpose launch issues: verify TrackMate-Cellpose is installed and Python path is valid
- *   (/opt/conda/envs/cellpose/bin/python in this script).
+ * - Cellpose launch issues: verify the micromamba shim works:
+ *     /usr/local/opt/micromamba/bin/micromamba run -n base cellpose --version
  * - No tracks produced: check image contrast/segmentation settings (diameter/model/channels)
  *   and tracker distances.
  * - TrackScheme not displayed: this can be optional; overlay display may still work.
@@ -54,8 +54,8 @@ import fiji.plugin.trackmate.Logger
 import fiji.plugin.trackmate.SelectionModel
 import fiji.plugin.trackmate.SpotCollection
 import fiji.plugin.trackmate.cellpose.CellposeDetectorFactory
-import fiji.plugin.trackmate.tracking.jaqaman.SparseLAPTrackerFactory
 import fiji.plugin.trackmate.features.FeatureFilter
+// NOTE: tracker factory is loaded via reflection (Pitfall C5) — no hardcoded import.
 import fiji.plugin.trackmate.io.TmXmlWriter
 import fiji.plugin.trackmate.visualization.hyperstack.HyperStackDisplayer
 import fiji.plugin.trackmate.visualization.trackscheme.TrackScheme
@@ -73,9 +73,11 @@ import java.nio.file.StandardCopyOption
 import java.util.regex.Pattern
 
 // ── PARAMETERS (hardcoded workflow configuration) ───────────────────────────
+// targetChannel/optionalChannel use the **Cellpose 0-based convention**:
+//   0 = grayscale, 1/2/3 = R/G/B. Pass these as Strings.
 def imagePath           = '/app/data/projects/cell_tracking_test/raw_images/P31-crop.tif'
 def imageName           = ''
-def targetChannel       = '1'
+def targetChannel       = '0'
 def optionalChannel     = '0'
 def cellDiameter        = 30.0d
 def cellposeModel       = 'cyto3'
@@ -150,33 +152,49 @@ try {
     def settings = new Settings(imp2)
 
     // ── Detector setup: TrackMate-Cellpose ────────────────────────────────────
-    def cellposePath = '/opt/conda/envs/cellpose/bin/python'
-    def cellposeEnvName = 'cellpose'
+    // Backend is the micromamba shim — see docker-compose.yml. CONDA_ENV='base'
+    // is rewritten by the shim to the real cellpose env. CELLPROB_THRESHOLD /
+    // FLOW_THRESHOLD only apply to AdvancedCellposeDetectorFactory; this script
+    // uses the basic factory and they are ignored.
 
     settings.detectorFactory = new CellposeDetectorFactory()
     settings.detectorSettings = [
-        'CELLPOSE_PYTHON_FILEPATH'       : cellposePath,
-        'CELLPOSE_MODEL_NAME'            : cellposeEnvName,
-        'CELLPOSE_MODEL'                 : cellposeModel,
-        'CELLPOSE_CUSTOM_MODEL_FILEPATH' : customModelPath,
-        'TARGET_CHANNEL'                 : targetChannel,
-        'OPTIONAL_CHANNEL_2'             : optionalChannel,
-        'CELL_DIAMETER'                  : (double) cellDiameter,
-        'USE_GPU'                        : useGpu,
-        'SIMPLIFY_CONTOURS'              : simplifyContours,
-        'CELLPROB_THRESHOLD'             : 0.0d,
-        'FLOW_THRESHOLD'                 : 0.4d,
+        'CONDA_ENV'                : 'base',
+        'CELLPOSE_MODEL'           : cellposeModel,
+        'CELLPOSE_MODEL_FILEPATH'  : customModelPath,
+        'PRETRAINED_OR_CUSTOM'     : (customModelPath != null && !customModelPath.isEmpty()) ? 'CUSTOM_MODEL' : 'CELLPOSE_MODEL',
+        'TARGET_CHANNEL'           : targetChannel,
+        'OPTIONAL_CHANNEL_2'       : optionalChannel,
+        'CELL_DIAMETER'            : (double) cellDiameter,
+        'USE_GPU'                  : useGpu,
+        'SIMPLIFY_CONTOURS'        : simplifyContours,
     ]
 
     settings.initialSpotFilterValue = 0.0d
     settings.addAllAnalyzers()
 
-    // ── Tracker setup: Sparse LAP linking + track length filter ───────────────
-    settings.trackerFactory = new SparseLAPTrackerFactory()
-    settings.trackerSettings = settings.trackerFactory.getDefaultSettings()
-    settings.trackerSettings['LINKING_MAX_DISTANCE'] = (double) linkingDist
+    // ── Tracker setup (C5 — reflection-based loader, handles sparselap→jaqaman rename) ──
+    String[] trackerCandidates = [
+        'fiji.plugin.trackmate.tracking.jaqaman.SparseLAPTrackerFactory',
+        'fiji.plugin.trackmate.tracking.jaqaman.SimpleSparseLAPTrackerFactory',
+        'fiji.plugin.trackmate.tracking.sparselap.SparseLAPTrackerFactory',
+    ]
+    def trackerFactory = null
+    for (String cn : trackerCandidates) {
+        try {
+            trackerFactory = Class.forName(cn).getDeclaredConstructor().newInstance()
+            IJ.log('[INFO] Tracker factory: ' + cn); break
+        } catch (Throwable ignored) { }
+    }
+    if (trackerFactory == null) {
+        IJ.log('[ERROR] No SparseLAP/SimpleSparseLAP factory found; aborting.')
+        println('FINAL STATUS: FAILURE - No tracker factory.'); return
+    }
+    settings.trackerFactory  = trackerFactory
+    settings.trackerSettings = trackerFactory.getDefaultSettings()
+    settings.trackerSettings['LINKING_MAX_DISTANCE']     = (double) linkingDist
     settings.trackerSettings['GAP_CLOSING_MAX_DISTANCE'] = (double) gapClosingDist
-    settings.trackerSettings['MAX_FRAME_GAP'] = (int) maxFrameGap
+    settings.trackerSettings['MAX_FRAME_GAP']            = (Integer) maxFrameGap
     settings.addTrackFilter(new FeatureFilter('NUMBER_SPOTS', (double) minTrackLength, true))
 
     // ── Running TrackMate (checkInput -> process) ─────────────────────────────

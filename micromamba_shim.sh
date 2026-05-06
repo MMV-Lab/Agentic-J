@@ -56,7 +56,7 @@ elif [ "$CMD" = "env" ] && [ "${2:-}" = "list" ]; then
         fi
         printf "  %-22s%-8s%s\n" "$name" "$active" "$path"
     done
-    printf "  %-22s%-8s%s\n" "omnipose" " " "/opt/conda/envs/cellpose"
+    printf "  %-22s%-8s%s\n" "cellpose" " " "/opt/conda/envs/cellpose"
 else
     exec /opt/conda/bin/conda "$@"
 fi

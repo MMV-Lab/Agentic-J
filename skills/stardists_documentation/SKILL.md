@@ -1,6 +1,6 @@
 ---
 name: stardists_documentation
-description: StarDist is a Fiji/ImageJ plugin for cell and nuclei detection using deep-learning star-convex polygon models. Apply pre-trained or custom models to 2D microscopy images. **2D only** — the Fiji plugin has no 3D stack support. Default models only for NUCLEI in fluorescence or H&E histology images. Custom models must be in CSBDeep `.zip` format and compatible with StarDist 2D. See the full documentation for installation, scripting, parameter tuning, and troubleshooting.Read the files listed at the end of this SKILL for verified commands, GUI walkthroughs, scripting examples, and common pitfalls. 
+description: StarDist is a Fiji/ImageJ plugin for cell and nuclei detection using deep-learning star-convex polygon models. Apply pre-trained or custom models to 2D microscopy images. **2D only** — the Fiji plugin has no 3D stack support. Default models only for NUCLEI in fluorescence or H&E histology images. Custom models must be in CSBDeep `.zip` format and compatible with StarDist 2D. See the full documentation for installation, scripting, parameter tuning, and troubleshooting.Read the files listed at the end of this SKILL for verified commands, GUI walkthroughs, scripting examples, and common pitfalls. RGB only for H&E model.
 ---
 
 Install via Fiji update sites: **CSBDeep** + **StarDist** + **TensorFlow** (all three required).
@@ -23,6 +23,12 @@ import ij.IJ
 
 def imp = IJ.getImage()
 
+// Dynamic nTiles calculation to prevent OOM on large images
+// Formula: max(1, ceil(W*H / 10^7))
+long w = imp.getWidth()
+long h = imp.getHeight()
+int calculatedTiles = (int) Math.max(1, Math.ceil((w * h) / 10000000.0))
+
 def res = command.run(StarDist2D, false,
     "input",               imp,
     "modelChoice",         "Versatile (fluorescent nuclei)",
@@ -32,13 +38,13 @@ def res = command.run(StarDist2D, false,
     "probThresh",          0.5,
     "nmsThresh",           0.4,
     "outputType",          "Both",
-    "nTiles",              1,
+    "nTiles",              calculatedTiles, // Dynamic tiling
     "excludeBoundary",     2,
     "roiPosition",         "Automatic",
     "verbose",             false,
     "showCsbdeepProgress", false,
     "showProbAndDist",     false
-).get()                              // .get() is REQUIRED — blocks until inference is done
+).get()                         // .get() is REQUIRED — blocks until inference is done
 
 // getOutput("label") returns a SciJava Dataset — must be shown before using as ImagePlus
 def labelDataset = res.getOutput("label")
@@ -46,6 +52,64 @@ uiService.show(labelDataset)         // register as visible ImagePlus
 def labelImp = IJ.getImage()         // now retrieve it
 labelImp.setTitle("my-labels")
 ```
+
+### H&E histology — use the H&E model directly on the RGB image
+
+**DO NOT** preprocess H&E with Color Deconvolution → take the haematoxylin
+channel → run `Versatile (fluorescent nuclei)`. This is a common mistake but
+it is wrong for two reasons:
+1. The H&E model `Versatile (H&E nuclei)` was trained directly on raw RGB H&E
+   patches; feeding it a deconvolved single channel (or feeding the fluorescence
+   model H&E data) gives noticeably worse segmentation.
+2. Color Deconvolution depends on the chosen vector matrix and is fragile across
+   scanners. The H&E model is robust to staining variation.
+
+The correct H&E pipeline is one step:
+
+```groovy
+#@ CommandService command
+#@ UIService uiService
+
+import de.csbdresden.stardist.StarDist2D
+import ij.IJ
+
+def imp = IJ.openImage("/path/to/he_slide.tif")
+imp.show()
+
+// H&E model expects RGB. Do NOT convert to 8-bit, do NOT split channels,
+// do NOT run Color Deconvolution. If your image is not RGB, fix that upstream.
+assert imp.getType() == ij.ImagePlus.COLOR_RGB :
+       "Versatile (H&E nuclei) requires an RGB image"
+
+def res = command.run(StarDist2D, false,
+    "input",               imp,
+    "modelChoice",         "Versatile (H&E nuclei)",
+    "normalizeInput",      true,
+    "percentileBottom",    1.0,
+    "percentileTop",       99.8,
+    "probThresh",          0.692,     // model default for H&E
+    "nmsThresh",           0.3,       // model default for H&E
+    "outputType",          "Both",
+    "nTiles",              1,         // raise to 4/9/16 if OOM on large slides
+    "excludeBoundary",     2,
+    "roiPosition",         "Automatic",
+    "verbose",             false,
+    "showCsbdeepProgress", false,
+    "showProbAndDist",     false
+).get()
+
+uiService.show(res.getOutput("label"))
+def labelImp = IJ.getImage()
+labelImp.setTitle("he-nuclei-labels")
+
+import ij.plugin.frame.RoiManager
+int n = RoiManager.getInstance().getCount()
+IJ.log("H&E nuclei found: " + n)
+```
+
+Use Color Deconvolution only when you genuinely need a separated stain channel
+for downstream measurement (e.g. quantifying DAB intensity per nucleus AFTER
+segmentation) — never to preprocess input for StarDist segmentation.
 
 ### Count cells after running
 
@@ -71,7 +135,7 @@ IJ.log("Cells: " + cellCount)
 | `probThresh` | `double` | `0.5` | 0–1; higher = fewer detections |
 | `nmsThresh` | `double` | `0.4` | 0–1; lower = less overlap allowed |
 | `outputType` | `String` | — | `"Label Image"` / `"ROI Manager"` / `"Both"` |
-| `nTiles` | `int` | `1` | 1, 4, 9, 16 (use square grid values) |
+| `nTiles` | `int` | `1` | if Image > 5MP, set nTiles>= 4 by default, 1, 4, 9, 16 (use square grid values) |
 | `excludeBoundary` | `int` | `2` | ≥0 pixels |
 | `roiPosition` | `String` | `"Automatic"` | `"Automatic"` / `"Stack"` / `"Hyperstack"` |
 | `verbose` | `boolean` | `false` | `true` / `false` |
@@ -84,7 +148,7 @@ IJ.log("Cells: " + cellCount)
 |--------|---------|
 | `"Versatile (fluorescent nuclei)"` | Fluorescence DAPI/Hoechst nuclei |
 | `"DSB 2018 (from StarDist 2D paper)"` | Alternative fluorescence model |
-| `"Versatile (H&E nuclei)"` | Brightfield H&E histology nuclei |
+| `"Versatile (H&E nuclei)"` | Brightfield H&E histology nuclei, RGB images|
 | `"Model (.zip) from File"` | Custom model — set `modelFile` to path |
 | `"Model (.zip) from URL"` | Custom model — set `modelFile` to URL |
 
@@ -111,7 +175,22 @@ def res = command.run(StarDist2D, false, ...).get()
 def label = res.getOutput("label")
 ```
 
-### Pitfall 3 — `getOutput("label")` is a Dataset, not an ImagePlus
+### Pitfall 3 — Out-of-Memory (OOM) on large images
+
+StarDist 2D processes images in the GPU/CPU memory. Large images (e.g., > 10MP) often crash without tiling.
+
+Solution: Always calculate nTiles based on image area. In the StarDist 2D plugin, nTiles refers to the number of tiles per dimension (e.g., nTiles = 2 creates a 2×2 grid). The heuristic max(1, ceil(W*H/10^7)) is a safe baseline for most systems.
+
+Groovy example for dynamic nTiles calculation:
+
+```groovy
+long w = imp.getWidth()
+long h = imp.getHeight()
+int calculatedTiles = (int) Math.max(1, Math.ceil((w * h) / 10000000.0))
+```
+
+
+### Pitfall 4 — `getOutput("label")` is a Dataset, not an ImagePlus
 ```groovy
 // WRONG — Dataset does not have setTitle(), getProcessor(), etc.:
 def labelImp = res.getOutput("label")
@@ -123,7 +202,7 @@ def labelImp = IJ.getImage()
 labelImp.setTitle("labels")
 ```
 
-### Pitfall 4 — ROI Manager must be cleared between images in batch
+### Pitfall 5 — ROI Manager must be cleared between images in batch
 ```groovy
 // At the start of each image in a loop:
 def rm = RoiManager.getInstance() ?: new RoiManager()
@@ -131,15 +210,34 @@ rm.reset()
 IJ.run("Clear Results", "")
 ```
 
-### Pitfall 5 — Single channel only
-StarDist errors or silently uses the first channel on multi-channel images.
-Extract the target channel before running:
-```groovy
-if (imp.getNChannels() > 1) {
-    IJ.run(imp, "Slice Keeper", "first=1 last=1 increment=1")
-    imp = IJ.getImage()
-}
-```
+### Pitfall 6 — Single grayscale channel only for certain models (RGB and multi-channel both fail)
+
+The `Versatile (fluorescent nuclei)` model expects a **single-channel grayscale** image.
+
+For H&E, use `Versatile (H&E nuclei)` instead and DO NOT convert RGB for the H&E nuclei model, it expects RGB input.
+
+
+Two distinct failure modes for models OTHER than the H&E nuclei model:
+
+1. **RGB images** (`bitDepth == 24`, `type == ImagePlus.COLOR_RGB`) — the detector
+   returns a null prediction and the run yields zero ROIs (or throws
+   `NullPointerException: prediction is null` when wrapped by TrackMate-StarDist).
+   Convert first:
+   ```groovy
+   if (imp.getType() == ImagePlus.COLOR_RGB) {
+       IJ.run(imp, "8-bit", "")    // luminosity → single 8-bit channel
+   }
+   ```
+
+
+2. **Multi-channel composites** (`getNChannels() > 1`) — StarDist silently uses
+   the first channel. Extract the target channel before running:
+   ```groovy
+   if (imp.getNChannels() > 1) {
+       IJ.run(imp, "Slice Keeper", "first=1 last=1 increment=1")
+       imp = IJ.getImage()
+   }
+   ```
 
 ---
 
@@ -149,8 +247,8 @@ if (imp.getNChannels() > 1) {
 |-------------|-----|
 | Too many small false positives | Raise `probThresh` (e.g. 0.5 → 0.7) |
 | Real cells being missed | Lower `probThresh` (e.g. 0.5 → 0.3) |
-| Touching nuclei merging into one | Lower `nmsThresh` (e.g. 0.4 → 0.2) |
-| Nuclei split into multiple objects | Raise `nmsThresh` (e.g. 0.4 → 0.6) |
+| Touching nuclei merging into one | Raise `nmsThresh` (e.g. 0.4 → 0.6) — higher IoU threshold = less suppression, so both touching nuclei survive |
+| Nuclei split into multiple objects | Lower `nmsThresh` (e.g. 0.4 → 0.2) — lower IoU threshold = more aggressive suppression, so duplicate detections of the same nucleus collapse |
 | Edge cells missing | Set `excludeBoundary = 0` |
 | Out-of-memory crash | Increase `nTiles` (try 4, 9, or 16) |
 | Model mismatch for image type | Use `Versatile (H&E nuclei)` for histology |

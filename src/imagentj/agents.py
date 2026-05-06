@@ -2,6 +2,8 @@ import os
 import sqlite3
 from typing import Optional
 
+from . import stop_signal
+
 from deepagents import create_deep_agent
 from deepagents.backends import FilesystemBackend
 from langchain.agents import create_agent
@@ -36,7 +38,7 @@ from .tools import (
     check_plugin_installed, mkdir_copy, save_script, execute_script,
     get_script_info, load_script, get_script_history,
     setup_analysis_workspace, save_markdown,
-    NarrationReminderMiddleware,
+    NarrationReminderMiddleware, PhaseGuardMiddleware,
     update_state_ledger, read_state_ledger, set_ledger_metadata, get_ledger_context,
     set_dialog_vision_llm,
     # capture_ij_window, build_compilation, analyze_image,  # VLM disabled
@@ -356,12 +358,10 @@ def imagej_coder(task: str, project_root: str) -> ScriptHandoff:
 
     agent = _make_coder_agent(model, "imagej_coder", imagej_coder_prompt)
 
-    result = agent.invoke({
-        "messages": [{
-            "role": "user",
-            "content": "\n\n".join(sections),
-        }]
-    })
+    result = stop_signal.SubagentRunner(
+        agent.invoke,
+        {"messages": [{"role": "user", "content": "\n\n".join(sections)}]},
+    ).run()
     return result["structured_response"]
 
 
@@ -387,12 +387,10 @@ def imagej_debugger(script_path: str, error_message: str, project_root: str = ""
         if ledger_ctx:
             sections.insert(1, f"PROJECT STATE (for context):\n{ledger_ctx}")
 
-    result = agent.invoke({
-        "messages": [{
-            "role": "user",
-            "content": "\n\n".join(sections),
-        }]
-    })
+    result = stop_signal.SubagentRunner(
+        agent.invoke,
+        {"messages": [{"role": "user", "content": "\n\n".join(sections)}]},
+    ).run()
     return result["structured_response"]
 
 
@@ -426,12 +424,10 @@ def python_data_analyst(task: str, input_csv: str, output_dir: str, project_root
             sections.append(f"PROJECT STATE (use for axis labels, units, and context):\n{ledger_ctx}")
     sections.append(f"TASK: {task}")
 
-    result = _analyst_agent.invoke({
-        "messages": [{
-            "role": "user",
-            "content": "\n\n".join(sections),
-        }]
-    })
+    result = stop_signal.SubagentRunner(
+        _analyst_agent.invoke,
+        {"messages": [{"role": "user", "content": "\n\n".join(sections)}]},
+    ).run()
     return result["structured_response"]
 
 
@@ -457,12 +453,10 @@ def qa_reporter(project_root: str) -> QAHandoff:
     if ledger_ctx:
         sections.append(f"WORKFLOW SUMMARY (from state ledger — use as primary reference):\n{ledger_ctx}")
 
-    result = _qa_agent.invoke({
-        "messages": [{
-            "role": "user",
-            "content": "\n\n".join(sections),
-        }]
-    })
+    result = stop_signal.SubagentRunner(
+        _qa_agent.invoke,
+        {"messages": [{"role": "user", "content": "\n\n".join(sections)}]},
+    ).run()
     return result["structured_response"]
 
 
@@ -511,12 +505,10 @@ def plugin_manager(task: str, project_root: str = "") -> PluginRecommendation:
             sections.append(f"PROJECT STATE (for context):\n{ledger_ctx}")
     sections.append(f"TASK: {task}")
 
-    result = _plugin_agent.invoke({
-        "messages": [{
-            "role": "user",
-            "content": "\n\n".join(sections),
-        }]
-    })
+    result = stop_signal.SubagentRunner(
+        _plugin_agent.invoke,
+        {"messages": [{"role": "user", "content": "\n\n".join(sections)}]},
+    ).run()
     return result["structured_response"]
 
 
@@ -626,6 +618,7 @@ def init_agent(enable_qa: bool = False):
             use_ripgrep=True,
         ),
         NarrationReminderMiddleware(),
+        PhaseGuardMiddleware(),
     ]
 
     supervisor = create_deep_agent(
