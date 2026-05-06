@@ -47,6 +47,40 @@ _seed_volume "fiji_jars"    "$FIJI_HOME/jars.seed"    "$FIJI_HOME/jars"    "$FIJ
 _seed_volume "fiji_plugins" "$FIJI_HOME/plugins.seed" "$FIJI_HOME/plugins" "$FIJI_HOME/plugins/.seeded"
 _seed_volume "imagentj_home" "/home/imagentj.seed" "/home/imagentj" "/home/imagentj/.seeded"
 
+# ── Enforce TrackMate-StarDist ClassCastException patch ───────────────────────
+# _seed_volume skips files that already exist, so a stale unpatched JAR in the
+# fiji_jars volume survives image rebuilds. Compare checksums and overwrite if needed.
+_STARDIST_JAR="$FIJI_HOME/jars/TrackMate-StarDist-2.0.0.jar"
+_PATCHED_JAR="/opt/fiji-patches/TrackMate-StarDist-2.0.0.jar.patched"
+if [ -f "$_PATCHED_JAR" ] && [ -f "$_STARDIST_JAR" ]; then
+    if ! cmp -s "$_PATCHED_JAR" "$_STARDIST_JAR"; then
+        echo "[entrypoint] Applying TrackMate-StarDist ClassCastException patch to volume JAR..."
+        cp "$_PATCHED_JAR" "$_STARDIST_JAR"
+        echo "[entrypoint] TrackMate-StarDist patch applied."
+    fi
+fi
+
+# ── Enforce CSBDeep linux/arm64 TensorFlow Java patch ───────────────────────
+# Existing fiji_jars volumes can keep the old upstream JAR, whose TensorFlow
+# Java 1.x JNI dependency has no linux/aarch64 native library. Keep the patched
+# single-JAR TensorFlow Java backend in the volume even after rebuilds.
+case "$(uname -m)" in
+    aarch64|arm64)
+        _CSBDEEP_JAR="$FIJI_HOME/jars/csbdeep-0.6.0.jar"
+        _CSBDEEP_PATCHED_JAR="/opt/fiji-patches/csbdeep-0.6.0-tfjava-linux-arm64.jar"
+        if [ -f "$_CSBDEEP_PATCHED_JAR" ] && [ -f "$_CSBDEEP_JAR" ]; then
+            if ! cmp -s "$_CSBDEEP_PATCHED_JAR" "$_CSBDEEP_JAR"; then
+                echo "[entrypoint] Applying CSBDeep linux/arm64 TensorFlow Java patch to volume JAR..."
+                cp "$_CSBDEEP_PATCHED_JAR" "$_CSBDEEP_JAR"
+                echo "[entrypoint] CSBDeep TensorFlow Java arm64 patch applied."
+            fi
+        fi
+        ;;
+    *)
+        echo "[entrypoint] Skipping CSBDeep linux/arm64 TensorFlow Java patch on $(uname -m)."
+        ;;
+esac
+
 # ── Clean up stale X11 lock files from previous runs ─────────────────────────
 # This prevents "Server is already active for display 1" errors on restart
 rm -f /tmp/.X1-lock
