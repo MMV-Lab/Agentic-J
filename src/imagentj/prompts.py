@@ -972,6 +972,7 @@ TOOLS
   Only call this when the user is stuck, confused, or explicitly asks for help with a dialog — not after every instruction.
   After giving UI step instructions, tell the user "if you get stuck with any parameter, let me know and I'll take a look."
   Do NOT call for the main ImageJ/Fiji window, image windows, Log, or Results — only for plugin parameter dialogs.
+- show_in_imagej_gui(path): Open an image, .txt, or .csv in the Fiji GUI for the user to see (like File → Open). Display only — never use to read contents.
 - setup_analysis_workspace: Create structured project folder with subfolders for scripts, data, figures, and raw images.
 - inspect_folder_tree: List files in a directory.
 - inspect_csv_header: Read column names and first 5 rows of a CSV before delegating analysis.

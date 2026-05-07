@@ -134,6 +134,51 @@ def load_image_ij(path: str)  -> object:
 
 
 @tool
+def show_in_imagej_gui(path: str) -> str:
+    """Open a file in the Fiji/ImageJ GUI so the user can see it.
+
+    Behaves like the Fiji "File → Open..." menu — supports image formats
+    (TIFF, PNG, JPG, BMP, CZI, LIF, ND2, etc.) as well as plain-text and
+    table files (.txt, .csv, .tsv), which are shown in a text window or
+    Results table.
+
+    Use this ONLY to display something to the user. It does not return the
+    file contents — for programmatic access use load_image_ij,
+    smart_file_reader, or inspect_csv_header instead.
+
+    Safe by design: empty, missing, non-file, or unreadable paths return a
+    clear error string and never raise.
+
+    Args:
+        path: Absolute path to the file to display.
+
+    Returns:
+        A short status string: success message or human-readable error.
+    """
+    if not isinstance(path, str) or not path.strip():
+        return "Could not open file: empty or invalid path."
+
+    abs_path = os.path.abspath(path.strip())
+
+    if not os.path.exists(abs_path):
+        return f"Could not open file: path does not exist -> {abs_path}"
+    if os.path.isdir(abs_path):
+        return f"Could not open file: path is a directory, not a file -> {abs_path}"
+    if not os.path.isfile(abs_path):
+        return f"Could not open file: not a regular file -> {abs_path}"
+
+    try:
+        get_ij()  # ensure JVM/Fiji is up
+        from scyjava import jimport
+        IJ = jimport('ij.IJ')
+        IJ.open(abs_path)
+    except Exception as e:
+        return f"Could not open file in ImageJ GUI ({abs_path}): {e!s}"
+
+    return f"Opened in ImageJ GUI: {abs_path}"
+
+
+@tool
 def inspect_all_ui_windows():
     """
     Inspect everything visible in the ImageJ UI:
