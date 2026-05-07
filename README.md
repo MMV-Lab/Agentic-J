@@ -59,4 +59,5 @@ Use the **Report Issue** button in the chat panel, or email `agentj.help@gmail.c
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+Apache License 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
+Copyright © 2026 ISAS e.V.

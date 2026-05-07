@@ -5,21 +5,26 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "imagentj"
 version = "0.1.0"
-description = "ImageJ AI Agent"
+description = "AI-powered agent for ImageJ/Fiji scripting and bioimage analysis."
 readme = "README.md"
-requires-python = ">=3.8"
-dependencies = [
-    # List dependencies from environment.yml, but since it's conda, perhaps keep environment.yml
+requires-python = ">=3.13"
+license = { file = "LICENSE" }
+authors = [
+    { name = "ISAS e.V.", email = "agentj.help@gmail.com" },
 ]
+keywords = ["imagej", "fiji", "bioimage", "agent", "llm"]
+# Runtime dependencies are managed via environment.yml (conda + pip).
+# This block stays empty so that `pip install .` does not try to resolve
+# them from PyPI alone.
+dependencies = []
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.13",
+    "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Image Processing",
 ]
-
-[project.scripts]
-imagentj-cli = "run:main"
-imagentj-gui = "gui_runner:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
