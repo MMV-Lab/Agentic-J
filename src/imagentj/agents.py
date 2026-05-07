@@ -31,6 +31,7 @@ from .prompts import (
 )
 from .tools import (
     internet_search, inspect_all_ui_windows, capture_plugin_dialog,
+    show_in_imagej_gui,
     rag_retrieve_docs, inspect_java_class, save_coding_experience,
     rag_retrieve_mistakes, save_reusable_script, inspect_folder_tree,
     smart_file_reader, inspect_csv_header,
@@ -645,6 +646,7 @@ def init_agent(enable_qa: bool = False):
             internet_search,
             inspect_all_ui_windows,
             capture_plugin_dialog,
+            show_in_imagej_gui,
             rag_retrieve_docs,
             save_coding_experience,
             rag_retrieve_mistakes,
