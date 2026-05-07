@@ -17,7 +17,19 @@ if not os.path.exists(QDRANT_DATA_PATH) and not QDRANT_DATA_PATH.startswith("/ap
 # Collection Names
 DOCS_COLLECTION_NAME = "BioimageAnalysisDocs"
 MISTAKES_COLLECTION_NAME = "codingerrors_and_solutions"
+RECIPES_COLLECTION_NAME = "code_recipes"
 PLUGINS_COLLECTION_NAME = "fiji_plugins"  # Added as it was in your import error
+
+# Retrieval thresholds — fused RRF scores below this are considered "no real match".
+# RRF scores from a fusion of N queries with k=60 typically land in [1/61, N/60] ~= [0.016, N*0.017].
+# A single doc with rank-0 in two of three queries scores ~0.033. We treat anything
+# under MIN_RECIPE_SCORE / MIN_MISTAKE_SCORE as too weak to surface.
+MIN_MISTAKE_SCORE = 0.020
+MIN_RECIPE_SCORE = 0.020
+
+# Pre-save dedup similarity threshold (cosine, dense). Above this we consider the
+# candidate a near-duplicate and increment times_seen on the existing point.
+DEDUP_SIMILARITY_THRESHOLD = 0.92
 
 # Document Ingestion Settings
 # In your docker-compose, you mapped ${IMAGE_DATA_DIR:-./data} to /data

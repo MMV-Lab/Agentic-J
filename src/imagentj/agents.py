@@ -33,7 +33,8 @@ from .tools import (
     internet_search, inspect_all_ui_windows, capture_plugin_dialog,
     show_in_imagej_gui,
     rag_retrieve_docs, inspect_java_class, save_coding_experience,
-    rag_retrieve_mistakes, save_reusable_script, inspect_folder_tree,
+    rag_retrieve_mistakes, rag_retrieve_recipes, save_recipe,
+    save_reusable_script, inspect_folder_tree,
     smart_file_reader, inspect_csv_header,
     extract_image_metadata, search_fiji_plugins, install_fiji_plugin,
     check_plugin_installed, mkdir_copy, save_script, execute_script,
@@ -45,8 +46,6 @@ from .tools import (
     set_dialog_vision_llm,
     # capture_ij_window, build_compilation, analyze_image,  # VLM disabled
 )
-
-    
 from imagentj.tracker import UsageMetrics, MetricsSignalBridge, UsageTrackerCallback
 
 
@@ -94,7 +93,15 @@ class ScriptHandoff(BaseModel):
     success: bool
     error_message: Optional[str] = None
     requires_user_approval: bool = False  # True for single-image verification runs
-    lesson: Optional[str] = None          # debugger only: "PROBLEM: x FIX: y"
+    # Debugger-only fields. The debugger does NOT save the lesson itself
+    # (it cannot run the fix to verify correctness); it populates these so
+    # the supervisor can call save_coding_experience after execute_script
+    # confirms the fix actually works.
+    lesson: Optional[str] = None          # one-line imperative rule
+    failed_code: Optional[str] = None     # the offending snippet that was replaced
+    working_code: Optional[str] = None    # the corrected snippet
+    error_type: Optional[str] = None      # MissingMethod | NullPointer | Import | Logic | Path | ...
+    class_involved: Optional[str] = None  # main ImageJ/plugin class
 
 
 class AnalystHandoff(BaseModel):
@@ -239,6 +246,7 @@ def _make_coder_agent(model, name, system_prompt):
             get_script_history,
             smart_file_reader,
             rag_retrieve_mistakes,
+            rag_retrieve_recipes,
             inspect_folder_tree,   # lets agent survey /app/skills/ before reading
         ],
         system_prompt=system_prompt,
@@ -363,12 +371,11 @@ def imagej_coder(task: str, project_root: str) -> ScriptHandoff:
 
     model = llm_worker
 
-    # Auto-inject ledger context so the coder has image metadata, previous step
-    # outputs, skill paths, and RAG findings without the supervisor relaying them.
     sections = [f"PROJECT ROOT: {project_root}"]
     ledger_ctx = get_ledger_context(project_root)
     if ledger_ctx:
-        sections.append(f"PROJECT STATE (auto-injected from state ledger):\n{ledger_ctx}")
+        sections.append(f"PROJECT STATE (from state ledger):\n{ledger_ctx}")
+
     sections.append(f"TASK: {task}")
 
     agent = _make_coder_agent(model, "imagej_coder", imagej_coder_prompt)
@@ -396,7 +403,6 @@ def imagej_debugger(script_path: str, error_message: str, project_root: str = ""
     agent = _make_coder_agent(llm_worker, "imagej_debugger", imagej_debugger_prompt)
 
     sections = [f"FAULTY SCRIPT: {script_path}", f"ERROR:\n{error_message}"]
-    # Inject ledger so the debugger understands image properties and pipeline context
     if project_root:
         ledger_ctx = get_ledger_context(project_root)
         if ledger_ctx:
@@ -650,6 +656,8 @@ def init_agent(enable_qa: bool = False):
             rag_retrieve_docs,
             save_coding_experience,
             rag_retrieve_mistakes,
+            rag_retrieve_recipes,
+            save_recipe,
             save_reusable_script,
             inspect_folder_tree,
             smart_file_reader,

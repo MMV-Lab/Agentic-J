@@ -4,7 +4,10 @@ SCRIPTS_DIR = os.path.join(os.path.dirname(__file__), "../../scripts/saved_scrip
 
 # Tools package - re-export all tools for backward compatibility
 from .file_tools import inspect_folder_tree, save_reusable_script, smart_file_reader, mkdir_copy, setup_analysis_workspace, save_markdown
-from .rag_tools import rag_retrieve_docs, rag_retrieve_mistakes, save_coding_experience
+from .rag_tools import (
+    rag_retrieve_docs, rag_retrieve_mistakes, rag_retrieve_recipes,
+    save_coding_experience, save_recipe,
+)
 from .script_tools import run_script_safe, save_script, execute_script, get_script_info, load_script, get_script_history
 from .imagej_tools import ask_user, load_image_ij, inspect_all_ui_windows, extract_image_metadata, capture_plugin_dialog, set_dialog_vision_llm, show_in_imagej_gui
 from .general_tools import internet_search, inspect_java_class
@@ -16,16 +19,21 @@ from .state_ledger import update_state_ledger, read_state_ledger, set_ledger_met
 from .environment_tools import check_environment
 
 # Lazy accessors for vector stores (RAG is optional)
-from .vector_stores import get_vec_store_docs, get_vec_store_mistakes, is_rag_available, is_plugin_db_available
+from .vector_stores import (
+    get_vec_store_docs, get_vec_store_mistakes, get_vec_store_recipes,
+    is_rag_available, is_plugin_db_available,
+)
 
 __all__ = [
     'inspect_folder_tree', 'save_reusable_script', 'smart_file_reader',
-    'rag_retrieve_docs', 'rag_retrieve_mistakes', 'save_coding_experience',
+    'rag_retrieve_docs', 'rag_retrieve_mistakes', 'rag_retrieve_recipes',
+    'save_coding_experience', 'save_recipe',
     'run_script_safe', 'ask_user', 'load_image_ij', 'show_in_imagej_gui', 'inspect_all_ui_windows', 'extract_image_metadata', 'capture_plugin_dialog',
     'internet_search', 'inspect_java_class',
     'search_fiji_plugins', 'install_fiji_plugin', 'check_plugin_installed',
     'SafeToolLoggerMiddleware', 'TodoDisplayMiddleware', 'NarrationReminderMiddleware', 'PhaseGuardMiddleware',
-    'get_vec_store_docs', 'get_vec_store_mistakes', 'is_rag_available', 'is_plugin_db_available',
+    'get_vec_store_docs', 'get_vec_store_mistakes', 'get_vec_store_recipes',
+    'is_rag_available', 'is_plugin_db_available',
     'set_dialog_vision_llm',
     'run_python_code', 'inspect_csv_header', 'mkdir_copy','save_script', 'execute_script', 'get_script_info', 'load_script', 'get_script_history',
     'setup_analysis_workspace', 'save_markdown',

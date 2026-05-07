@@ -49,6 +49,7 @@ from imagentj.rag.loaders import (
 
 from config.rag_config import (
     QDRANT_DATA_PATH, DOCS_COLLECTION_NAME, MISTAKES_COLLECTION_NAME,
+    RECIPES_COLLECTION_NAME,
     PLUGINS_COLLECTION_NAME, INGESTION_FOLDERS, BATCH_SIZE,
     SKIP_PATTERNS, SUPPORTED_EXTENSIONS
 )
@@ -128,13 +129,21 @@ def get_embeddings_models():
 # Vector Store Initialization
 # ---------------------------------------------------------------------------
 
-def init_vector_store(collection_name: str, client: QdrantClient = None):
+def init_vector_store(collection_name: str, client: QdrantClient = None,
+                      dense_embeddings=None, sparse_embeddings=None):
     """
     Initialize a Qdrant vector store with HYBRID configuration (Dense + Sparse).
-    """
-    client = get_qdrant_client(path=QDRANT_DATA_PATH)
 
-    dense_embeddings, sparse_embeddings = get_embeddings_models()
+    Both `client` and the embedding models can be injected; this is required for
+    tests that run against an in-memory Qdrant client with stub embeddings.
+    """
+    if client is None:
+        client = get_qdrant_client(path=QDRANT_DATA_PATH)
+
+    if dense_embeddings is None or sparse_embeddings is None:
+        d_default, s_default = get_embeddings_models()
+        dense_embeddings = dense_embeddings or d_default
+        sparse_embeddings = sparse_embeddings or s_default
 
     if not client.collection_exists(collection_name=collection_name):
         print(f"Creating new Hybrid Qdrant collection: {collection_name}")
@@ -175,21 +184,55 @@ def init_vector_store(collection_name: str, client: QdrantClient = None):
 # Reciprocal Rank Fusion
 # ---------------------------------------------------------------------------
 
-def apply_rrf(results_list, k=60):
-    """Simple Python implementation of RRF to fuse results from multiple queries."""
-    scores = {}
-    doc_payloads = {}
+def apply_rrf(ranked_lists, k: int = 60):
+    """
+    Reciprocal Rank Fusion across multiple ranked result lists.
 
-    for rank, point in enumerate(results_list):
-        doc_id = point.id
-        if doc_id not in scores:
-            scores[doc_id] = 0
-            doc_payloads[doc_id] = point
+    Each input list is treated as an independent ranking; a document at position
+    `r` in any list contributes 1/(k + r) to its fused score, and contributions
+    from multiple lists are summed. This is the canonical RRF formula
+    (Cormack, Clarke, Buettcher 2009).
 
-        scores[doc_id] += 1 / (k + rank)
+    Args:
+        ranked_lists: Either an iterable of ranked lists (one per query), OR a
+                      single flat list (treated as a single ranking — legacy
+                      behaviour, kept for callers that pre-flatten). The input
+                      type is auto-detected: if every element is itself a list
+                      or tuple, multi-list mode is used.
+        k: RRF constant. 60 is the standard.
 
-    sorted_ids = sorted(scores.keys(), key=lambda x: scores[x], reverse=True)
-    return [doc_payloads[did] for did in sorted_ids]
+    Returns:
+        Documents (Qdrant ScoredPoint) sorted by descending fused score, each
+        carrying a `.score` attribute set to the fused RRF score.
+    """
+    # Auto-detect: list-of-lists vs flat list
+    if ranked_lists and all(isinstance(rl, (list, tuple)) for rl in ranked_lists):
+        lists = list(ranked_lists)
+    else:
+        lists = [list(ranked_lists)]
+
+    fused_scores = {}
+    payloads = {}
+
+    for ranked in lists:
+        for rank, point in enumerate(ranked):
+            doc_id = point.id
+            fused_scores[doc_id] = fused_scores.get(doc_id, 0.0) + 1.0 / (k + rank)
+            if doc_id not in payloads:
+                payloads[doc_id] = point
+
+    sorted_ids = sorted(fused_scores.keys(), key=lambda x: fused_scores[x], reverse=True)
+    out = []
+    for doc_id in sorted_ids:
+        p = payloads[doc_id]
+        # Overwrite the per-query similarity score with the fused RRF score so
+        # downstream consumers (threshold filters, formatters) see the right value.
+        try:
+            p.score = fused_scores[doc_id]
+        except AttributeError:
+            pass  # immutable result types — caller will re-pull score via dict
+        out.append(p)
+    return out
 
 
 def hybrid_search_with_rrf(
@@ -197,6 +240,10 @@ def hybrid_search_with_rrf(
     collection_name: str = DOCS_COLLECTION_NAME,
     limit: int = 5,
     k: int = 60,
+    query_filter=None,
+    client=None,
+    dense_emb=None,
+    sparse_emb=None,
 ):
     """
     Perform a Hybrid Search using Reciprocal Rank Fusion (RRF).
@@ -205,16 +252,27 @@ def hybrid_search_with_rrf(
     dense and sparse indices and fuses them server-side.
 
     Args:
-        query_text: The user's search query
+        query_text:      The user's search query
         collection_name: Target collection
-        limit: Number of final results to return
-        k: RRF constant (usually 60)
+        limit:           Number of final results to return
+        k:               RRF constant (kept for signature compatibility; the
+                         server-side Qdrant RRF uses its own constant)
+        query_filter:    Optional `qdrant_client.http.models.Filter` applied to
+                         BOTH the dense and sparse prefetches. Use this to
+                         restrict mistake retrieval by language/error_type.
+        client:          Optional injected Qdrant client (for tests).
+        dense_emb:       Optional injected dense embeddings (for tests).
+        sparse_emb:      Optional injected sparse embeddings (for tests).
 
     Returns:
-        List of results with combined RRF scores
+        List of ScoredPoint with server-side RRF scores.
     """
-    client = get_qdrant_client(path=QDRANT_DATA_PATH)
-    dense_emb, sparse_emb = get_embeddings_models()
+    if client is None:
+        client = get_qdrant_client(path=QDRANT_DATA_PATH)
+    if dense_emb is None or sparse_emb is None:
+        d_default, s_default = get_embeddings_models()
+        dense_emb = dense_emb or d_default
+        sparse_emb = sparse_emb or s_default
 
     # Generate vectors for the query
     dense_vector = dense_emb.embed_query(query_text)
@@ -235,14 +293,17 @@ def hybrid_search_with_rrf(
                 query=dense_vector,
                 using=DENSE_VECTOR_NAME,
                 limit=limit,
+                filter=query_filter,
             ),
             models.Prefetch(
                 query=qdrant_sparse_vector,
                 using=SPARSE_VECTOR_NAME,
-                limit=limit ,
+                limit=limit,
+                filter=query_filter,
             ),
         ],
         query=models.FusionQuery(fusion=models.Fusion.RRF),
+        query_filter=query_filter,
         limit=limit,
     )
 
@@ -362,7 +423,10 @@ def initialize_rag_system():
     mistakes_store = init_vector_store(MISTAKES_COLLECTION_NAME, client=client)
     print(f"✓ Initialized Hybrid experience collection: {MISTAKES_COLLECTION_NAME}")
 
-    return docs_store, mistakes_store
+    recipes_store = init_vector_store(RECIPES_COLLECTION_NAME, client=client)
+    print(f"✓ Initialized Hybrid recipes collection: {RECIPES_COLLECTION_NAME}")
+
+    return docs_store, mistakes_store, recipes_store
 
 
 def ingest_documents():

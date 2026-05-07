@@ -112,16 +112,24 @@ def inspect_folder_tree(
 
 
 @tool("save_reusable_script")
-def save_reusable_script(name: str, code: str, description: str, inputs_required: str) -> str:
+def save_reusable_script(name: str, code: str, description: str, inputs_required: str,
+                         language: str = "Groovy") -> str:
     """
-    Saves a working script to the permanent user library folder.
-    Creates two files: a .groovy file for the code and a .json file for metadata.
+    Saves a working script BOTH to the permanent user library folder on disk AND
+    to the recipes vector store so it becomes discoverable by future tasks via
+    semantic search.
+
+    Use only AFTER `execute_script` has confirmed the script runs cleanly AND
+    produced the expected outputs.
 
     Args:
         name: A short, descriptive title (e.g., "Nuclei Segmentation via StarDist").
         code: The complete, executable Groovy or Java code.
-        description: A summary of what the script does.
+        description: 1-3 sentence summary of what the script does and when to
+                     use it. This is what gets EMBEDDED for retrieval, so phrase
+                     it the way a future task would describe the goal.
         inputs_required: Instructions for the user (e.g., "Open a 2D Tiff image").
+        language: "Groovy" (default) or "Python".
     """
 
     if not os.path.exists(SCRIPTS_DIR):
@@ -129,25 +137,41 @@ def save_reusable_script(name: str, code: str, description: str, inputs_required
 
     safe_name = sanitize_filename(name)
 
-    # 1. Save the code file
-    code_path = os.path.join(SCRIPTS_DIR, f"{safe_name}.groovy")
+    # 1. Save the code file to disk (preserves the existing on-disk library)
+    ext = ".groovy" if language.lower() == "groovy" else ".py"
+    code_path = os.path.join(SCRIPTS_DIR, f"{safe_name}{ext}")
     with open(code_path, "w", encoding="utf-8") as f:
         f.write(code)
 
-    # 2. Save the metadata file
+    # 2. Save metadata sidecar to disk
     meta_path = os.path.join(SCRIPTS_DIR, f"{safe_name}.json")
     metadata = {
         "name": name,
         "description": description,
         "inputs": inputs_required,
-        "language": "groovy",
-        "script_file": f"{safe_name}.groovy"
+        "language": language.lower(),
+        "script_file": f"{safe_name}{ext}",
     }
 
     with open(meta_path, "w", encoding="utf-8") as f:
         json.dump(metadata, f, indent=4)
 
-    return f"Script saved successfully as '{safe_name}.groovy' in the '{SCRIPTS_DIR}' folder."
+    # 3. Mirror into the recipes vector store (RAG-indexed, retrievable).
+    #    Failure to save to the vector store does not block the on-disk save.
+    rag_status = ""
+    try:
+        from .rag_tools import _save_recipe_raw
+        rag_status = " " + _save_recipe_raw(
+            name=name,
+            description=description,
+            code=code,
+            inputs_required=inputs_required,
+            language=language,
+        )
+    except Exception as e:
+        rag_status = f" (recipe vector index update failed: {e})"
+
+    return f"Script saved as '{safe_name}{ext}' in '{SCRIPTS_DIR}'.{rag_status}"
 
 
 @tool("smart_file_reader")
