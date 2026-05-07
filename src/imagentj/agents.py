@@ -99,9 +99,9 @@ class AnalystHandoff(BaseModel):
     """Returned by python_data_analyst."""
     script_path: str
     description: str
-    stage: str                          # "statistics" | "plotting"
-    inputs: list[str]
-    outputs: list[str]
+    stage: str = "unknown"              # "statistics" | "plotting"
+    inputs: list[str] = []
+    outputs: list[str] = []
     stats_csv_path: Optional[str] = None  # Stage 1 only
     statistical_tests: list[str] = []
     figure_paths: list[str] = []          # Stage 2 only
@@ -188,7 +188,7 @@ llm_worker = ChatOpenAI(
     api_key=api_key,
     base_url=base_url,
     temperature=0.,
-    reasoning_effort="none",
+    reasoning_effort="low",
     verbose=True,
     callbacks=[shared_tracker],
 )
@@ -274,6 +274,19 @@ _analyst_agent = create_agent(
     system_prompt=python_analyst_prompt,
     response_format=ToolStrategy(schema=AnalystHandoff, handle_errors=True),
     name="python_data_analyst",
+    middleware=[
+        ContextEditingMiddleware(
+            edits=[
+                ClearToolUsesEdit(
+                    trigger=50000,
+                    keep=10,
+                    clear_tool_inputs=False,
+                    exclude_tools=[],
+                    placeholder="[cleared]",
+                ),
+            ],
+        ),
+    ],
 )
 
 _qa_agent = create_agent(

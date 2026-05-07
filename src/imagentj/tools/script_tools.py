@@ -932,18 +932,18 @@ def get_script_history(directory: str, filename: str) -> str:
     """
     dict_path = os.path.join(directory, "script_dictionary.json")
     if not os.path.exists(dict_path):
-        return "Script dictionary does not exist yet. No history available. Start coding to create the first entry!"
+        return "No script dictionary in this directory yet — no prior versions exist. Proceed without consulting history."
 
     with open(dict_path, 'r') as f:
         data = json.load(f)
 
     script_data = data.get(filename)
     if not script_data:
-        return f"No history found for {filename}."
+        return f"No history found for {filename}. Proceed without consulting history."
 
     history = script_data.get("history", [])
     if not history:
-        return f"No previous history found for {filename}. This is version 1. Start coding to create the first entry!"
+        return f"No previous history found for {filename}. This is version 1 — no prior attempts to learn from. Proceed."
 
     # Format the history for the agent
     report = [f"History for {filename} (Current Version: {script_data.get('version')})"]
