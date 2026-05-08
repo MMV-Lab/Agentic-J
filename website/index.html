@@ -308,8 +308,10 @@
       <div class="qs-step reveal">
         <span class="num">step 01</span>
         <h4>Clone the repo</h4>
-        <p>Get the project onto your computer with <a href="https://git-scm.com/downloads" target="_blank" rel="noopener" style="color:var(--accent-2)">Git</a>. Then move into the folder.</p>
-        <pre class="code"><button class="copy" data-copy>copy</button>git clone https://github.com/LJMedPhys/Imagent_J.git
+        <p>Install <a href="https://git-scm.com/downloads" target="_blank" rel="noopener" style="color:var(--accent-2)">Git</a> + <a href="https://git-lfs.com/" target="_blank" rel="noopener" style="color:var(--accent-2)">Git LFS</a> (the RAG database is stored via LFS), then clone.</p>
+        <pre class="code"><button class="copy" data-copy>copy</button><span class="tok-c"># one-time: enable LFS for your user</span>
+git lfs install
+git clone https://github.com/LJMedPhys/Imagent_J.git
 cd Imagent_J</pre>
       </div>
 
