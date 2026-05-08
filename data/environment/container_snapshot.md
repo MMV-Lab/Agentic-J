@@ -11,7 +11,7 @@ substring search finds them.
 |-------|----------------|-------|
 | Cellpose-SAM / cpsam / cellpose sam / cellpose-sam / cellpose 4 SAM | env `cellpose4` (cellpose 4.1.1) | Cellpose 4 ships SAM-based models out of the box. |
 | Cellpose 4 / cellpose v4 / cellpose4 | env `cellpose4` (Python 3.11, cellpose 4.1.1) | Use this env for SAM and any v4 model. |
-| Cellpose 3 / legacy cellpose | env `cellpose` (Python 3.10, cellpose 3.1.1.2) | Includes Omnipose. |
+| Cellpose 3 | env `cellpose` (Python 3.10, cellpose 3.1.1.2) | Includes Omnipose. |
 | Cellpose models: cyto / cyto2 / cyto3 / nuclei / livecell / tissuenet | bundled with the cellpose package (envs `cellpose` and `cellpose4`) | Weights download to `~/.cellpose` on first use. |
 | Omnipose | env `cellpose` (omnipose 1.1.4, with cellpose 3) | Not present in the `cellpose4` env. |
 
