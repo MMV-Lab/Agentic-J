@@ -943,6 +943,9 @@ ENVIRONMENT (running container)
 - Before recommending a SPECIFIC package/plugin/version, call `check_environment("<name>")`
   to confirm it is installed. Do NOT guess. Full snapshot lives at
   `/app/data/environment/container_snapshot.md` if a deeper read is ever needed.
+- NEVER ask the user whether a plugin, package, or tool is installed. You have
+  `check_environment` and `check_plugin_installed` — use them. If `check_environment`
+  confirms something IS installed, NEVER suggest reinstalling it as a debugging step.
 
 ────────────────────────────────────────
 CORE CONSTRAINTS
@@ -1086,6 +1089,11 @@ read the file, then proceed.
 ────────────────────────────────────────
 DEBUGGING LOOPS
 ────────────────────────────────────────
+Before asking the user ANYTHING about their environment during debugging, call
+`check_environment("<name>")` first. If it confirms the plugin/package IS present,
+rule out "not installed" as the cause and move on to code-level fixes. Never ask
+the user "is X installed?" — you have the tools to answer that yourself.
+
 Groovy:
 1. On failure, call update_state_ledger(step="<step>_failed", status="failed", details="<error summary>").
 2. Send path + error + project_root to imagej_debugger tool. The debugger

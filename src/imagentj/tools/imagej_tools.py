@@ -185,11 +185,12 @@ def inspect_all_ui_windows():
     1. Image Windows (title, file path, dimensions, bit depth, min/max stats)
     2. Results Tables (row/column counts)
     3. ROI Manager (ROI count)
-    4. Log Window (full text content — use this when the user reports a console error)
-    5. Exception/Error Windows (full stack trace text)
+    4. Log Window (full text content)
+    5. Console / Script Editor console tab (stdout/stderr from running scripts)
+    6. Exception/Error Windows (full stack trace text)
 
-    Call this whenever the user mentions an error in the console or exception window,
-    or to verify what is currently open in Fiji.
+    Call this whenever the user mentions an error in the console, script editor,
+    or exception window, or to verify what is currently open in Fiji.
     """
     ij = get_ij()
 
@@ -246,11 +247,41 @@ def inspect_all_ui_windows():
                 all_inspections["images"].append({"title": imp.getTitle(), "file_path": None, "error": str(e)})
 
     # --- 2. Inspect Non-Image Windows ---
+    # Use Window.getWindows() (not Frame.getFrames()) to also catch Dialogs,
+    # which is what Fiji uses for many error/exception popups.
     IJ = jimport('ij.IJ')
-    all_frames = Frame.getFrames()
-    for frame in all_frames:
-        if frame.isVisible():
-            title = str(frame.getTitle())
+    Window = jimport('java.awt.Window')
+
+    def _collect_text_recursive(root):
+        """Return all non-empty getText() values from root and every descendant."""
+        parts = []
+        try:
+            t = str(root.getText())
+            if t.strip():
+                parts.append(t)
+        except Exception:
+            pass
+        try:
+            for child in root.getComponents():
+                parts.extend(_collect_text_recursive(child))
+        except Exception:
+            pass
+        return parts
+
+    def _get_window_title(win):
+        try:
+            return str(win.getTitle())
+        except Exception:
+            try:
+                return win.getClass().getSimpleName()
+            except Exception:
+                return ""
+
+    for win in Window.getWindows():
+        try:
+            if not win.isVisible():
+                continue
+            title = _get_window_title(win)
 
             if title == "Results":
                 rt = ResultsTable.getResultsTable()
@@ -275,25 +306,56 @@ def inspect_all_ui_windows():
                     "type": "Log Window",
                     "content": log_text[-4000:] if len(log_text) > 4000 else log_text
                 })
-            elif "exception" in title.lower() or "error" in title.lower():
-                # Capture text from exception/error dialog frames
+            elif "console" in title.lower() or "script editor" in title.lower():
+                # Script Editor has a JTabbedPane; find the "Console" tab first.
+                # Fall back to collecting all text if no tab is found.
+                console_text = ""
                 try:
-                    TextArea = jimport('java.awt.TextArea')
-                    text_content = ""
-                    for comp in frame.getComponents():
-                        if isinstance(comp, TextArea):
-                            text_content += str(comp.getText()) + "\n"
-                    all_inspections["tables_and_text"].append({
-                        "type": "Exception Window",
-                        "title": title,
-                        "content": text_content[-4000:] if len(text_content) > 4000 else text_content
-                    })
+                    JTabbedPane = jimport('javax.swing.JTabbedPane')
+
+                    def _find_console_tab(comp):
+                        try:
+                            if isinstance(comp, JTabbedPane):
+                                for i in range(comp.getTabCount()):
+                                    if "console" in str(comp.getTitleAt(i)).lower():
+                                        tab_comp = comp.getComponentAt(i)
+                                        parts = _collect_text_recursive(tab_comp)
+                                        return "\n".join(parts)
+                        except Exception:
+                            pass
+                        try:
+                            for child in comp.getComponents():
+                                result = _find_console_tab(child)
+                                if result:
+                                    return result
+                        except Exception:
+                            pass
+                        return ""
+
+                    console_text = _find_console_tab(win)
+                    if not console_text.strip():
+                        # No tabbed pane found — grab all text in the window
+                        console_text = "\n".join(_collect_text_recursive(win))
                 except Exception as e:
+                    console_text = f"(could not read console: {e})"
+
+                if console_text.strip():
                     all_inspections["tables_and_text"].append({
-                        "type": "Exception Window",
+                        "type": "Console",
                         "title": title,
-                        "content": f"(could not read content: {e})"
+                        "content": console_text[-4000:] if len(console_text) > 4000 else console_text
                     })
+            elif "exception" in title.lower() or "error" in title.lower():
+                parts = _collect_text_recursive(win)
+                text_content = "\n".join(parts)
+                print(f"[inspect_ui] Exception window '{title}': found {len(parts)} text parts, {len(text_content)} chars")
+                all_inspections["tables_and_text"].append({
+                    "type": "Exception Window",
+                    "title": title,
+                    "content": text_content[-4000:] if len(text_content) > 4000 else text_content
+                })
+        except Exception as e:
+            print(f"[inspect_ui] Skipped window: {e}")
 
     return str(all_inspections)
 
