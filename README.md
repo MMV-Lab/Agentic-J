@@ -1,13 +1,13 @@
-# ImageJ Agent (ImagentJ)
+# Agentic-J
 
-An AI-powered agent for ImageJ/Fiji scripting and bioimage analysis. ImagentJ runs Fiji inside a container together with an LLM-driven chat panel that can plan analyses, write and execute Groovy macros, install plugins, and report results.
+An AI-powered agent for microscopy image analysis. Agentic-J runs ImageJ inside a container together with an LLM-driven chat panel that can plan analyses, write and execute Groovy macros, install plugins, and report results.
 
 ## Quick start (Docker)
 
 Prerequisites:
 
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) (or Docker Engine + Compose on Linux)
-- ~8 GB RAM and ~25 GB free disk
+- ~8 GB RAM and ~30 GB free disk
 - An OpenAI **or** OpenRouter API key
 
 Steps:
@@ -21,7 +21,7 @@ cp .env.template .env
 docker compose up
 ```
 
-Then open <http://localhost:6080/vnc.html> in your browser. Fiji and the ImagentJ chat panel run inside the virtual desktop.
+Then open <http://localhost:6080/vnc.html> in your browser. Fiji and the Agentic-J chat panel run inside the virtual desktop.
 
 If no API key is set in `.env`, a setup wizard appears in the browser before Fiji launches.
 
