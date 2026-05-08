@@ -67,7 +67,7 @@ Open your browser and go to:
 http://localhost:6080/vnc.html
 ```
 
-Click on "Connect", Fiji and the ImagentJ chat panel should appear in the browser window.
+Click on "Connect", Fiji and the ImagentJ chat panel should appear in the browser window. Sometimes the SL4FJ warning pops up in the Console window, but this is not severe, and the window can be closed. 
 
 To stop:
 
