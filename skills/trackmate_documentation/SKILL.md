@@ -54,5 +54,8 @@ TrackMate is bundled with Fiji (core detectors and trackers). Cellpose and StarD
   is installed. Use plain pixel iteration for label-image measurements
   (no MorphoLibJ import required). See `CELLPOSE_DETECTOR_API.md` § Pitfall C9.
 
+- **`uknown selection 'nuclei' for parameter 'Pretrained model`** - 
+  the parameter for the nuclei model is "nucleitorch_0" 
+
 For the canonical end-to-end pattern that addresses all of the above in one
 script, copy [`GROOVY_WORKFLOW_CELLPOSE_SINGLE_IMAGE.groovy`](GROOVY_WORKFLOW_CELLPOSE_SINGLE_IMAGE.groovy).
