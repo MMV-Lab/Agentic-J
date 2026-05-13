@@ -33,7 +33,7 @@ Settings key names below are derived from the upstream source and documentation.
 ## Detector Imports
 
 ```groovy
-// Cellpose basic (cyto3, cyto2, nuclei, and dataset-specific models — see table below)
+// Cellpose basic (cyto3, cyto2, nucleitorch_0, and dataset-specific models — see table below)
 // NOTE: the legacy `cyto` (Cellpose 1) name is REJECTED by this build's
 // TrackMate-Cellpose plugin with `Unknown selection 'cyto' for parameter 'Pretrained model'`.
 // Use `cyto3` (default) or `cyto2` instead.
@@ -135,7 +135,7 @@ docker exec -it <container> /opt/conda/envs/cellpose/bin/python -c \
 | `cyto3` | **Default. Super-generalist cytoplasm model.** Trained on all 9 Cellpose3 datasets. Best first choice for mammalian cell cytoplasm in fluorescence or brightfield. |
 | `cyto2` | Cytoplasm model trained on user-submitted images (Cellpose 2). More diverse than the original Cellpose 1 cytoplasm model, but less powerful than `cyto3`. Good fallback if `cyto3` over-segments. |
 | `cyto` | **REJECTED in this build.** TrackMate-Cellpose raises `Unknown selection 'cyto' for parameter 'Pretrained model'` — the legacy Cellpose 1 cytoplasm model is not exposed by the installed Cellpose 3.x backend. Use `cyto3` (preferred) or `cyto2` (fallback). |
-| `nuclei` | Nuclear segmentation. Use when staining/channel targets the nucleus (DAPI, Hoechst, H2B-GFP). Set `OPTIONAL_CHANNEL_2 = 0`. |
+| `nucleitorch_0` | Nuclear segmentation. Use when staining/channel targets the nucleus (DAPI, Hoechst, H2B-GFP). Set `OPTIONAL_CHANNEL_2 = 0`. |
 
 ### Dataset-specific models (Cellpose 3)
 
@@ -166,7 +166,7 @@ These use style-transfer from the original Cellpose2 training sets. Generally su
 
 ```
 Mammalian cells, fluorescence cytoplasm  →  cyto3
-Nuclei / DAPI stain                      →  nuclei
+Nuclei / DAPI stain                      →  nucleitorch_0
 Phase-contrast cell lines (e.g. HeLa)   →  livecell_cp3
 Multiplexed tissue (CODEX, CyCIF)        →  tissuenet_cp3
 Yeast, phase contrast                    →  yeast_PhC_cp3

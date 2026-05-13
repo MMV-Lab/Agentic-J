@@ -34,7 +34,7 @@
  *       /app/data/projects/trackmate_cellpose_project/processed_images/cellpose_labels_exact_from_masks.tif
  *
  * CORE PARAMETERS (edit below)
- *   - cellposeModel: default "cyto3"; common choices: "cyto3", "nuclei", "cyto2"
+ *   - cellposeModel: default "cyto3"; common choices: "cyto3", "nucleitorch_0", "cyto2"
  *     (NOTE: legacy "cyto" is REJECTED by this build — see CELLPOSE_DETECTOR_API.md.)
  *   - targetChannel/optionalChannel, cellDiameter, linkingDist, gapClosingDist, maxFrameGap
  *
