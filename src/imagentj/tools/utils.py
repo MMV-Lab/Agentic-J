@@ -55,6 +55,39 @@ def sanitize_filename(name: str) -> str:
     return clean.replace(' ', '_')
 
 
+# cat -n style: right-aligned line number, a TAB, then the line. The TAB is the
+# delimiter _LINE_NUM_RE keys on when stripping, so a numbered read can be pasted
+# straight back into edit_script without the prefix ever reaching the file.
+def add_line_numbers(content: str) -> str:
+    """Prefix every line with a 1-based line number (for display/reference only)."""
+    lines = content.split('\n')
+    width = max(6, len(str(len(lines))))
+    return '\n'.join(f"{i:{width}d}\t{ln}" for i, ln in enumerate(lines, 1))
+
+
+_LINE_NUM_RE = re.compile(r'^\s*\d+\t')
+
+
+def strip_line_numbers(text: str) -> str:
+    """Inverse of add_line_numbers, applied defensively to text a model may have copied
+    from a numbered read. All-or-nothing: only strips when EVERY line carries a
+    `<spaces><digits><TAB>` prefix (blank lines tolerated), so real source that merely
+    starts with a digit is never touched. Returns text unchanged if it isn't numbered."""
+    if not text:
+        return text
+    lines = text.split('\n')
+    out = []
+    for ln in lines:
+        m = _LINE_NUM_RE.match(ln)
+        if m:
+            out.append(ln[m.end():])
+        elif ln == '':
+            out.append(ln)          # blank / trailing line — tolerate
+        else:
+            return text             # a non-numbered line ⇒ not a numbered block
+    return '\n'.join(out)
+
+
 
 
 def load_and_chunk_with_docling(file_path: str):

@@ -1,11 +1,13 @@
 ---
 name: trackmate_documentation
-description: TrackMate is a Fiji/ImageJ plugin for single-particle tracking (SPT) and cell segmentation in fluorescence microscopy. It detects and segments objects in 2D/3D images and timelapses — using built-in detectors (LoG, DoG, Threshold, LabelImage) or deep-learning models (Cellpose, StarDist) — and optionally links them into tracks over time. Cellpose can be used for single-image segmentation as well as multi-frame cell tracking. Use this skill for scripting TrackMate workflows in Groovy, understanding the GUI, integrating Cellpose segmentation (single image or timelapse), and exporting results to CSV or XML.
+description: TrackMate is a Fiji/ImageJ plugin for single-particle tracking (SPT) — detecting objects and LINKING them into tracks over time in 2D/3D timelapses, using built-in detectors (LoG, DoG, Threshold, LabelImage) or deep-learning detectors (Cellpose, StarDist). Use this skill when the goal involves tracking objects across time frames. For segmenting a SINGLE still image with Cellpose (no tracking), use the cellpose_documentation skill instead — the direct BIOP Cellpose wrapper is cleaner (returns the label image in-process, no /tmp scraping). Use this skill for scripting TrackMate tracking workflows in Groovy, understanding the GUI, integrating Cellpose/StarDist detectors for timelapses, and exporting tracks to CSV or XML.
 ---
 
 # TrackMate — Documentation Index
 
 TrackMate is bundled with Fiji (core detectors and trackers). Cellpose and StarDist integration require additional update sites. All scripting uses the TrackMate Java API directly — not `IJ.run()`.
+
+> **Segmentation vs. tracking — read first.** TrackMate is for **linking objects across time** (tracking). If you only need to **segment a single still image** with Cellpose (no tracking), use the **`cellpose_documentation`** skill instead: the BIOP Cellpose wrapper runs Cellpose directly and returns the label image in-process — no full tracking pipeline, no recovering masks from `/tmp`. `GROOVY_WORKFLOW_CELLPOSE_SINGLE_IMAGE.groovy` below remains valid but is the **legacy** single-frame path; prefer it only when you specifically need TrackMate spots/ROIs from that frame.
 
 ## Files
 

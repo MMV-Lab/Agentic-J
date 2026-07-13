@@ -1841,13 +1841,43 @@
     ],
     "input_data": "2D (time-lapse) images opened in Fiji/ImageJ, including multi-channel composite images with a selected target channel (RGB stacks must be converted); requires a working external Cellpose installation in a conda environment.",
     "output_data": "TrackMate spots/detections derived from Cellpose masks (with optional contour simplification), plus TrackMate tracks and computed spot/track features.",
-    "use_when": "Use this when you want to detect and track cells in 2D with TrackMate using Cellpose pretrained or custom models, especially for difficult cytoplasm or bright-field segmentations.",
-    "do_not_use_when": "Do not use this when you need 3D segmentation/tracking, when your data are RGB stacks you cannot convert to composite, or when Cellpose/conda is not installed and working independently.",
+    "use_when": "Use this ONLY when you need to LINK cells/nuclei across time frames (tracking) in a 2D time-lapse, using Cellpose pretrained or custom models as the detector. For segmenting a single still image with Cellpose and NO tracking, use the direct 'Cellpose (BIOP)' plugin instead (cleaner: returns the label image in-process, no /tmp scraping).",
+    "do_not_use_when": "Do not use this for plain single-image (still) segmentation or just to obtain a Cellpose label map when you are NOT linking objects across time — use 'Cellpose (BIOP)' instead. Also do not use for 3D segmentation/tracking, for RGB stacks you cannot convert to composite, or when Cellpose/conda is not installed and working independently.",
     "typical_use_cases": [
       "Tracking cytoplasm-stained cells in 2D time-lapse using the cyto3 model with an optional nuclei channel",
       "Tracking nuclei in 2D time-lapse using the nuclei pretrained model",
       "Tracking cells in 2D bright-field time-lapse using a custom trained Cellpose model",
       "Segmenting a chosen channel in multi-channel composite images to generate TrackMate detections for downstream tracking"
+    ]
+  },
+  {
+    "name": "Cellpose (BIOP)",
+    "update_site_name": "PTBIOP",
+    "update_site_url": "https://biop.epfl.ch/Fiji-Update",
+    "requires_restart": true,
+    "documentation_url": "https://github.com/BIOP/ijl-utilities-wrappers",
+    "description": "Direct Cellpose deep-learning instance segmentation in Fiji via the BIOP wrapper (ch.epfl.biop.wrappers.cellpose). Runs Cellpose in a conda env and returns the instance label image in-process (cp.cellpose_imp) — no TrackMate, no scraping masks from /tmp. Uses the pre-downloaded models in ~/.cellpose/models (cyto3, nuclei, cyto2, tissuenet_cp3, livecell_cp3, bact_*, cpsam, ...) and custom model files. Cellpose-SAM (cpsam) via the CellposeSAM command + cellpose4 env. See the cellpose_documentation skill.",
+    "category": "segmentation",
+    "tags": [
+      "cellpose",
+      "biop",
+      "deep-learning",
+      "instance-segmentation",
+      "2d",
+      "conda",
+      "cytoplasm",
+      "nuclei",
+      "cpsam"
+    ],
+    "input_data": "2D single images (grayscale or multi-channel) opened in Fiji; requires the cellpose conda env (configured in this image). Channels are selectable (ch1 = channel to segment, ch2 = optional nucleus channel).",
+    "output_data": "An instance label image (cp.cellpose_imp; background 0, objects 1..N), returned in-process. Convert 32-bit -> 16-bit WITHOUT scaling to preserve label IDs.",
+    "use_when": "Use for single-image instance segmentation of cells/cytoplasm, whole cells, bright-field, or non-star-convex objects in 2D where a Cellpose model fits, and you do NOT need tracking. Preferred over TrackMate-Cellpose for still images. Use the pre-downloaded cyto3/nuclei/cpsam models or a custom model file.",
+    "do_not_use_when": "Do not use when you need to LINK objects across time frames (use TrackMate-Cellpose), for star-convex nuclei where StarDist is faster and cleaner, for 3D volumetric segmentation, or for code-free BioImage-Model-Zoo models (use deepImageJ). Note: CPU inference is slow (minutes/image); cpsam (Cellpose-SAM) is the heaviest.",
+    "typical_use_cases": [
+      "Segmenting cytoplasm-stained or bright-field cells in a single 2D image with cyto3",
+      "Segmenting nuclei in a single fluorescence image with the nuclei model",
+      "Running a custom-trained Cellpose model on one image and getting a clean label map",
+      "High-accuracy general segmentation with Cellpose-SAM (cpsam) when a GPU is available"
     ]
   },
   {

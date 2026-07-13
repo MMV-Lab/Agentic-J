@@ -16,6 +16,7 @@ from langchain.agents.structured_output import ToolStrategy
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.errors import GraphRecursionError
 from pydantic import BaseModel
 from deepagents.middleware.skills import SkillsMiddleware
 
@@ -27,24 +28,29 @@ from .prompts import (
     python_analyst_prompt,
     qa_reporter_prompt,
     plugin_manager_prompt,
+    librarian_prompt,
     # vlm_judge_prompt,  # VLM disabled
 )
 from .tools import (
     internet_search, inspect_all_ui_windows, capture_plugin_dialog,
-    show_in_imagej_gui,
-    rag_retrieve_docs, inspect_java_class, save_coding_experience,
-    rag_retrieve_mistakes, rag_retrieve_recipes, save_recipe,
-    save_reusable_script, inspect_folder_tree,
+    show_in_imagej_gui, close_imagej_windows,
+    rag_retrieve_docs, inspect_java_class,
+    inspect_folder_tree,
     smart_file_reader, inspect_csv_header,
     extract_image_metadata, search_fiji_plugins, install_fiji_plugin,
-    check_plugin_installed, mkdir_copy, save_script, execute_script,
+    check_plugin_installed, mkdir_copy, save_script, edit_script, copy_file, execute_script,
     get_script_info, load_script, get_script_history,
     setup_analysis_workspace, save_markdown,
     NarrationReminderMiddleware, PhaseGuardMiddleware,
     update_state_ledger, read_state_ledger, set_ledger_metadata, get_ledger_context,
     check_environment,
     set_dialog_vision_llm,
+    get_mcp_tools,
     # capture_ij_window, build_compilation, analyze_image,  # VLM disabled
+)
+from .tools.learned_memory import (
+    register_pending_lesson, core_pitfalls, core_recipes, recall,
+    library_add_pitfall, library_add_recipe, library_remove, library_set_core,
 )
 from imagentj.tracker import UsageMetrics, MetricsSignalBridge, UsageTrackerCallback
 
@@ -94,9 +100,8 @@ class ScriptHandoff(BaseModel):
     error_message: Optional[str] = None
     requires_user_approval: bool = False  # True for single-image verification runs
     # Debugger-only fields. The debugger does NOT save the lesson itself
-    # (it cannot run the fix to verify correctness); it populates these so
-    # the supervisor can call save_coding_experience after execute_script
-    # confirms the fix actually works.
+    # (it cannot run the fix to verify correctness); it populates these and the
+    # lesson is committed automatically once execute_script confirms the fix.
     lesson: Optional[str] = None          # one-line imperative rule
     failed_code: Optional[str] = None     # the offending snippet that was replaced
     working_code: Optional[str] = None    # the corrected snippet
@@ -116,6 +121,14 @@ class AnalystHandoff(BaseModel):
     figure_paths: list[str] = []          # Stage 2 only
     success: bool
     error_message: Optional[str] = None
+    # Populated ONLY when this run fixed a previously-failing script. Like the
+    # debugger's, the lesson is saved automatically once execute_script confirms
+    # the fix is green (no manual save call needed).
+    lesson: Optional[str] = None          # one-line imperative rule
+    failed_code: Optional[str] = None     # the offending snippet that was replaced
+    working_code: Optional[str] = None    # the corrected snippet
+    error_type: Optional[str] = None      # Pandas | Plotting | Import | Logic | Path | ...
+    class_involved: Optional[str] = None  # main library/object (e.g. "seaborn", "DataFrame")
 
 
 class QAHandoff(BaseModel):
@@ -213,10 +226,24 @@ llm_analyst = ChatOpenAI(
 )
 
 llm_nano = ChatOpenAI(
-    model=m("openai/gpt-4o-mini"),
+    model=m("openai/gpt-5.4-nano"),
     api_key=api_key,
     base_url=base_url,
     temperature=0.,
+    verbose=True,
+    callbacks=[shared_tracker],
+)
+
+# Model behind the background Librarian agent (curates the learned-memory wiki off
+# the hot path) and the gated recall() deep-search fallback. Kept small/cheap.
+llm_curator = ChatOpenAI(
+    model=m("openai/gpt-5.4-mini"),
+    api_key=api_key,
+    base_url=base_url,
+    temperature=0.,
+    reasoning_effort="low",
+    timeout=30,          # never let a stalled call hang the curator thread or
+    max_retries=1,       # the (gated) hot-path deep-recall fallback forever
     verbose=True,
     callbacks=[shared_tracker],
 )
@@ -241,12 +268,13 @@ def _make_coder_agent(model, name, system_prompt):
         tools=[
             internet_search,
             inspect_java_class,
-            save_script,
+            copy_file,             # seed a new script from any existing file (returns its content)
+            save_script,           # full write (from-scratch only)
+            edit_script,           # surgical patch — preferred for fixes + param tweaks
             load_script,
             get_script_history,
             smart_file_reader,
-            rag_retrieve_mistakes,
-            rag_retrieve_recipes,
+            recall,
             inspect_folder_tree,   # lets agent survey /app/skills/ before reading
         ],
         system_prompt=system_prompt,
@@ -254,7 +282,12 @@ def _make_coder_agent(model, name, system_prompt):
         name=name,
         middleware=[
             FilesystemFileSearchMiddleware(
-                root_path="/app/skills/",  # scoped to skills only
+                # Scoped to /app/skills/ — the workflow templates / SKILL.md the coder
+                # copies from. Do NOT widen to /app/: /app/data is ~66 GB of images and
+                # a broad glob/grep that descends into it stalls for minutes (looks like
+                # an infinite loop). The project's own scripts live under the project_root
+                # temp dir (outside /app), so widening bought nothing.
+                root_path="/app/skills/",
                 use_ripgrep=True,
             ),
             ContextEditingMiddleware(
@@ -274,12 +307,20 @@ def _make_coder_agent(model, name, system_prompt):
 
 _analyst_agent = create_agent(
     llm_analyst,
+    # NOTE: save_script only — NO edit_script/copy_file. Proven (A/B, same model+prompt):
+    # edit_script triples the loop rate on this agent's model (gpt-5.2 ~50% vs save_script
+    # ~17%). edit_script is a blind patch, so gpt-5.2 re-reads (load_script/inspect) to
+    # "verify" and cascades into a loop — even when edit_script echoes the full result and
+    # says not to. Analyst scripts are tiny, so a full save_script rewrite costs nothing and
+    # the model trusts content it authored itself. edit_script stays on the coder/debugger
+    # (gpt-5.3-codex), which trusts its patches and never loops. get_script_info also removed
+    # (Supervisor-only verify tool that invited the same post-commit cycle).
     tools=[
         inspect_csv_header,
         save_script,
         load_script,
         get_script_history,
-        get_script_info,
+        recall,
     ],
     system_prompt=python_analyst_prompt,
     response_format=ToolStrategy(schema=AnalystHandoff, handle_errors=True),
@@ -300,7 +341,7 @@ _analyst_agent = create_agent(
 )
 
 _qa_agent = create_agent(
-    llm_nano,
+    llm_analyst,
     tools=[
         inspect_folder_tree,
         smart_file_reader,
@@ -341,6 +382,30 @@ _plugin_agent = create_agent(
     ],
 )
 
+# Background Librarian — curates the learned-memory wiki off the hot path. Fired by
+# learned_memory.on_success() in a daemon thread on every verified-green run (the
+# task never waits). Acts ONLY through the deterministic library_* tools; its
+# operating manual is the skills/learned_memory skill (loaded via SkillsMiddleware).
+_librarian_skills_backend = FilesystemBackend(root_dir="/app/", virtual_mode=False)
+
+librarian_agent = create_agent(
+    llm_curator,
+    tools=[
+        library_add_pitfall,
+        library_add_recipe,
+        library_remove,
+        library_set_core,
+    ],
+    system_prompt=librarian_prompt,
+    name="librarian",
+    middleware=[
+        SkillsMiddleware(
+            backend=_librarian_skills_backend,
+            sources=["/app/skills/learned_memory/"],  # only the Librarian's own skill
+        ),
+    ],
+)
+
 # _vlm_agent = create_agent(
 #     llm_vlm,
 #     tools=[
@@ -352,6 +417,106 @@ _plugin_agent = create_agent(
 #     response_format=VLMHandoff,
 #     name="vlm_judge",
 # )
+
+
+# ---------------------------------------------------------------------------
+# Recursion cap — bound a runaway tool loop in a stateless subagent
+# ---------------------------------------------------------------------------
+# LangGraph's default recursion_limit is 1000 super-steps (~500 turns), so a tool
+# loop (e.g. an analyst re-verifying after it already committed) can burn credits
+# unbounded. We cap every subagent. Legit runs use ~3-8 turns, but a heavy
+# supervisor-driven task (recommended-plugin SKILL.md reads + several inspect_java_class
+# checks) can reach ~12-16 turns (~24-32 super-steps), so 30 was too tight and could
+# clip a legitimate run. 45 (~22 turns) keeps generous headroom while still turning a
+# true runaway into a bounded stop. When the cap IS hit, _on_cap below salvages any
+# saved script (success=True) so the Supervisor executes it — the artifact is usually
+# complete; the agent merely failed to emit a final handoff. So the cap is now a
+# graceful "stop and hand back what you have", not a hard failure.
+_RECURSION_LIMIT = int(os.environ.get("AGENT_RECURSION_LIMIT", "45"))
+
+
+def _salvage_or_fail_script(script_path, kind):
+    """Build a graceful ScriptHandoff for a subagent that hit the recursion cap.
+
+    If a non-empty script was saved, hand it back as success=True so the Supervisor
+    runs it through execute_script (ground truth) instead of discarding it — most caps
+    happen AFTER a complete save, while the agent loops on self-verification. If nothing
+    was saved, fail cleanly with a retry hint and NO internal 'recursion' wording.
+    """
+    has_script = bool(script_path) and os.path.isfile(script_path) and os.path.getsize(script_path) > 0
+    if has_script:
+        return ScriptHandoff(
+            script_path=script_path,
+            description=(
+                f"{kind} produced a script but did not emit a final handoff. It is most "
+                "likely complete — execute it to confirm; if it errors, send it to imagej_debugger."
+            ),
+            success=True,
+        )
+    return ScriptHandoff(
+        script_path="",
+        description=f"{kind} could not produce a usable script for this task.",
+        success=False,
+        error_message="No script was generated — re-issue the request once with a simpler, more explicit task.",
+    )
+
+
+def _snapshot_scripts(directory: str) -> dict:
+    """Map {path: mtime} of every .py/.groovy under `directory` (recursive), taken BEFORE
+    a subagent runs. Lets the cap salvage tell a script THIS run produced from a stale one
+    left by an earlier task — these project folders accumulate many scripts over time."""
+    snap = {}
+    try:
+        for root, _dirs, files in os.walk(directory):
+            for fn in files:
+                if fn.lower().endswith((".py", ".groovy")):
+                    p = os.path.join(root, fn)
+                    try:
+                        snap[p] = os.path.getmtime(p)
+                    except OSError:
+                        continue
+    except Exception:
+        pass
+    return snap
+
+
+def _newest_script_since(directory: str, pre: dict) -> str:
+    """The most recently modified .py/.groovy under `directory` that was CREATED or MODIFIED
+    after the `pre` snapshot — i.e. produced during THIS run. Returns "" if nothing changed,
+    so the caller fails cleanly instead of salvaging (and executing) a stale script from an
+    earlier task."""
+    newest, newest_mtime = "", -1.0
+    try:
+        for root, _dirs, files in os.walk(directory):
+            for fn in files:
+                if not fn.lower().endswith((".py", ".groovy")):
+                    continue
+                p = os.path.join(root, fn)
+                try:
+                    mt = os.path.getmtime(p)
+                except OSError:
+                    continue
+                # new file (absent from pre), or existing file whose mtime advanced this run
+                if mt > pre.get(p, -1.0) and mt > newest_mtime:
+                    newest, newest_mtime = p, mt
+    except Exception:
+        pass
+    return newest
+
+
+def _run_capped(agent, payload, on_cap):
+    """Run a stateless subagent with a hard recursion cap. On hitting the cap (a runaway
+    tool loop) return on_cap() — a best-effort handoff — instead of raising/looping forever,
+    so the Supervisor still receives a structured result it can act on."""
+    try:
+        result = stop_signal.SubagentRunner(
+            agent.invoke,
+            payload,
+            config={"recursion_limit": _RECURSION_LIMIT},
+        ).run()
+        return result["structured_response"]
+    except GraphRecursionError:
+        return on_cap()
 
 
 @tool
@@ -378,13 +543,25 @@ def imagej_coder(task: str, project_root: str) -> ScriptHandoff:
 
     sections.append(f"TASK: {task}")
 
+    # Always inject the CORE pitfalls (can't-miss floor) + featured recipes. The
+    # coder pulls extra task-specific lessons/recipes itself via the recall() tool.
+    sections.append(core_pitfalls("Groovy"))
+    sections.append(core_recipes("Groovy"))
+
     agent = _make_coder_agent(model, "imagej_coder", imagej_coder_prompt)
 
-    result = stop_signal.SubagentRunner(
-        agent.invoke,
-        {"messages": [{"role": "user", "content": "\n\n".join(sections)}]},
-    ).run()
-    return result["structured_response"]
+    scripts_dir = os.path.join(project_root, "scripts", "imagej")
+    pre_scripts = _snapshot_scripts(scripts_dir)
+
+    def _on_cap():
+        path = _newest_script_since(scripts_dir, pre_scripts)
+        return _salvage_or_fail_script(path, "The coder")
+
+    return _run_capped(
+        agent,
+        {"messages": [{"role": "user", "content": "\n\n".join(s for s in sections if s)}]},
+        _on_cap,
+    )
 
 
 @tool
@@ -398,7 +575,8 @@ def imagej_debugger(script_path: str, error_message: str, project_root: str = ""
         project_root:  Absolute path to the project folder.
 
     Returns a ScriptHandoff with the repaired script_path and a lesson field.
-    After success, pass lesson to save_coding_experience.
+    The lesson on the returned handoff is saved automatically once execute_script
+    confirms the repaired script runs green.
     """
     agent = _make_coder_agent(llm_worker, "imagej_debugger", imagej_debugger_prompt)
 
@@ -408,11 +586,39 @@ def imagej_debugger(script_path: str, error_message: str, project_root: str = ""
         if ledger_ctx:
             sections.insert(1, f"PROJECT STATE (for context):\n{ledger_ctx}")
 
-    result = stop_signal.SubagentRunner(
-        agent.invoke,
-        {"messages": [{"role": "user", "content": "\n\n".join(sections)}]},
-    ).run()
-    return result["structured_response"]
+    # Always inject the CORE pitfalls floor. The debugger pulls error-specific
+    # lessons itself via the recall() tool (keyed on the stack trace).
+    sections.append(core_pitfalls("Groovy"))
+
+    def _on_cap():
+        return _salvage_or_fail_script(script_path, "The debugger")
+
+    handoff = _run_capped(
+        agent,
+        {"messages": [{"role": "user", "content": "\n\n".join(s for s in sections if s)}]},
+        _on_cap,
+    )
+
+    # Buffer the lesson for deterministic capture. The debugger CANNOT verify its
+    # own fix; execute_script persists this automatically once the supervisor
+    # reruns the repaired script and it passes — no manual save call involved.
+    # On a recursion-cap salvage the handoff carries no lesson/working_code, so
+    # nothing is recorded — a run that never self-confirmed must not teach.
+    try:
+        if handoff.lesson and handoff.working_code:
+            register_pending_lesson(
+                handoff.script_path,
+                language="Groovy",
+                rule=handoff.lesson,
+                failed_code=handoff.failed_code or "",
+                working_code=handoff.working_code or "",
+                error_type=handoff.error_type or "Logic",
+                class_involved=handoff.class_involved or "",
+            )
+    except Exception:
+        pass
+
+    return handoff
 
 
 
@@ -445,11 +651,67 @@ def python_data_analyst(task: str, input_csv: str, output_dir: str, project_root
             sections.append(f"PROJECT STATE (use for axis labels, units, and context):\n{ledger_ctx}")
     sections.append(f"TASK: {task}")
 
-    result = stop_signal.SubagentRunner(
-        _analyst_agent.invoke,
-        {"messages": [{"role": "user", "content": "\n\n".join(sections)}]},
-    ).run()
-    return result["structured_response"]
+    # Always inject the CORE pitfalls floor + featured recipes (Python). The
+    # analyst pulls extra lessons/recipes itself via the recall() tool.
+    sections.append(core_pitfalls("Python"))
+    sections.append(core_recipes("Python"))
+
+    pre_scripts = _snapshot_scripts(output_dir)
+
+    def _on_cap():
+        path = _newest_script_since(output_dir, pre_scripts)
+        has = bool(path) and os.path.isfile(path) and os.path.getsize(path) > 0
+        if has:
+            return AnalystHandoff(
+                script_path=path,
+                description=("The analyst produced a script but did not emit a final handoff. "
+                            "It is most likely complete — execute it to confirm."),
+                success=True,
+            )
+        return AnalystHandoff(
+            script_path="",
+            description="The analyst could not produce a usable script for this task.",
+            success=False,
+            error_message="No script was generated — re-issue the request once with a simpler, more explicit task.",
+        )
+
+    handoff = _run_capped(
+        _analyst_agent,
+        {"messages": [{"role": "user", "content": "\n\n".join(s for s in sections if s)}]},
+        _on_cap,
+    )
+
+    # Deterministic lesson capture for the Python flow, mirroring imagej_debugger.
+    # Populated only when this run fixed a failing script; execute_script commits
+    # it once the rerun is green. A recursion-cap salvage carries no lesson, so a
+    # run that never self-confirmed records nothing.
+    try:
+        if handoff.lesson and handoff.working_code:
+            register_pending_lesson(
+                handoff.script_path,
+                language="Python",
+                rule=handoff.lesson,
+                failed_code=handoff.failed_code or "",
+                working_code=handoff.working_code or "",
+                error_type=handoff.error_type or "Logic",
+                class_involved=handoff.class_involved or "",
+            )
+    except Exception:
+        pass
+
+    return handoff
+
+
+# ---------------------------------------------------------------------------
+# QA enabled flag — toggled at runtime without rebuilding the supervisor graph
+# ---------------------------------------------------------------------------
+
+_qa_enabled: bool = False
+
+
+def set_qa_enabled(enabled: bool) -> None:
+    global _qa_enabled
+    _qa_enabled = enabled
 
 
 @tool
@@ -467,6 +729,15 @@ def qa_reporter(project_root: str) -> QAHandoff:
     Returns a QAHandoff with checklist_path, pass/fail counts, and critical_failures.
     Relay critical_failures to the user verbatim.
     """
+    if not _qa_enabled:
+        return QAHandoff(
+            checklist_path="",
+            minimal_workflow_passed=0,
+            minimal_workflow_total=0,
+            critical_failures=["QA Agent is disabled — enable it in the panel to run the audit."],
+            success=False,
+        )
+
     sections = [f"PROJECT ROOT: {project_root}"]
     # Inject the full ledger — it contains the workflow summary, all parameters,
     # all scripts, all outputs. This is exactly what the QA agent needs to audit.
@@ -601,7 +872,7 @@ def plugin_manager(task: str, project_root: str = "") -> PluginRecommendation:
 # Factory
 # ---------------------------------------------------------------------------
 
-def init_agent(enable_qa: bool = False):
+def init_agent():
     fs_backend = FilesystemBackend(
         root_dir="/app/data/",
         virtual_mode=False,
@@ -611,10 +882,9 @@ def init_agent(enable_qa: bool = False):
         imagej_coder,
         imagej_debugger,
         python_data_analyst,
+        qa_reporter,   # always present; _qa_enabled flag controls execution
         # vlm_judge,  # VLM disabled
     ]
-    if enable_qa:
-        subagent_tools.append(qa_reporter)
 
     set_dialog_vision_llm(llm_nano)
 
@@ -653,12 +923,9 @@ def init_agent(enable_qa: bool = False):
             inspect_all_ui_windows,
             capture_plugin_dialog,
             show_in_imagej_gui,
+            close_imagej_windows,
             rag_retrieve_docs,
-            save_coding_experience,
-            rag_retrieve_mistakes,
-            rag_retrieve_recipes,
-            save_recipe,
-            save_reusable_script,
+            recall,
             inspect_folder_tree,
             smart_file_reader,
             extract_image_metadata,
@@ -669,12 +936,17 @@ def init_agent(enable_qa: bool = False):
             setup_analysis_workspace,
             save_markdown,
             check_environment,
+            # ── dynamically-discovered MCP server tools (e.g. in-container ───
+            #    napari-mcp). Discovered at startup; the napari viewer itself
+            #    opens lazily on the first napari tool call. Discovery failures
+            #    are non-fatal (the adapter returns only diagnostics tools).
+            *get_mcp_tools(),
             # ── state ledger (persistent project memory) ─────────────────────
             update_state_ledger,
             read_state_ledger,
             set_ledger_metadata,
         ],
-        system_prompt=build_supervisor_prompt(enable_qa),
+        system_prompt=build_supervisor_prompt(enable_qa=True),
         subagents=[],
         middleware=supervisor_middleware,
         model=llm_supervisor,

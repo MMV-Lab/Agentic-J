@@ -7,3 +7,10 @@
 - LEDGER: Call update_state_ledger(phase="4d", step="plotting", status="completed",
     details="Generated <N> figures. Saved PNG+SVG to figures/",
     script_path="<path>", output_paths=["figures/"])
+
+## RECIPES (automatic — no action needed)
+
+Plotting recipes are saved automatically: once the plot script runs cleanly, the
+Librarian evaluates it in the background and decides on its own whether it is a
+reusable, novel figure recipe worth keeping (skipping study-specific one-offs and
+duplicates). You do NOT need to call save_recipe.

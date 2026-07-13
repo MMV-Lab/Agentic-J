@@ -40,3 +40,12 @@ After EACH processing step (single-image verified + batch executed), call:
     details="<what was done and key parameters>",
     script_path="<path>", output_paths=["<output_dir>"],
     parameters={"threshold_method": "Otsu", ...})
+
+## RECIPES (automatic — no action needed)
+
+Recipes are saved automatically. The moment a script runs cleanly via
+execute_script, the Librarian evaluates it in the background and decides on its
+own whether it is a generalizable, novel recipe worth keeping (skipping one-offs
+and duplicates) and writes it with its own name/description. You do NOT need to
+call save_recipe — only use it to force-save a specific script you don't want
+left to the automatic decision.

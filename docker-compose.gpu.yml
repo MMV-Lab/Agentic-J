@@ -1,0 +1,38 @@
+# GPU override for Agentic-J (amd64, NVIDIA GPU via CDI).
+#
+# The GPU is provided through the Container Device Interface (CDI) — the portable path
+# supported by modern nvidia-container-toolkit, rootless Docker/Podman, and Docker 25+
+# with `features: { "cdi": true }` in /etc/docker/daemon.json. Verify the host first:
+#   docker info | grep -iA2 'CDI spec'    # must list the CDI spec directories
+#   nvidia-ctk cdi list                    # must enumerate nvidia.com/gpu=all, =0, ...
+# If those are empty, enable CDI on the host:
+#   sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
+#   add  "features": { "cdi": true }  to /etc/docker/daemon.json, then restart docker.
+#
+# Build:  docker compose -f docker-compose.yml -f docker-compose.gpu.yml build
+# Run:    docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+#
+# CUDA_TAG: cu126 default; torch 2.11.0 wheels exist only for cu126 (driver 560+)
+# and cu128 (driver 570+).
+
+services:
+  imagentj:
+    image: ${IMAGENTJ_IMAGE:-agenticj:gpu-local}
+    build:
+      args:
+        USE_GPU: "true"
+        CUDA_TAG: ${CUDA_TAG:-cu126}
+    # Use the plain OCI runtime and let CDI inject the GPU — this is what makes the
+    # file portable to hosts that have no named 'nvidia' runtime. On a host whose
+    # default runtime is 'nvidia', this also avoids double-injection.
+    runtime: runc
+    deploy:
+      resources:
+        reservations:
+          devices:
+            # CDI device request. To scope to specific GPUs on a shared node, replace
+            # 'nvidia.com/gpu=all' with e.g. 'nvidia.com/gpu=0' (see `nvidia-ctk cdi list`).
+            - driver: cdi
+              device_ids:
+                - nvidia.com/gpu=all
+              capabilities: [gpu]

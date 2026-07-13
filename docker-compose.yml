@@ -1,6 +1,6 @@
 services:
   imagentj:
-    image: ${IMAGENTJ_IMAGE:-agenticj:cpu-local}
+    image: ${IMAGENTJ_IMAGE:-agenticj:cpu-local-napari}
     # Do not pin platform here: Docker/BuildKit builds for the host architecture
     # by default, and the Dockerfile routes arch-specific steps via TARGETARCH.
     build:
@@ -16,6 +16,15 @@ services:
       - OPEN_ROUTER_API_KEY=${OPEN_ROUTER_API_KEY:-}
       - FIJI_PATH=/opt/Fiji.app
       - QDRANT_DATA_PATH=/app/qdrant_data
+      # ── Generic MCP host: in-container napari-mcp stdio server ────────────
+      # The supervisor discovers napari tools at startup (no napari window yet);
+      # the viewer opens lazily on the first napari tool call. Timeouts are
+      # generous because that first call spins up napari + software GL.
+      - IMAGENTJ_MCP_CONFIG=${IMAGENTJ_MCP_CONFIG:-/app/.imagentj/mcp.json}
+      - IMAGENTJ_MCP_CONFIG_JSON=${IMAGENTJ_MCP_CONFIG_JSON:-}
+      - IMAGENTJ_MCP_DISCOVERY_TIMEOUT_SECONDS=${IMAGENTJ_MCP_DISCOVERY_TIMEOUT_SECONDS:-20}
+      - IMAGENTJ_MCP_TOOL_TIMEOUT_SECONDS=${IMAGENTJ_MCP_TOOL_TIMEOUT_SECONDS:-90}
+      - IMAGENTJ_MCP_KEEP_ALIVE=${IMAGENTJ_MCP_KEEP_ALIVE:-true}
       - DISPLAY=:1
       # Optional: Set a VNC password (recommended if exposing to network)
       - VNC_PASSWORD=${VNC_PASSWORD:-}
@@ -40,6 +49,9 @@ services:
       - ${IMAGE_DATA_DIR:-./data}:/data
       # Source code mount for development (remove in production image)
       - ./src:/app/src:ro
+      # MCP host config (mcpServers) — analogous to Claude Code's config.
+      # Edit .imagentj/mcp.json to add/disable MCP servers without rebuilding.
+      - ./.imagentj:/app/.imagentj:ro
       - ./gui_runner.py:/app/gui_runner.py:ro
       - ./setup_wizard.py:/app/setup_wizard.py:ro
       # Folder to save data

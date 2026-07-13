@@ -217,6 +217,24 @@ find "$FIJI_HOME/update" -type f -name "*.jar" | while read -r f; do
     esac
 done
 
+# ── Remove logback-classic 1.2.x from named volume (incompatible with SLF4J 2.x) ──
+# SLF4J 2.x ignores 1.7.x-style StaticLoggerBinder JARs and warns at startup.
+# The image ships slf4j-nop-2.0.x instead; remove any logback 1.2.x that survived
+# in the volume from an earlier image build.
+find "$FIJI_HOME/jars" -name 'logback-classic-1.2*.jar' -delete 2>/dev/null && true
+
+# ── Ensure slf4j-nop-2.0.16 is in the fiji_jars volume ──────────────────────
+# The fiji_jars named volume shadows /opt/Fiji.app/jars, so JARs added to the
+# image's jars/ directory don't reach the volume via normal seeding. Copy from
+# /opt/fiji-patches/ (not volume-mounted) the same way StarDist/CSBDeep patches do.
+_SLF4J_NOP="$FIJI_HOME/jars/slf4j-nop-2.0.16.jar"
+_SLF4J_NOP_SRC="/opt/fiji-patches/slf4j-nop-2.0.16.jar"
+if [ ! -f "$_SLF4J_NOP" ] && [ -f "$_SLF4J_NOP_SRC" ]; then
+    echo "[entrypoint] Installing slf4j-nop-2.0.16.jar into fiji_jars volume..."
+    cp "$_SLF4J_NOP_SRC" "$_SLF4J_NOP"
+    echo "[entrypoint] slf4j-nop-2.0.16.jar installed"
+fi
+
 # ── Remove stale TrackMate-StarDist 1.2.0 from named volume ──────────────────
 # 1.2.0 has AbstractMethodError with TrackMate 8.x (missing 4-arg getDetector).
 # The image now ships patched 2.0.0; remove any 1.x lingering in the volume.
@@ -382,6 +400,29 @@ if [ -z "$OPENAI_API_KEY" ] && [ -z "$OPEN_ROUTER_API_KEY" ]; then
     echo "[entrypoint] WARNING: No API key is set. The agent will not work."
     echo "[entrypoint]          Set OPENAI_API_KEY or OPEN_ROUTER_API_KEY in .env, or"
     echo "[entrypoint]          place 'export OPENAI_API_KEY=...' in /home/imagentj/api_keys.env"
+fi
+
+# ── GPU availability check ───────────────────────────────────────────────────
+# Log the device (informational), then do the AUTHORITATIVE check: can the
+# cellpose env's PyTorch actually use CUDA? That is the true signal for whether
+# Cellpose/StarDist will run on the GPU — a device can be visible without a
+# CUDA-enabled torch build, and the container may be started without a GPU at
+# all. Export IMAGENTJ_GPU so the running agent reflects the real state:
+# environment_tools.check_environment overlays it onto the snapshot's CUDA row,
+# which is what the supervisor reads.
+if command -v nvidia-smi &>/dev/null; then
+    echo "[entrypoint] NVIDIA GPU device visible:"
+    nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader 2>/dev/null \
+        | sed 's/^/  /' || echo "  (nvidia-smi query failed)"
+else
+    echo "[entrypoint] No NVIDIA GPU device visible."
+fi
+if /opt/conda/envs/cellpose/bin/python -c "import torch,sys; sys.exit(0 if torch.cuda.is_available() else 1)" 2>/dev/null; then
+    export IMAGENTJ_GPU=true
+    echo "[entrypoint] GPU acceleration ACTIVE — cellpose PyTorch sees CUDA (IMAGENTJ_GPU=true)"
+else
+    export IMAGENTJ_GPU=false
+    echo "[entrypoint] GPU acceleration INACTIVE — running on CPU (IMAGENTJ_GPU=false)"
 fi
 
 # ── Launch the application ───────────────────────────────────────────────────

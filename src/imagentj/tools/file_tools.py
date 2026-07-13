@@ -5,7 +5,7 @@ import pymupdf4llm
 import pymupdf
 from langchain.tools import tool
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from .utils import walk, sanitize_filename
+from .utils import walk, sanitize_filename, add_line_numbers
 from imagentj.rag.loaders import get_smart_splitter, load_and_split_ipynb
 from .vector_stores import get_vec_store_docs, is_rag_available
 import threading
@@ -20,8 +20,6 @@ import importlib.metadata
 import sys
 import platform
 
-
-SCRIPTS_DIR = os.path.join(os.path.dirname(__file__), "../../scripts/saved_scripts")
 
 # Limits for CPU-optimized performance
 MAX_CONTEXT_CHARS = 30000  # ~6,000 to 8,000 tokens
@@ -111,69 +109,6 @@ def inspect_folder_tree(
     return json.dumps(tree, indent=2)
 
 
-@tool("save_reusable_script")
-def save_reusable_script(name: str, code: str, description: str, inputs_required: str,
-                         language: str = "Groovy") -> str:
-    """
-    Saves a working script BOTH to the permanent user library folder on disk AND
-    to the recipes vector store so it becomes discoverable by future tasks via
-    semantic search.
-
-    Use only AFTER `execute_script` has confirmed the script runs cleanly AND
-    produced the expected outputs.
-
-    Args:
-        name: A short, descriptive title (e.g., "Nuclei Segmentation via StarDist").
-        code: The complete, executable Groovy or Java code.
-        description: 1-3 sentence summary of what the script does and when to
-                     use it. This is what gets EMBEDDED for retrieval, so phrase
-                     it the way a future task would describe the goal.
-        inputs_required: Instructions for the user (e.g., "Open a 2D Tiff image").
-        language: "Groovy" (default) or "Python".
-    """
-
-    if not os.path.exists(SCRIPTS_DIR):
-        os.makedirs(SCRIPTS_DIR)
-
-    safe_name = sanitize_filename(name)
-
-    # 1. Save the code file to disk (preserves the existing on-disk library)
-    ext = ".groovy" if language.lower() == "groovy" else ".py"
-    code_path = os.path.join(SCRIPTS_DIR, f"{safe_name}{ext}")
-    with open(code_path, "w", encoding="utf-8") as f:
-        f.write(code)
-
-    # 2. Save metadata sidecar to disk
-    meta_path = os.path.join(SCRIPTS_DIR, f"{safe_name}.json")
-    metadata = {
-        "name": name,
-        "description": description,
-        "inputs": inputs_required,
-        "language": language.lower(),
-        "script_file": f"{safe_name}{ext}",
-    }
-
-    with open(meta_path, "w", encoding="utf-8") as f:
-        json.dump(metadata, f, indent=4)
-
-    # 3. Mirror into the recipes vector store (RAG-indexed, retrievable).
-    #    Failure to save to the vector store does not block the on-disk save.
-    rag_status = ""
-    try:
-        from .rag_tools import _save_recipe_raw
-        rag_status = " " + _save_recipe_raw(
-            name=name,
-            description=description,
-            code=code,
-            inputs_required=inputs_required,
-            language=language,
-        )
-    except Exception as e:
-        rag_status = f" (recipe vector index update failed: {e})"
-
-    return f"Script saved as '{safe_name}{ext}' in '{SCRIPTS_DIR}'.{rag_status}"
-
-
 @tool("smart_file_reader")
 def smart_file_reader(file_path: str):
     """
@@ -228,7 +163,9 @@ def smart_file_reader(file_path: str):
             print("Action: Injecting directly into Context (Fastest)")
             if len(content) > MAX_CONTEXT_CHARS:
                 content = content[:MAX_CONTEXT_CHARS] + "\n\n[... content truncated (RAG unavailable) ...]"
-            return {"type": "context", "content": content}
+            # Number code/text lines for reference (display-only prefixes). Not applied to
+            # the RAG-indexed branch below — numbering would pollute the embedded chunks.
+            return {"type": "context", "content": add_line_numbers(content)}
         else:
             print("Action: Large file detected. Indexing into RAG...")
             splitter = get_smart_splitter(ext)

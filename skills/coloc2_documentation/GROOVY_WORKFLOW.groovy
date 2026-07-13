@@ -125,23 +125,30 @@ try {
         return
     }
 
-    // Fixed Coloc 2 configuration (unchanged behavior):
-    // - channel_1 = RED
-    // - channel_2 = BLUE
+    // Fixed Coloc 2 configuration:
+    // - channel_1 = RED, channel_2 = BLUE
     // - threshold = Costes
-    // - iterations = 50
-    // - psf_width = 3.0
+    // - statistics: Pearson (always on) + Spearman + Manders + Li ICQ + Costes test
+    // - costes_randomisations = 50, psf = 3
+    //
+    // IMPORTANT MACRO SYNTAX (verified against Colocalisation_Analysis-3.1.0):
+    //   * Statistic checkboxes are BARE keys (presence = ON). Do NOT write '=true'
+    //     and do NOT use 'statistic_1..5' — those keys do not exist and are silently
+    //     ignored, leaving the statistic at its (usually OFF) saved default.
+    //   * Choices/numerics use 'key=value': psf=3 (NOT psf_width), costes_randomisations
+    //     (NOT number_of_iterations).
+    //   * Omit display_images_in_result and show_save_pdf_dialog when headless so no
+    //     dialog blocks the run. There is no 'display_results' key.
     String args = [
         'channel_1=[' + redImp.getTitle() + ']',
         'channel_2=[' + blueImp.getTitle() + ']',
         'threshold_regression=Costes',
-        'display_images=false',
-        'display_results=true',
-        'statistic_1=true',
-        'statistic_2=true',
-        'statistic_3=true',
-        'number_of_iterations=50',
-        'psf_width=3.0'
+        "spearman's_rank_correlation",
+        "manders'_correlation",
+        'li_icq',
+        "costes'_significance_test",
+        'psf=3',
+        'costes_randomisations=50'
     ].join(' ')
 
     // Run Coloc 2 using the fixed arguments above.

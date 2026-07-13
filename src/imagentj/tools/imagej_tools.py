@@ -179,6 +179,116 @@ def show_in_imagej_gui(path: str) -> str:
 
 
 @tool
+def close_imagej_windows(
+    titles: list[str] | None = None,
+    close_all_images: bool = False,
+    close_non_image: bool = False,
+) -> str:
+    """Close ImageJ/Fiji windows to clean up the GUI.
+
+    Call this after a verification step or once the user has confirmed they
+    no longer need a set of windows on screen — accumulating images, logs,
+    and plot windows clutter Fiji and slow batch runs.
+
+    The main ImageJ/Fiji control window is NEVER closed by this tool.
+
+    Args:
+        titles: Specific window titles to close (image windows or non-image
+                windows like "Log", "Results", "ROI Manager", or plugin
+                dialogs). Matches by exact title.
+        close_all_images: If True, close every visible image window.
+        close_non_image: If True, close visible non-image windows
+                         (Log, Results, ROI Manager, exception popups, plugin
+                         dialogs) — but never the main ImageJ control window.
+
+    Returns:
+        Human-readable summary of which windows were closed.
+    """
+    try:
+        get_ij()
+        from scyjava import jimport
+        WindowManager = jimport('ij.WindowManager')
+        Window = jimport('java.awt.Window')
+    except Exception as e:
+        return f"Could not access ImageJ window system: {e!s}"
+
+    requested_titles = set(t for t in (titles or []) if isinstance(t, str) and t.strip())
+    closed_images: list[str] = []
+    closed_non_image: list[str] = []
+    failed: list[str] = []
+
+    # --- 1. Close image windows ---
+    try:
+        image_ids = WindowManager.getIDList() or []
+    except Exception:
+        image_ids = []
+    for img_id in image_ids:
+        try:
+            imp = WindowManager.getImage(img_id)
+            if imp is None:
+                continue
+            title = str(imp.getTitle())
+            if close_all_images or title in requested_titles:
+                imp.changes = False  # suppress "save changes?" dialog
+                imp.close()
+                closed_images.append(title)
+                requested_titles.discard(title)
+        except Exception as e:
+            failed.append(f"{title if 'title' in dir() else '?'}: {e!s}")
+
+    # --- 2. Close non-image windows (Log, Results, dialogs, etc.) ---
+    if close_non_image or requested_titles:
+        try:
+            windows = list(Window.getWindows())
+        except Exception:
+            windows = []
+        for win in windows:
+            try:
+                if not win.isVisible():
+                    continue
+                try:
+                    title = str(win.getTitle())
+                except Exception:
+                    title = ""
+                # Never close the main ImageJ/Fiji control window
+                if _is_main_imagej_window(title):
+                    continue
+                want_close = (close_non_image and not _IMAGE_EXT_RE.search(title)) \
+                              or (title in requested_titles)
+                if not want_close:
+                    continue
+                # Dispose closes both Frame and Dialog without prompting
+                try:
+                    win.dispose()
+                except Exception:
+                    win.setVisible(False)
+                closed_non_image.append(title or win.getClass().getSimpleName())
+                requested_titles.discard(title)
+            except Exception as e:
+                failed.append(f"{title if 'title' in dir() else '?'}: {e!s}")
+
+    parts = []
+    if closed_images:
+        parts.append(f"Closed {len(closed_images)} image window(s): {closed_images}")
+    if closed_non_image:
+        parts.append(f"Closed {len(closed_non_image)} non-image window(s): {closed_non_image}")
+    if requested_titles:
+        parts.append(f"Not found / already closed: {sorted(requested_titles)}")
+    if failed:
+        parts.append(f"Failed to close: {failed}")
+    if not parts:
+        parts.append("No windows matched the request — nothing to close.")
+    return " | ".join(parts)
+
+
+def _is_main_imagej_window(title: str) -> bool:
+    if not title:
+        return False
+    tl = title.lower()
+    return tl == "fiji" or "imagej" in tl
+
+
+@tool
 def inspect_all_ui_windows():
     """
     Inspect everything visible in the ImageJ UI:
@@ -510,9 +620,37 @@ def extract_image_metadata(path: str) -> str:
     threshold values, filter sizes, and noise estimates.  Does NOT require
     an active ImageJ dataset — reads the file directly.
 
+    If the file cannot be found or read, returns a JSON object with an
+    `error` key and a human-readable `message` instead of raising — the
+    supervisor can surface this to the user and continue.
+
     Args:
         path: Absolute file path to the image.
     """
+    if not isinstance(path, str) or not path.strip():
+        return json.dumps({
+            "error": "invalid_path",
+            "message": "extract_image_metadata called with an empty or non-string path.",
+            "path": path,
+        }, indent=2)
 
-    result = extract_file_metadata(path)
+    abs_path = os.path.abspath(path.strip())
+
+    try:
+        result = extract_file_metadata(abs_path)
+    except FileNotFoundError:
+        return json.dumps({
+            "error": "file_not_found",
+            "message": f"No file at {abs_path}. Ask the user for the correct path "
+                       f"or call inspect_folder_tree on the parent directory to list "
+                       f"the available files.",
+            "path": abs_path,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({
+            "error": "metadata_extraction_failed",
+            "message": f"Could not read metadata from {abs_path}: {e!s}",
+            "path": abs_path,
+        }, indent=2)
+
     return json.dumps(result, indent=2, default=str)

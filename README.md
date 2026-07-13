@@ -40,6 +40,61 @@ Place images you want to analyse in [`./data/`](data/) — the agent sees them a
 
 > **Verifying LFS worked:** after cloning, check that `qdrant_data/collection/BioimageAnalysisDocs/storage.sqlite` is several MB, not a ~130-byte text file starting with `version https://git-lfs.github.com/...`. If it's a stub, run `git lfs install && git lfs pull`.
 
+## GPU support (optional)
+
+By default the container runs on **CPU** (`docker compose up`). On an NVIDIA GPU host you can run the GPU build, which accelerates the deep-learning segmentation steps — **Cellpose** (v3 + Cellpose-SAM, PyTorch) and **StarDist** (TensorFlow).
+
+Requirements:
+
+- NVIDIA GPU + driver **560+** (for the default CUDA 12.6 build; `560+` for `cu126`, `570+` for `cu128`)
+- [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)
+- **CDI enabled** in Docker (Docker 25+). Verify:
+
+  ```bash
+  docker info | grep -iA2 'CDI spec'   # must list the CDI spec directories
+  nvidia-ctk cdi list                   # must list nvidia.com/gpu=all, =0, ...
+  ```
+
+  If those are empty, enable CDI once (needs host admin):
+
+  ```bash
+  sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
+  # add   "features": { "cdi": true }   to /etc/docker/daemon.json
+  sudo systemctl restart docker
+  ```
+
+**1. Set the build parameters.** Two build args in the [`Dockerfile`](Dockerfile) control the image — both **default to a CPU build**:
+
+- **`USE_GPU`** — `false` (default) installs CPU PyTorch/TensorFlow; `true` installs CUDA PyTorch + `tensorflow[and-cuda]`.
+- **`CUDA_TAG`** — the PyTorch CUDA wheel index. `cu126` (default) targets driver **560+**; `cu128` targets driver **570+** (newest CUDA / RTX 50xx).
+
+`docker-compose.gpu.yml` already sets `USE_GPU=true` (and `CUDA_TAG=cu126`) for you. To pick a different CUDA build, export `CUDA_TAG` before building:
+
+```bash
+export CUDA_TAG=cu128     # optional; default is cu126
+```
+
+> **Older drivers (< 560).** `torch==2.11.0` wheels are published **only** for `cu126` and `cu128`. To target a lower tag (`cu121`/`cu124`), setting `CUDA_TAG` is not enough — you must also lower the pinned `torch==2.11.0` and `torchvision==0.26.0` strings in the [`Dockerfile`](Dockerfile) to a release that exists for that tag (e.g. `torch==2.6.0` for `cu124`), or the build fails with `No matching distribution found for torch==2.11.0`.
+
+**2. Build and start** with the `docker-compose.gpu.yml` override:
+
+```bash
+# First time: build the GPU image (~30–60 min; downloads CUDA torch + tensorflow[and-cuda])
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml build
+
+# Start
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+```
+
+(To build the GPU image without the override, pass the args directly: `docker compose build --build-arg USE_GPU=true --build-arg CUDA_TAG=cu126`.)
+
+**3. Verify** the GPU is active inside the container:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml exec imagentj \
+  /opt/conda/envs/cellpose/bin/python -c "import torch; print(torch.cuda.is_available())"   # -> True
+```
+
 ## Documentation
 
 The full user guide lives in [`user_guide/`](user_guide/):

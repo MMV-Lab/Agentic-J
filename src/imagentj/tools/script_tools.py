@@ -13,6 +13,7 @@ from filelock import FileLock
 import threading
 import time
 from scyjava import jimport
+from .utils import add_line_numbers, strip_line_numbers
 
 # ── Window classification ─────────────────────────────────────────────────
 
@@ -707,23 +708,24 @@ def run_script_safe(language: str, code: str, max_retries: int = 3) -> str:
 
 
 
-@tool("save_script")  
-def save_script(directory: str, filename: str, content: str, description: str, error_context: Optional[str] = None) -> str:
+def _existing_description(directory: str, filename: str) -> Optional[str]:
+    """Return the stored description for a script, or None if not registered."""
+    dict_path = os.path.join(directory, "script_dictionary.json")
+    if not os.path.exists(dict_path):
+        return None
+    try:
+        with open(dict_path, 'r') as f:
+            return json.load(f).get(filename, {}).get("description")
+    except Exception:
+        return None
+
+
+def _commit_script(directory: str, filename: str, content: str, description: str,
+                   error_context: Optional[str] = None) -> str:
     """
-    Saves a script, archives previous versions, and maintains a versioned history in script_dictionary.json.
-    
-    Args:
-        directory: Path to the directory where the script should be saved must look like this:
-        Correct:   /app/data/projects/[project_name]/scripts/imagej/
-        WRONG:     /app/data/projects/[project_name]/scripts/
-        WRONG:     /app/data/projects/[project_name]/
-        filename: Name of the script (must be .py or .groovy).
-        content: The new source code.
-        description: A short and precise summary of what the script does for the supervisor. Maximize information and minimze tokens.
-                     Should include key details about the script's functionality, inputs, outputs, and any important parameters or usage notes.
-                     This description will be stored in the script_dictionary.json for reference.
-        error_context: (Optional) If this is a fix, provide the error message/reason why the 
-                       previous version was archived.
+    Shared versioning core: archive any existing file, write `content`, update
+    script_dictionary.json. Used by save_script (full write), edit_script (patch),
+    and copy_file (seed from an existing file) so all three are versioned identically.
     """
     allowed_extensions = ('.py', '.groovy')
     if not filename.lower().endswith(allowed_extensions):
@@ -734,10 +736,9 @@ def save_script(directory: str, filename: str, content: str, description: str, e
         dict_path = os.path.join(directory, "script_dictionary.json")
         lock_path = os.path.join(directory, "script_dictionary.lock")
         full_path = os.path.join(directory, filename)
-        
+
         lock = FileLock(lock_path, timeout=30)
         with lock:
-            # Load existing dictionary
             data = {}
             if os.path.exists(dict_path):
                 with open(dict_path, 'r') as f:
@@ -746,92 +747,247 @@ def save_script(directory: str, filename: str, content: str, description: str, e
                     except json.JSONDecodeError:
                         data = {}
 
-            # 1. Archive the existing file and its metadata
             if os.path.exists(full_path):
                 archive_dir = os.path.join(directory, "archive")
                 os.makedirs(archive_dir, exist_ok=True)
-                
-                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                archived_filename = f"{timestamp}_{filename}"
-                archived_path = os.path.join(archive_dir, archived_filename)
-                
-                # Move the actual file
+                # microsecond precision so rapid successive versions (several
+                # edit_script patches in the same second) don't overwrite archives.
+                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                archived_path = os.path.join(archive_dir, f"{timestamp}_{filename}")
                 shutil.move(full_path, archived_path)
-                
-                # Update Metadata History
+
                 if filename in data:
                     old_entry = data[filename]
-                    history_entry = {
+                    old_entry.setdefault("history", []).append({
                         "archived_at": timestamp,
                         "archived_path": archived_path,
                         "description": old_entry.get("description"),
                         "version": old_entry.get("version", 1),
-                        "failure_reason": error_context if error_context else "Updated by user/agent"
-                    }
-                    
-                    # Ensure a history list exists for this filename
-                    if "history" not in old_entry:
-                        old_entry["history"] = []
-                    
-                    old_entry["history"].append(history_entry)
+                        "failure_reason": error_context if error_context else "Updated by user/agent",
+                    })
                     current_version = old_entry.get("version", 1) + 1
                 else:
                     current_version = 2
             else:
                 current_version = 1
 
-            # 2. Save the NEW file
             with open(full_path, 'w', encoding='utf-8') as f:
                 f.write(content)
 
-            # 3. Update the Dictionary with the new active entry
             data[filename] = {
                 "full_path": full_path,
                 "language": "Python" if filename.endswith('.py') else "Groovy",
                 "description": description,
                 "version": current_version,
                 "last_modified": datetime.datetime.now().isoformat(),
-                "history": data.get(filename, {}).get("history", [])
+                "history": data.get(filename, {}).get("history", []),
             }
-
             with open(dict_path, 'w') as f:
                 json.dump(data, f, indent=4)
 
             return f"Successfully saved version {current_version} of {filename}. Previous version archived."
-
     except Exception as e:
         return f"Error in save_script: {str(e)}"
-    
 
 
-@tool("execute_script")   
+@tool("save_script")
+def save_script(directory: str, filename: str, content: str, description: str, error_context: Optional[str] = None) -> str:
+    """
+    Save a FULL script and version it in script_dictionary.json.
+
+    Use this ONLY for a brand-new from-scratch script. To CHANGE an existing script
+    (fix a bug, tweak parameters), use `edit_script` instead — it patches just the
+    lines you target, which is far faster and cannot break untouched code. To base a
+    new script on an existing file, use `copy_file` then `edit_script`.
+
+    Args:
+        directory: Where to save, e.g. /app/data/projects/[name]/scripts/imagej/ (Groovy)
+                   or .../scripts/python/ (Python).
+        filename: Name of the script (must be .py or .groovy).
+        content: The full source code.
+        description: Short, precise summary (functionality, inputs, outputs, key params).
+        error_context: (Optional) If this is a fix, the failure reason being addressed.
+    """
+    return _commit_script(directory, filename, content, description, error_context)
+
+
+@tool("edit_script")
+def edit_script(directory: str, filename: str,
+                old_string: Optional[str] = None, new_string: Optional[str] = None,
+                edits: Optional[list] = None,
+                error_context: Optional[str] = None, description: Optional[str] = None,
+                replace_all: bool = False) -> str:
+    """
+    Apply SURGICAL patch(es) to an existing saved script. This is the preferred way to
+    change a script (fix a bug, tweak parameters) — it touches only the text you target,
+    so it is far cheaper than re-emitting the file and cannot introduce errors in
+    untouched code. Versioning is handled exactly like save_script.
+
+    Work like a careful engineer: from the file content you ALREADY have (from load_script
+    or copy_file), plan ALL your changes up front. Do NOT re-read the file between or after
+    edits — patches apply to the content you already have.
+
+    If an edit fails to match ('not found' / 'not unique'), do NOT keep guessing variants:
+    re-read the file ONCE with load_script to copy the exact text, and if it still won't
+    apply, fall back to save_script with the whole corrected file. Never retry the same
+    failing edit more than once.
+
+    TWO forms:
+      • Single change — pass `old_string` + `new_string`.
+      • SEVERAL disconnected changes — pass `edits`, a list of
+        {"old_string": ..., "new_string": ..., optional "replace_all": bool} objects.
+        ALWAYS prefer ONE edit_script call with an `edits` list over multiple calls: the
+        edits are applied in order and committed as a SINGLE new version, and the whole
+        batch is ATOMIC — if ANY old_string is missing or non-unique, NOTHING is written
+        and you get told which edit failed, so you never leave a half-patched file.
+
+    Args:
+        directory:   Folder containing the script.
+        filename:    The .py or .groovy file to patch.
+        old_string:  (Single form) Exact text to replace — copy it verbatim (incl.
+                     indentation) from the content you have. Must be UNIQUE unless replace_all.
+        new_string:  (Single form) Replacement text.
+        edits:       (Multi form) List of {old_string, new_string[, replace_all]} objects,
+                     each targeting a DISTINCT, non-overlapping region. Applied in order.
+        error_context: (Optional) For a fix, the failure reason (stored in history).
+        description: (Optional) New one-line description; if omitted the existing one is kept.
+        replace_all: (Optional, single form) Replace every occurrence (default: one unique match).
+    """
+    allowed_extensions = ('.py', '.groovy')
+    if not filename.lower().endswith(allowed_extensions):
+        return f"Error: Only {allowed_extensions} files can be edited."
+    full_path = os.path.join(directory, filename)
+    if not os.path.exists(full_path):
+        return (f"Error: {full_path} not found. Create it with save_script (new script) "
+                f"or copy_file (seed from an existing file) first.")
+    try:
+        with open(full_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+    except Exception as e:
+        return f"Error reading file: {str(e)}"
+
+    # Normalize both forms into one ordered list of (old, new, replace_all).
+    # strip_line_numbers defensively removes any "<n><TAB>" prefixes the model copied
+    # from a numbered load_script view — those prefixes aren't in the file, so without
+    # this every such old_string would miss. No-op on normal (unnumbered) text.
+    edit_list = []
+    if edits:
+        if not isinstance(edits, (list, tuple)):
+            return "Error: 'edits' must be a list of {old_string, new_string} objects."
+        for e in edits:
+            if not isinstance(e, dict) or "old_string" not in e or "new_string" not in e:
+                return "Error: each item in 'edits' must be an object with 'old_string' and 'new_string'."
+            edit_list.append((strip_line_numbers(e["old_string"]), strip_line_numbers(e["new_string"]),
+                              bool(e.get("replace_all", False))))
+    elif old_string is not None and new_string is not None:
+        edit_list.append((strip_line_numbers(old_string), strip_line_numbers(new_string), replace_all))
+    else:
+        return "Error: provide either (old_string AND new_string) or a non-empty 'edits' list."
+    if not edit_list:
+        return "Error: no edits provided."
+
+    # Apply sequentially to an in-memory copy. ATOMIC: validate each before anything is
+    # written; on any failure return without committing (no half-patched file).
+    working = content
+    total_repl = 0
+    for idx, (os_, ns_, ra_) in enumerate(edit_list, 1):
+        tag = f"edit {idx}: " if len(edit_list) > 1 else ""
+        if not os_:
+            return f"Error: {tag}old_string is empty. No edits applied."
+        if os_ == ns_:
+            return f"Error: {tag}old_string and new_string are identical — nothing to change. No edits applied."
+        cnt = working.count(os_)
+        if cnt == 0:
+            return (f"Error: {tag}old_string not found (after applying any earlier edits). Copy the exact "
+                    f"text verbatim from the content you have; for multiple edits target DISTINCT, "
+                    f"non-overlapping regions. No edits applied.")
+        if cnt > 1 and not ra_:
+            return (f"Error: {tag}old_string occurs {cnt} times — not unique. Add surrounding context to "
+                    f"target one spot, or set replace_all=true for this edit. No edits applied.")
+        working = working.replace(os_, ns_) if ra_ else working.replace(os_, ns_, 1)
+        total_repl += cnt if ra_ else 1
+
+    if working == content:
+        return "Error: edits produced no change."
+    if description is None:
+        description = _existing_description(directory, filename) or "Patched via edit_script."
+    result = _commit_script(directory, filename, working, description, error_context)
+    if result.startswith("Successfully"):
+        ne = len(edit_list)
+        return (f"Patched {filename}: {ne} edit{'s' if ne != 1 else ''}, "
+                f"{total_repl} replacement{'s' if total_repl != 1 else ''} — one new version. {result}")
+    return result
+
+
+@tool("copy_file")
+def copy_file(source_path: str, directory: str, filename: str, description: str) -> str:
+    """
+    Copy ANY existing script into the project and register it — then RETURN ITS FULL
+    CONTENT so you can patch it immediately with `edit_script` WITHOUT a separate
+    load_script call (one less round-trip).
+
+    Use whenever you want to base a new script on an existing file instead of writing
+    from scratch: a verified recipe/reference SCRIPT, a plugin workflow example under
+    /app/skills/, or a prior script in this project. After copying, make every change
+    with `edit_script` (patch parameters / input-output paths / sections that don't
+    apply); preserve the rest. Do NOT save_script over a copied file, and do NOT
+    load_script it — its content is returned below.
+
+    Args:
+        source_path: Absolute path to the .groovy/.py file to copy.
+        directory:   Destination folder (e.g. .../scripts/imagej/ or .../scripts/python/).
+        filename:    Name for the new script (.py or .groovy).
+        description: Short summary of what this script will do (stored for the supervisor).
+    """
+    allowed_extensions = ('.py', '.groovy')
+    if not filename.lower().endswith(allowed_extensions):
+        return f"Error: Only {allowed_extensions} files are permitted."
+    if not source_path.lower().endswith(allowed_extensions):
+        return f"Error: source must be a .py or .groovy file, got {source_path}."
+    if not os.path.exists(source_path):
+        return f"Error: source not found: {source_path}"
+    try:
+        with open(source_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+    except Exception as e:
+        return f"Error reading source: {str(e)}"
+    result = _commit_script(directory, filename, content, description)
+    if not result.startswith("Successfully"):
+        return result
+    return (f"Copied '{os.path.basename(source_path)}' -> {filename} and registered it. "
+            f"Patch it now with edit_script (do NOT load_script — full content follows).\n"
+            f"--- BEGIN {filename} ---\n{content}\n--- END {filename} ---")
+
+
+
+@tool("execute_script")
 def execute_script(directory: str, filename: str) -> str:
     """
     Triggers the execution of a saved Python or Groovy script within the project environment.
-    
+
     WHEN TO USE:
     - Use this ONLY after you have verified the script's description via 'get_script_info'.
     - Use this to run a sequence of tasks (e.g., first run the Groovy segmentation, then the Python analysis).
-    
+
     BEHAVIOR:
-    - For .groovy: Automatically handles ImageJ/Fiji window management, snapshots open images, 
+    - For .groovy: Automatically handles ImageJ/Fiji window management, snapshots open images,
       and cleans up (closes) new windows if a crash occurs to prevent GUI clutter.
-    - For .py: Automatically sets the working directory, pre-imports scientific libraries (pandas, 
+    - For .py: Automatically sets the working directory, pre-imports scientific libraries (pandas,
       numpy, seaborn), and configures high-resolution plotting.
 
     INPUTS:
-    - directory: The directory where the script is located. This will also become the 
+    - directory: The directory where the script is located. This will also become the
       working directory for Python execution.
     - filename: The name of the file to execute. Must end in .py or .groovy.
 
     OUTPUT:
-    - Returns the full STDOUT and STDERR of the execution. 
+    - Returns the full STDOUT and STDERR of the execution.
     - On SUCCESS: Provides confirmation logs.
-    - On FAILURE: Provides a detailed traceback. Pass this traceback to the Debugger agent 
+    - On FAILURE: Provides a detailed traceback. Pass this traceback to the Debugger agent
       if a fix is required.
     """
     full_path = os.path.join(directory, filename)
-    
+
     if not os.path.exists(full_path):
         return f"Error: File {full_path} not found."
 
@@ -841,33 +997,49 @@ def execute_script(directory: str, filename: str) -> str:
     # Route based on extension
     if filename.endswith('.py'):
         # Calls your existing run_python_code function
-        return run_python_code(code_content, directory)
-    
+        output = run_python_code(code_content, directory)
     elif filename.endswith('.groovy'):
         # Calls your existing run_script_safe function
-        return run_script_safe(language="groovy", code=code_content)
+        output = run_script_safe(language="groovy", code=code_content)
+    else:
+        return f"Error: File extension of {filename} is not supported for execution."
 
-    return f"Error: File extension of {filename} is not supported for execution."
+    # On a verified-green run, hand the result to the background Librarian: it files
+    # the reusable recipe and/or the debugger's buffered error->fix lesson, dedups,
+    # and (periodically) rebalances CORE — all off the hot path, so the task never
+    # waits. Lazy import avoids any import cycle with the agents/RAG layer.
+    try:
+        from .learned_memory import on_success
+        on_success(directory, filename, output)
+    except Exception:
+        pass
+
+    return output
 
 @tool("get_script_info")
 def get_script_info(directory: str, filename: str) -> str:
     """
-    Retrieves the metadata and functional description for a specific script from the project dictionary.
-    
-    WHEN TO USE:
-    - Use this immediately AFTER the Coder/Architect subagent claims to have saved a script.
-    - Use this to VERIFY that the script's logic (e.g., threshold methods, file paths, specific algorithms) 
-      matches your original instructions before you attempt to execute it.
-    - Use this if you have forgotten what a specific file in the directory does.
+    (Supervisor-only) Read the one-line description a subagent logged for a script.
+
+    This is an EXCEPTION tool, NOT a routine step. Do NOT call it to "verify" a script
+    after the coder saves or before you execute — the coder already returns its
+    script_path and description in the ScriptHandoff, so calling this adds a wasted turn
+    and can trap you in a verify -> re-save -> verify loop.
+
+    WHEN TO USE (only these):
+    - The subagent returned success=False or with NO description, and you need to confirm
+      whether anything was logged at all.
+    - You genuinely forgot what an OLD file in the directory does and it is not in the
+      current handoff.
+    Otherwise, trust the handoff and proceed straight to execute_script.
 
     INPUTS:
     - directory: The project root or output folder where 'script_dictionary.json' resides.
     - filename: The exact name of the script (e.g., 'segment_cells.groovy').
 
     OUTPUT:
-    - Returns a formatted string containing the Language and the Coder's detailed description.
-    - If the script is not in the dictionary, it returns an error; use this to catch if the 
-      subagent failed to log its work.
+    - Returns a formatted string with the Language and the logged description, or an error
+      if the script is not in the dictionary (i.e. the subagent failed to log its work).
     """
     dict_path = os.path.join(directory, "script_dictionary.json")
     if not os.path.exists(dict_path):
@@ -895,7 +1067,14 @@ def load_script(directory: str, filename: str) -> str:
 
     CONSTRAINTS:
     - Only .py and .groovy files can be read.
+    - Read a given file at most ONCE — its content does not change while you work. Do not
+      re-load it to 'verify'; use the content you already have.
     - Do not use this tool to 'verify' a script for the Supervisor (use get_script_info instead).
+
+    Each line is shown with a leading "<line-number><TAB>" for reference (e.g. mapping a
+    traceback line to code). These prefixes are display-only — NOT part of the file.
+    You may still copy a line verbatim (prefix and all) into edit_script's old_string;
+    edit_script strips the prefix before matching, so it just works.
     """
     allowed_extensions = ('.py', '.groovy')
     if not filename.lower().endswith(allowed_extensions):
@@ -909,7 +1088,7 @@ def load_script(directory: str, filename: str) -> str:
     try:
         with open(full_path, 'r', encoding='utf-8') as f:
             content = f.read()
-        return f"--- START OF FILE: {filename} ---\n{content}\n--- END OF FILE ---"
+        return f"--- START OF FILE: {filename} ---\n{add_line_numbers(content)}\n--- END OF FILE ---"
     except Exception as e:
         return f"Error reading file: {str(e)}"
     

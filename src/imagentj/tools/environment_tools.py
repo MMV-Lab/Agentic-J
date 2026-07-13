@@ -19,6 +19,7 @@ verbatim and acts on it):
     tokens via difflib. The agent should always have something to look at.
 """
 
+import os
 from difflib import get_close_matches
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -93,10 +94,42 @@ def _get_sections() -> Dict[str, List[str]]:
         _SECTIONS_CACHE = {}
         return _SECTIONS_CACHE
     try:
-        _SECTIONS_CACHE = _parse_sections(path.read_text(encoding="utf-8"))
+        sections = _parse_sections(path.read_text(encoding="utf-8"))
     except Exception:
-        _SECTIONS_CACHE = {}
+        sections = {}
+    _apply_gpu_override(sections)
+    _SECTIONS_CACHE = sections
     return _SECTIONS_CACHE
+
+
+def _apply_gpu_override(sections: Dict[str, List[str]]) -> None:
+    """Overlay the LIVE GPU status onto the snapshot's static CUDA row.
+
+    The container entrypoint detects at startup whether the cellpose env's
+    PyTorch can actually use CUDA and exports `IMAGENTJ_GPU=true|false`; that
+    var is inherited by this process. We rewrite the `**CUDA**` row accordingly
+    so `check_environment` reports the ACTUAL runtime state instead of the
+    baked-in "CPU-only" default. Unset var (e.g. host dev mode) → leave the
+    static value untouched.
+    """
+    flag = os.environ.get("IMAGENTJ_GPU", "").strip().lower()
+    if flag in ("1", "true", "yes", "on"):
+        new_row = (
+            "| **CUDA** | Available — NVIDIA GPU active. Cellpose "
+            "(env `cellpose`/`cellpose4`) and StarDist (env `stardist`) run on "
+            "the GPU; keep `--use_gpu` in Cellpose calls (the cellpose skill default). |"
+        )
+    elif flag in ("0", "false", "no", "off"):
+        new_row = (
+            "| **CUDA** | None — no GPU visible to this container. Cellpose and "
+            "StarDist run on CPU (`--use_gpu` falls back to CPU automatically). |"
+        )
+    else:
+        return
+    for rows in sections.values():
+        for i, row in enumerate(rows):
+            if "**CUDA**" in row:
+                rows[i] = new_row
 
 
 # ---------------------------------------------------------------------------

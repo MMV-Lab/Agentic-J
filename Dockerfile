@@ -2,6 +2,18 @@ FROM continuumio/miniconda3:latest AS base-cpu
 ENV DEBIAN_FRONTEND=noninteractive
 FROM base-cpu AS cpu
 ARG TARGETARCH
+# Set USE_GPU=true at build time to install CUDA-enabled PyTorch / TensorFlow (amd64 only).
+# CUDA_TAG selects the PyTorch wheel index. torch==2.11.0 wheels are published ONLY for
+# cu126 and cu128 — older tags (cu118/cu121/cu124) top out at torch 2.6.0 and fail the
+# build with "No matching distribution found for torch==2.11.0". Default cu126 needs
+# driver 560+.
+# tensorflow[and-cuda]==2.15.1 bundles its own CUDA 12.2 libs (driver 535+); the
+# effective driver minimum is therefore set by the torch CUDA tag.
+# Valid overrides (must have a torch 2.11.0 build):
+#   cu126 → driver 560+  (default; widest driver compatibility for torch 2.11.0)
+#   cu128 → driver 570+  (newest CUDA; RTX 50xx / freshest drivers)
+ARG USE_GPU=false
+ARG CUDA_TAG=cu126
 
 # ── Core system dependencies (rarely change) ─────────────────────────────────
 # Split from fonts to preserve cache when adding new fonts
@@ -18,8 +30,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     x11-xserver-utils\
     # Java AWT / Fiji display
     libxtst6 libxi6 libxrender1 libxt6 libxext6 libx11-6 \
-    # OpenGL
-    libopengl0 libglx0 \
+    # OpenGL — libgl1-mesa-dri provides the llvmpipe software renderer that
+    # napari/vispy need under headless Xvfb (no GPU); paired with
+    # LIBGL_ALWAYS_SOFTWARE=1 set below.
+    libopengl0 libglx0 libgl1-mesa-dri \
     # OpenCL CPU backend (required by CLIJ2 / BioVoxxel 3D Box without a GPU)
     # pocl-opencl-icd   — POCL software OpenCL device (CPU execution)
     # ocl-icd-libopencl1 — ICD loader runtime (libOpenCL.so.1)
@@ -149,6 +163,18 @@ RUN find /opt/Fiji.app/plugins -name 'mcib3d-core*.jar' \
     && echo "=== imagescience JARs ===" \
     && find /opt/Fiji.app -name 'imagescience*' 2>/dev/null | sort
 
+# ── Fix SLF4J startup warnings ────────────────────────────────────────────────
+# Fiji ships SLF4J 2.x API (ServiceLoader-based providers) but logback-classic
+# 1.2.x uses the old StaticLoggerBinder mechanism from SLF4J 1.7.x, which 2.x
+# ignores — producing the "No SLF4J providers" and "Ignoring binding" warnings.
+# Remove the incompatible logback JAR and add the proper 2.x NOP provider.
+RUN rm -f /opt/Fiji.app/jars/logback-classic-1.2*.jar \
+    && wget -q "https://repo1.maven.org/maven2/org/slf4j/slf4j-nop/2.0.16/slf4j-nop-2.0.16.jar" \
+         -O /opt/Fiji.app/jars/slf4j-nop-2.0.16.jar \
+    && mkdir -p /opt/fiji-patches \
+    && cp /opt/Fiji.app/jars/slf4j-nop-2.0.16.jar /opt/fiji-patches/slf4j-nop-2.0.16.jar \
+    && echo "[slf4j] logback-classic-1.2.x removed; slf4j-nop-2.0.16 installed"
+
 # ── Bundled JARs for CSBDeep and StarDist ────────────────────────────────────
 # These are only on maven.scijava.org (not Maven Central), which is frequently
 # unavailable. Bundled here to make builds fully offline-capable.
@@ -156,6 +182,17 @@ RUN find /opt/Fiji.app/plugins -name 'mcib3d-core*.jar' \
 COPY bundled_jars/csbdeep-0.6.0.jar           /opt/Fiji.app/jars/
 COPY bundled_jars/StarDist_-0.3.0-scijava.jar /opt/Fiji.app/plugins/
 COPY bundled_jars/Clipper-6.4.2.jar           /opt/Fiji.app/jars/
+
+# ── BIOP Cellpose wrapper (from the PTBIOP update site) ──────────────────────
+# ch.epfl.biop.wrappers.cellpose.* — runs Cellpose directly and returns the
+# label image in-process (cp.cellpose_imp), without TrackMate. We bundle just
+# this one jar (sha256 eb0b10d8686ae32f7364dddacb01c3dae2491eb330a97fbc9bcef37cce9fa842)
+# rather than enabling the whole PTBIOP site, to avoid version drift against the
+# carefully-pinned jars in this image. SciJava discovers the `Cellpose` command
+# from the classpath, so the menu entry (Plugins > BIOP > Cellpose) appears.
+# See skills/cellpose_documentation/. Conda activation relies on BASH_ENV
+# (set in src/imagentj/imagej_context.py) pointing at conda.sh.
+COPY bundled_jars/ijl-utilities-wrappers-0.12.1.jar /opt/Fiji.app/jars/
 
 # ── For aarch64, install CSBDeep linux/arm64 TensorFlow Java single-JAR patch ────────────
 # The upstream CSBDeep Fiji JAR depends on TensorFlow Java 1.x JNI artifacts
@@ -197,14 +234,58 @@ RUN conda env create -f /tmp/environment.yml \
 ENV PATH=/opt/conda/envs/local_imagent_J/bin:$PATH
 ENV CONDA_DEFAULT_ENV=local_imagent_J
 
+# ── fastmcp client for the generic MCP host adapter ──────────────────────────
+# src/imagentj/tools/mcp_host_tools.py runs INSIDE this app env and speaks MCP
+# (stdio/HTTP) to configured servers via `from fastmcp import Client`. It needs
+# the fastmcp *client* here; the napari *server* gets its own fastmcp in the
+# isolated env below. Separate RUN keeps the heavy env-create layer cache-stable.
+RUN /opt/conda/envs/local_imagent_J/bin/pip install --no-cache-dir "fastmcp>=2.10.3,<3" \
+    && /opt/conda/bin/conda clean -afy
+
+# ── Conda env: napari-mcp  (in-container MCP visualisation server) ────────────
+# Isolated like the cellpose/stardist envs so napari's large, version-pinned
+# dependency tree cannot conflict with the py3.13 app env. The `napari-mcp`
+# stdio server (entry point napari_mcp.server:main) creates its napari Viewer
+# LAZILY via ensure_viewer() — only when a napari tool is first called — so this
+# env stays idle (no window) until the agent actually uses napari.
+RUN /opt/conda/bin/conda create -n napari-mcp python=3.11 -y \
+    && /opt/conda/envs/napari-mcp/bin/pip install --no-cache-dir \
+        "napari[pyqt6]" \
+        "napari-mcp" \
+        "fastmcp>=2.10.3,<3" \
+    && QT_QPA_PLATFORM=offscreen /opt/conda/envs/napari-mcp/bin/python -c \
+        "import napari, napari_mcp, fastmcp; print('napari', napari.__version__)" \
+    && /opt/conda/bin/conda clean -afy
+
+# Patch napari-mcp for Agent J's persistent, interactive viewer (see
+# patch_napari_mcp/patch_qt_helpers.py): survive the window close button (don't
+# shut the server down) and keep the Qt event pump alive on any viewer reopen
+# (e.g. via add_layer, not just init_viewer) so the reopened window stays
+# responsive to mouse/keyboard. Fails the build if upstream source drifts.
+COPY patch_napari_mcp/patch_qt_helpers.py /tmp/patch_qt_helpers.py
+RUN /opt/conda/envs/napari-mcp/bin/python /tmp/patch_qt_helpers.py && rm /tmp/patch_qt_helpers.py
+
+# napari/vispy fall back to llvmpipe software GL under headless Xvfb (no GPU).
+ENV LIBGL_ALWAYS_SOFTWARE=1
+
 # ── Conda env: cellpose  (PyTorch + Cellpose + Omnipose, served by TrackMate-Cellpose and TrackMate-Omnipose) ───
 # Omnipose 1.x is built on cellpose 3.x, so they share one env.
 # The micromamba shim routes both '-n cellpose' and '-n omnipose' here.
-# Snapshot (2026-04-30): Python 3.10.20, cellpose 3.1.1.2, omnipose 1.1.4, torch 2.11.0+cpu
+# Snapshot (2026-04-30): Python 3.10.20, cellpose 3.1.1.2, omnipose 1.1.4, torch 2.11.0+cpu|cu124
+# tifffile is bumped to 2025.5.10 AFTER cellpose installs: cellpose[gui] pins the
+# old 2023.2.28, which calls ndarray.newbyteorder() (removed in NumPy 2.0) when
+# reading the big-endian ('MM') TIFFs that ImageJ/Fiji writes. The BIOP Cellpose
+# wrapper feeds cellpose an ImageJ-written TIFF, so without the bump cellpose
+# crashes on read. Done as a separate pip call so the resolver doesn't fight
+# aicsimageio's stale <2023.3.15 pin (aicsimageio is not on the cellpose read path).
 RUN /opt/conda/bin/conda create -n cellpose python=3.10 -y \
     && if [ "$TARGETARCH" = "arm64" ]; then \
         /opt/conda/envs/cellpose/bin/pip install --no-cache-dir \
             'torch==2.11.0' 'torchvision==0.26.0'; \
+    elif [ "$USE_GPU" = "true" ]; then \
+        /opt/conda/envs/cellpose/bin/pip install --no-cache-dir \
+            'torch==2.11.0' 'torchvision==0.26.0' \
+            --index-url https://download.pytorch.org/whl/${CUDA_TAG}; \
     else \
         /opt/conda/envs/cellpose/bin/pip install --no-cache-dir \
             'torch==2.11.0' 'torchvision==0.26.0' \
@@ -216,6 +297,7 @@ RUN /opt/conda/bin/conda create -n cellpose python=3.10 -y \
         'langchain-core==1.2.16' \
         'langgraph-checkpoint-sqlite==3.0.3' \
         'pydantic==2.12.5' \
+    && /opt/conda/envs/cellpose/bin/pip install --no-cache-dir 'tifffile==2025.5.10' \
     && /opt/conda/envs/cellpose/bin/cellpose --version \
     && /opt/conda/bin/conda clean -afy \
     && printf '#!/bin/bash\nexec /opt/conda/envs/cellpose/bin/cellpose "$@"\n' > /opt/conda/bin/cellpose \
@@ -226,11 +308,15 @@ RUN /opt/conda/bin/conda create -n cellpose python=3.10 -y \
 # TrackMate's CondaCLIConfigurator lists all conda envs in a dropdown — the user
 # selects 'cellpose4' in the Cellpose-SAM detector panel.
 # The micromamba shim routes '-n cellpose4' → /opt/conda/envs/cellpose4.
-# Snapshot (2026-04-30): Python 3.11.15, cellpose 4.1.1, segment-anything 1.0, torch 2.11.0+cpu
+# Snapshot (2026-04-30): Python 3.11.15, cellpose 4.1.1, segment-anything 1.0, torch 2.11.0+cpu|cu124
 RUN /opt/conda/bin/conda create -n cellpose4 python=3.11 -y \
     && if [ "$TARGETARCH" = "arm64" ]; then \
         /opt/conda/envs/cellpose4/bin/pip install --no-cache-dir \
             'torch==2.11.0' 'torchvision==0.26.0'; \
+    elif [ "$USE_GPU" = "true" ]; then \
+        /opt/conda/envs/cellpose4/bin/pip install --no-cache-dir \
+            'torch==2.11.0' 'torchvision==0.26.0' \
+            --index-url https://download.pytorch.org/whl/${CUDA_TAG}; \
     else \
         /opt/conda/envs/cellpose4/bin/pip install --no-cache-dir \
             'torch==2.11.0' 'torchvision==0.26.0' \
@@ -250,11 +336,15 @@ RUN /opt/conda/bin/conda create -n cellpose4 python=3.11 -y \
 # Python 3.11 + TF 2.15 is the most stable combo for CSBDeep
 # (uses tf.compat.v1 graph APIs, which became fragile in TF 2.17+).
 # Snapshot (2026-04-30): Python 3.11.15, stardist 0.9.2, csbdeep 0.8.2,
-#   tensorflow-cpu 2.15.1, numpy 1.26.4
+#   tensorflow[-cpu|[and-cuda]] 2.15.1, numpy 1.26.4
 # arm64 uses generic 'tensorflow' (no -cpu suffix) — the linux/aarch64 TF wheel
 # is not published under the tensorflow-cpu name.
+# GPU (amd64 only): tensorflow[and-cuda] bundles the CUDA 12.2 runtime libraries
+# so no system CUDA install is needed in the container.
 RUN if [ "$TARGETARCH" = "arm64" ]; then \
         TF_PACKAGE='tensorflow==2.15.1'; \
+    elif [ "$USE_GPU" = "true" ]; then \
+        TF_PACKAGE='tensorflow[and-cuda]==2.15.1'; \
     else \
         TF_PACKAGE='tensorflow-cpu==2.15.1'; \
     fi \

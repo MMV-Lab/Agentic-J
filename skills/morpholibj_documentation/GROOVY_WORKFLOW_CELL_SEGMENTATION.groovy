@@ -1,299 +1,212 @@
 /**
- * MorphoLibJ — Distance-Transform Watershed Cell Segmentation
+ * MorphoLibJ — Distance-Transform Watershed Cell Segmentation  (MorphoLibJ 1.6.5)
+ * ============================================================================
  *
- * PURPOSE:
- *   Segments individual cells (or similar round objects) in a 2D fluorescence
- *   or brightfield image using a four-step pipeline:
- *     Step 1  Threshold image to binary
- *     Step 2  Compute Chamfer distance transform on binary mask
- *     Step 3  Detect regional maxima of the distance map (one per cell)
- *     Step 4  Marker-controlled watershed on the inverted distance map
- *   Then counts the segmented cells and — if a ground-truth label image is open
- *   — quantifies segmentation accuracy with Jaccard / Dice coefficients.
+ * Separates touching/round objects (nuclei, cells, particles) in a 2D image and
+ * measures them, using the classic four-step pipeline:
  *
- * INPUTS:
- *   Automatic  :  any open 8-bit or 16-bit grayscale image (bright objects, dark background)
- *   Demo       :  if no image is open, the built-in Fiji "Blobs (25K)" sample is used
- *   Ground truth (optional):  a second open image whose title starts with "gt-"
- *                             (e.g. "gt-labels") — used for Label Overlap comparison
+ *     Threshold → Chamfer Distance Map → Extended Maxima (markers)
+ *               → Marker-controlled Watershed → clean up → count → measure
  *
- * OUTPUTS:
- *   <title>-binary       : thresholded binary image
- *   <title>-dist         : 32-bit Chamfer distance map
- *   <title>-maxima-lbl   : labeled regional maxima (one integer per cell centre)
- *   <title>-labels       : final segmented label image
- *   <title>-overlay      : RGB colour overlay of segmentation on original
- *   ResultsTable         : area / perimeter / circularity for each cell
- *   Log window           : cell count and (if GT available) overlap metrics
+ * DESIGNED TO RUN UNATTENDED — there are NO dialog pop-ups and NO user clicks:
+ *   • every MorphoLibJ IJ.run() call is given a complete, non-empty option string
+ *     (an empty "" string would make the plugin's dialog appear and block);
+ *   • binary "black background" behaviour is pinned with Prefs.blackBackground;
+ *   • label cleanup/counting uses the inra.ijpb Java API, which never shows a dialog;
+ *   • new output windows are captured by an image-ID diff, never by a fragile
+ *     getCurrentImage() guess.
  *
- * REQUIREMENTS:
- *   Fiji with MorphoLibJ (IJPB-plugins update site)
- *   Tested with MorphoLibJ v1.4.x / Fiji 2.x
+ * INPUTS
+ *   • Uses the active image if one is open; otherwise loads the Fiji "Blobs (25K)" sample.
+ *   • Optional ground truth: an open label image whose title starts with "gt-"
+ *     (e.g. "gt-labels") triggers a Label Overlap (Jaccard/Dice) comparison.
  *
- * PARAMETERS TO ADJUST:
- *   THRESHOLD_METHOD   — auto-threshold algorithm (see full list in the dialog
- *                        Plugins > Segmentation > Auto Threshold)
- *   GAUSSIAN_SIGMA     — pre-blur radius in px; set 0.0 to skip
- *   MIN_CELL_AREA_PX   — discard objects smaller than this (pixels²)
- *   CONNECTIVITY       — 4 (orthogonal, rounder shapes) or 8 (diagonal too)
- *   CHAMFER_WEIGHTS    — distance-map weight set (see table in GROOVY_API.md §E2)
- *   CLOSING_RADIUS     — radius for morphological closing to fill holes
- *   DIST_BLUR_SIGMA    — blur applied to distance map to prevent over-segmentation
+ * OUTPUTS  (all shown as windows; CSV/TIF written next to the source image when possible)
+ *   <title>-binary    8-bit binary mask
+ *   <title>-dist      32-bit Chamfer distance map
+ *   <title>-labels    final 16-bit label image (one integer per object)
+ *   <title>-overlay   RGB colour view of the labels
+ *   ResultsTable      area / perimeter / circularity / … per object  (-> <title>-measurements.csv)
+ *   Log               object count and (if GT present) overlap metrics
+ *
+ * Verified on Fiji ImageJ 2.16.0/1.54p with MorphoLibJ 1.6.5.
  */
 
 import ij.IJ
 import ij.ImagePlus
 import ij.WindowManager
+import ij.Prefs
 import ij.measure.ResultsTable
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  PARAMETERS  ← adjust for your data
-// ─────────────────────────────────────────────────────────────────────────────
-String  THRESHOLD_METHOD  = "Otsu"              // e.g. "Otsu", "Triangle", "Default", "Li"
-double  GAUSSIAN_SIGMA    = 0.5                 // pre-smoothing sigma (px); 0.0 = skip
-int     MIN_CELL_AREA_PX  = 20                  // px²; tune to remove debris
-int     CONNECTIVITY      = 4                   // 4 = orthogonal only; 8 = includes diagonals
-String  CHAMFER_WEIGHTS   = "Borgefors (3,4)"   // or "Chessknight (5,7,11)" for higher accuracy
-int     CLOSING_RADIUS    = 4                   // radius for morphological closing to fill holes
-double  DIST_BLUR_SIGMA   = 4.0                 // blur applied to distance map to prevent over-segmentation
-// ─────────────────────────────────────────────────────────────────────────────
-
-// ── 0. Get or load image ─────────────────────────────────────────────────────
-ImagePlus imp = WindowManager.getCurrentImage()
-if (imp == null) {
-    IJ.log("[Cell Seg] No image open — loading Fiji Blobs sample.")
-    IJ.run("Blobs (25K)")
-    imp = WindowManager.getCurrentImage()
-    if (imp == null) {
-        IJ.error("Could not load sample image. Please open an image first.")
-        return
-    }
-}
-String originalTitle = imp.getTitle()
-int dotIndex = originalTitle.lastIndexOf('.')
-String title = (dotIndex > 0) ? originalTitle.substring(0, dotIndex) : originalTitle
-String saveDir  = imp.getOriginalFileInfo()?.directory ?: IJ.getDirectory("imagej")
-IJ.log("─── MorphoLibJ Cell Segmentation starting: " + imp.getTitle())
-
-// ── 1. Prepare a working copy ─────────────────────────────────────────────────
-// Duplicate the image to avoid modifying the original data
-IJ.run(imp, "Duplicate...", "title=[${title}-work]")
-ImagePlus workImp = WindowManager.getImage("${title}-work")
-if (workImp == null) {
-    IJ.error("Duplicate failed. Aborting.")
-    return
-}
-
-if (workImp.getType() == ImagePlus.COLOR_RGB) {
-    IJ.log("[Step 0] Splitting RGB channels and combining them into a single binary mask.")
-    ij.plugin.ChannelSplitter splitter = new ij.plugin.ChannelSplitter()
-    ImagePlus[] channels = splitter.split(workImp)
-    
-    ImagePlus combinedBinary = null
-    ij.plugin.ImageCalculator ic = new ij.plugin.ImageCalculator()
-    
-    for (int i = 0; i < channels.length; i++) {
-        ImagePlus ch = channels[i]
-        if (GAUSSIAN_SIGMA > 0.0) {
-            IJ.run(ch, "Gaussian Blur...", "sigma=${GAUSSIAN_SIGMA}")
-        }
-        IJ.setAutoThreshold(ch, THRESHOLD_METHOD + " dark")
-        IJ.run(ch, "Convert to Mask", "")
-        IJ.run(ch, "Fill Holes", "")
-        
-        if (combinedBinary == null) {
-            combinedBinary = ch
-        } else {
-            combinedBinary = ic.run("OR create", combinedBinary, ch)
-        }
-    }
-    workImp.close()
-    workImp = combinedBinary
-    workImp.setTitle("${title}-work")
-    workImp.show()
-} else {
-    if (workImp.getType() == ImagePlus.GRAY16 || workImp.getType() == ImagePlus.GRAY32) {
-        IJ.log("[Step 0] Converting to 8-bit.")
-        IJ.run(workImp, "8-bit", "")
-    }
-    
-    if (GAUSSIAN_SIGMA > 0.0) {
-        IJ.log("[Step 0] Applying Gaussian blur (σ=${GAUSSIAN_SIGMA}).")
-        IJ.run(workImp, "Gaussian Blur...", "sigma=${GAUSSIAN_SIGMA}")
-    }
-    
-    // ── STEP 1: Threshold to binary ───────────────────────────────────────────────
-    IJ.log("[Step 1] Thresholding with method: ${THRESHOLD_METHOD} (bright objects on dark background)")
-    IJ.setAutoThreshold(workImp, THRESHOLD_METHOD + " dark")
-    IJ.run(workImp, "Convert to Mask", "")
-    IJ.run(workImp, "Fill Holes", "")
-}
-
-// Apply morphological closing to fix any remaining small holes
-IJ.log("[Step 1.5] Applying morphological closing to fix small holes.")
-IJ.run(workImp, "Morphological Filters", "operation=Closing element=Disk radius=${CLOSING_RADIUS}")
-ImagePlus closedImp = WindowManager.getCurrentImage()
-if (closedImp != null && closedImp != workImp) {
-    workImp.close()
-    workImp = closedImp
-}
-
-workImp.setTitle("${title}-binary")
-ImagePlus binaryImp = workImp
-IJ.log("[Step 1] Binary image created: " + binaryImp.getTitle())
-
-// ── STEP 2: Chamfer distance transform ───────────────────────────────────────
-IJ.log("[Step 2] Computing Chamfer distance map (weights: ${CHAMFER_WEIGHTS}).")
-IJ.run(binaryImp, "Chamfer Distance Map", "distances=[${CHAMFER_WEIGHTS}] output=[32 bits] normalize")
-ImagePlus distImp = WindowManager.getCurrentImage()
-if (distImp == null || distImp == binaryImp) {
-    IJ.error("Chamfer Distance Map failed. Aborting.")
-    return
-}
-
-// Add a slight blur to the distance map to merge multiple peaks inside a single cell
-IJ.log("[Step 2.5] Blurring distance map to reduce over-segmentation.")
-IJ.run(distImp, "Gaussian Blur...", "sigma=${DIST_BLUR_SIGMA}")
-
-distImp.setTitle("${title}-dist")
-IJ.log("[Step 2] Distance map created: " + distImp.getTitle())
-
-// ── STEP 3: Detect regional maxima ────────────────────────────────────────────
-IJ.log("[Step 3] Detecting regional maxima (connectivity=${CONNECTIVITY}).")
-IJ.run(distImp, "Regional Min & Max", "operation=[Regional Maxima] connectivity=${CONNECTIVITY}")
-ImagePlus maximaBinaryImp = WindowManager.getCurrentImage()
-if (maximaBinaryImp == null || maximaBinaryImp == distImp) {
-    IJ.error("Regional Maxima detection failed. Aborting.")
-    return
-}
-maximaBinaryImp.setTitle("${title}-maxima-binary")
-
-IJ.log("[Step 3] Labeling maxima as seeds.")
-IJ.run(maximaBinaryImp, "Connected Components Labeling", "connectivity=${CONNECTIVITY} type=[16 bits]")
-ImagePlus maximaLblImp = WindowManager.getCurrentImage()
-if (maximaLblImp == null || maximaLblImp == maximaBinaryImp) {
-    IJ.error("Connected Components Labeling failed. Aborting.")
-    return
-}
-maximaLblImp.setTitle("${title}-maxima-lbl")
-maximaBinaryImp.close()
-
-// ── STEP 4: Marker-controlled watershed ───────────────────────────────────────
-IJ.log("[Step 4] Inverting distance map for watershed landscape.")
-IJ.run(distImp, "Duplicate...", "title=[${title}-dist-inv]")
-ImagePlus distInvImp = WindowManager.getImage("${title}-dist-inv")
-if (distInvImp == null) {
-    IJ.error("Duplicate of distance map failed. Aborting.")
-    return
-}
-distInvImp.resetDisplayRange()
-IJ.run(distInvImp, "Invert", "")
-
-String connFlag = (CONNECTIVITY == 8) ? "use" : ""
-IJ.log("[Step 4] Running marker-controlled watershed.")
-boolean watershedOk = false
-try {
-    IJ.run("Marker-controlled Watershed",
-        ("input=[${distInvImp.getTitle()}] " +
-         "marker=[${maximaLblImp.getTitle()}] " +
-         "mask=[${binaryImp.getTitle()}] " +
-         "calculate ${connFlag}").trim())
-    watershedOk = true
-} catch (RuntimeException e) {
-    IJ.log("[Step 4] Primary watershed options failed: " + e.getMessage())
-    IJ.log("[Step 4] Retrying with minimal legacy options.")
-    IJ.run("Marker-controlled Watershed",
-        ("input=[${distInvImp.getTitle()}] " +
-         "marker=[${maximaLblImp.getTitle()}] " +
-         "mask=[${binaryImp.getTitle()}]").trim())
-    watershedOk = true
-}
-
-ImagePlus labelsImp = watershedOk ? WindowManager.getCurrentImage() : null
-if (labelsImp == null) {
-    IJ.error("Watershed produced no output image. Aborting.")
-    return
-}
-labelsImp.setTitle("${title}-labels-raw")
-
-distInvImp.close()
-maximaLblImp.close()
-
-// ── Post-processing ────────────────────────────────────────────────────────────
-IJ.log("[Post] Removing border labels.")
-IJ.run(labelsImp, "Remove Border Labels", "")
-
-IJ.log("[Post] Removing labels smaller than ${MIN_CELL_AREA_PX} px².")
-IJ.run(labelsImp, "Label Size Opening", "min=${MIN_CELL_AREA_PX}")
-
-IJ.log("[Post] Remapping label indices (closing gaps).")
-IJ.run(labelsImp, "Remap Labels", "")
-labelsImp.setTitle("${title}-labels")
-
 import inra.ijpb.label.LabelImages
-int[] cellLabels = LabelImages.findAllLabels(labelsImp)
-int   cellCount  = cellLabels.length
-IJ.log("─── CELL COUNT: " + cellCount + " cells detected.")
 
-IJ.log("[Overlay] Creating pseudo-color label view (fallback, no 'Labels to RGB' dependency).")
-IJ.run(labelsImp, "Duplicate...", "title=[${title}-overlay]")
-ImagePlus rgbImp = WindowManager.getImage("${title}-overlay")
-if (rgbImp != null) {
-    IJ.run(rgbImp, "8-bit", "")
-    IJ.run(rgbImp, "Fire", "")
+// ─────────────────────────────────────────────────────────────────────────────
+//  PARAMETERS — tune for your data
+// ─────────────────────────────────────────────────────────────────────────────
+String THRESHOLD_METHOD = "Otsu"             // "Otsu" "Default" "Li" "Triangle" "Huang" …
+double GAUSSIAN_SIGMA   = 1.0                 // pre-smoothing of the input (px); 0 = skip
+String CHAMFER_WEIGHTS  = "Borgefors (3,4)"  // or "Chessknight (5,7,11)" (more accurate)
+double DIST_BLUR_SIGMA  = 2.0                 // blur of the distance map (px) — fewer spurious maxima
+int    MAXIMA_DYNAMIC   = 2                   // Extended Maxima tolerance (normalized dist): higher → fewer seeds
+int    CONNECTIVITY     = 4                   // 4 = orthogonal (rounder), 8 = include diagonals
+int    MIN_OBJECT_AREA  = 20                  // discard labels smaller than this (px²)
+String OVERLAY_COLORMAP = "Golden angle"     // Labels-To-RGB colormap
+// ─────────────────────────────────────────────────────────────────────────────
+
+Prefs.blackBackground = true                 // deterministic binary: foreground = 255
+
+/** Close an image without triggering a "Save changes?" dialog. */
+def safeClose = { ImagePlus imp -> if (imp != null) { imp.changes = false; imp.close() } }
+
+/** Run a closure that creates one new image window and return that ImagePlus (or null). */
+def grabNewImage = { Closure action ->
+    def before = (WindowManager.getIDList() ?: new int[0]) as Set
+    action()
+    def after  = (WindowManager.getIDList() ?: new int[0]) as List
+    def freshId = after.reverse().find { !before.contains(it) }
+    return freshId != null ? WindowManager.getImage(freshId) : null
 }
 
-IJ.log("[Measure] Running Analyze Regions.")
-IJ.run(labelsImp, "Analyze Regions", "area perimeter circularity inertia_ellipse ellipse_elong convexity max_feret")
-ResultsTable rt = ResultsTable.getResultsTable()
+// ── 0. Acquire image ─────────────────────────────────────────────────────────
+ImagePlus src = WindowManager.getCurrentImage()
+if (src == null) {
+    IJ.log("[CellSeg] No image open — loading the Fiji 'Blobs (25K)' sample.")
+    IJ.run("Blobs (25K)")
+    src = WindowManager.getCurrentImage()
+}
+if (src == null) { IJ.error("No image available."); return }
+
+String original = src.getTitle()
+int dot = original.lastIndexOf('.')
+String title = (dot > 0) ? original.substring(0, dot) : original
+String saveDir = src.getOriginalFileInfo()?.directory ?: IJ.getDirectory("imagej")
+IJ.log("═══ MorphoLibJ cell segmentation: " + original)
+
+// ── 1. Binary mask (popup-free thresholding) ─────────────────────────────────
+ImagePlus work = grabNewImage { IJ.run(src, "Duplicate...", "title=[${title}-binary]") }
+if (work == null) { IJ.error("Duplicate failed."); return }
+
+if (work.getType() == ImagePlus.COLOR_RGB) {
+    IJ.run(work, "8-bit", "")                // luminance
+} else if (work.getBitDepth() != 8) {
+    IJ.run(work, "8-bit", "")
+}
+
+// Inverting LUT (e.g. the Fiji "Blobs" sample) reverses the meaning of bright/dark:
+// the objects have HIGH pixel values but display dark, so a "dark"-background threshold
+// + Convert to Mask comes out INVERTED and the watershed would segment the background.
+// Apply a normal grayscale LUT so pixel values and display agree before thresholding.
+if (work.getProcessor().isInvertedLut()) {
+    IJ.log("[1] Inverting LUT detected — applying a normal grayscale LUT before thresholding.")
+    IJ.run(work, "Grays", "")
+}
+
+if (GAUSSIAN_SIGMA > 0.0) IJ.run(work, "Gaussian Blur...", "sigma=${GAUSSIAN_SIGMA}")
+
+IJ.setAutoThreshold(work, THRESHOLD_METHOD + " dark")   // objects = bright (high values)
+IJ.run(work, "Convert to Mask", "")
+IJ.run(work, "Fill Holes (Binary/Gray)", "")            // MorphoLibJ, no dialog
+ImagePlus binary = work
+IJ.log("[1] Binary mask ready: " + binary.getTitle())
+
+// ── 2. Chamfer distance map (+ smoothing) ────────────────────────────────────
+ImagePlus dist = grabNewImage {
+    IJ.run(binary, "Chamfer Distance Map", "distances=[${CHAMFER_WEIGHTS}] output=[32 bits] normalize")
+}
+if (dist == null) { IJ.error("Chamfer Distance Map produced no image."); return }
+dist.setTitle("${title}-dist")
+if (DIST_BLUR_SIGMA > 0.0) IJ.run(dist, "Gaussian Blur...", "sigma=${DIST_BLUR_SIGMA}")
+IJ.log("[2] Distance map ready (max dist = " + String.format("%.2f", dist.getStatistics().max) + ").")
+
+// ── 3. Seeds: extended maxima → labelled markers ─────────────────────────────
+ImagePlus maxima = grabNewImage {
+    IJ.run(dist, "Extended Min & Max",
+        "operation=[Extended Maxima] dynamic=${MAXIMA_DYNAMIC} connectivity=${CONNECTIVITY}")
+}
+if (maxima == null) { IJ.error("Extended Maxima produced no image."); return }
+maxima.setTitle("${title}-maxima")
+
+ImagePlus markers = grabNewImage {
+    IJ.run(maxima, "Connected Components Labeling", "connectivity=${CONNECTIVITY} type=[16 bits]")
+}
+if (markers == null) { IJ.error("Connected Components Labeling produced no image."); return }
+markers.setTitle("${title}-markers")
+int nSeeds = LabelImages.findAllLabels(markers).length
+IJ.log("[3] Seeds detected: " + nSeeds)
+
+// ── 4. Marker-controlled watershed on the INVERTED distance map ──────────────
+ImagePlus distInv = grabNewImage { IJ.run(dist, "Duplicate...", "title=[${title}-distInv]") }
+distInv.resetDisplayRange()
+IJ.run(distInv, "Invert", "")                // flood from object centres (= minima of -dist)
+
+ImagePlus labelsRaw = grabNewImage {
+    IJ.run("Marker-controlled Watershed",
+        "input=[${distInv.getTitle()}] marker=[${markers.getTitle()}] " +
+        "mask=[${binary.getTitle()}] compactness=0 calculate" + (CONNECTIVITY == 8 ? " use" : ""))
+}
+if (labelsRaw == null) { IJ.error("Marker-controlled Watershed produced no image."); return }
+IJ.log("[4] Watershed labels (raw): " + LabelImages.findAllLabels(labelsRaw).length)
+
+// tidy intermediate windows (no save prompts)
+safeClose(maxima); safeClose(markers); safeClose(distInv)
+
+// ── 5. Clean up via the Java API (no dialogs, deterministic) ─────────────────
+LabelImages.removeBorderLabels(labelsRaw)                     // drop objects on the image edge
+ImagePlus labels = LabelImages.sizeOpening(labelsRaw, MIN_OBJECT_AREA)  // drop debris -> new ImagePlus
+LabelImages.remapLabels(labels)                              // renumber 1..N
+safeClose(labelsRaw)
+labels.setTitle("${title}-labels")
+labels.show()
+
+int[] labelValues = LabelImages.findAllLabels(labels)
+int count = labelValues.length
+IJ.log("─── OBJECT COUNT: " + count)
+
+// ── 6. Colour overlay ────────────────────────────────────────────────────────
+ImagePlus overlay = grabNewImage {
+    IJ.run(labels, "Labels To RGB", "colormap=[${OVERLAY_COLORMAP}] background=Black shuffle")
+}
+if (overlay != null) overlay.setTitle("${title}-overlay")
+
+// ── 7. Shape measurements ────────────────────────────────────────────────────
+IJ.run(labels, "Analyze Regions",
+    "area perimeter circularity equivalent_ellipse ellipse_elong. " +
+    "convexity max._feret_diameter geodesic_diameter")
+def measWin = WindowManager.getWindow("${labels.getTitle()}-Morphometry")
+ResultsTable rt = (measWin instanceof ij.text.TextWindow) ? measWin.getResultsTable() : null
 if (rt != null && rt.size() > 0) {
-    IJ.log("[Measure] Measured " + rt.size() + " regions.")
-    try {
-        String csvPath = saveDir + title + "-measurements.csv"
-        rt.save(csvPath)
-        IJ.log("[Measure] Saved: " + csvPath)
-    } catch (Exception e) {
-        IJ.log("[Measure] WARNING: Could not save CSV: " + e.getMessage())
-    }
+    IJ.log("[7] Measured " + rt.size() + " regions.")
+    try { rt.save(saveDir + title + "-measurements.csv"); IJ.log("    saved " + title + "-measurements.csv") }
+    catch (Exception e) { IJ.log("    WARNING: could not save CSV: " + e.getMessage()) }
 } else {
-    IJ.log("[Measure] WARNING: ResultsTable empty — verify that labels image is active.")
+    IJ.log("[7] WARNING: measurement table not found.")
 }
 
-String[] openTitles = WindowManager.getImageTitles()
-String gtTitle = openTitles.find { it.startsWith("gt-") }
-if (gtTitle != null) {
-    IJ.log("─── Comparing segmentation against ground truth: " + gtTitle)
-    IJ.run("Label Overlap Measures", "source=[${labelsImp.getTitle()}] target=[${gtTitle}] overlap jaccard dice")
-    ResultsTable overlapRt = ResultsTable.getResultsTable("Label Overlap Measures")
-    if (overlapRt != null && overlapRt.size() > 0) {
-        try {
-            String overlapPath = saveDir + title + "-overlap.csv"
-            overlapRt.save(overlapPath)
-            IJ.log("[Compare] Overlap metrics saved: " + overlapPath)
-        } catch (Exception e) {
-            IJ.log("[Compare] WARNING: Could not save overlap table: " + e.getMessage())
-        }
+// ── 8. Optional ground-truth comparison ──────────────────────────────────────
+String gt = (WindowManager.getImageTitles() as List).find { it.startsWith("gt-") }
+if (gt != null) {
+    IJ.log("─── Comparing against ground truth: " + gt)
+    IJ.run("Label Overlap Measures",
+        "source=[${labels.getTitle()}] target=[${gt}] overlap jaccard dice volume")
+    def ovWin = WindowManager.getWindow("${labels.getTitle()}-all-labels-overlap-measurements")
+    ResultsTable ov = (ovWin instanceof ij.text.TextWindow) ? ovWin.getResultsTable() : null
+    if (ov != null && ov.size() > 0) {
+        IJ.log("    Jaccard = " + ov.getValue("JaccardIndex", 0) + "  Dice = " + ov.getValue("DiceCoefficient", 0))
+        try { ov.save(saveDir + title + "-overlap.csv") } catch (Exception e) {}
     }
 } else {
-    IJ.log("─── No ground-truth image found (open an image whose title starts with 'gt-').")
-    IJ.log("    Skipping Label Overlap Measures comparison.")
+    IJ.log("─── No ground-truth image (open one whose title starts with 'gt-') — skipping overlap.")
 }
 
-try {
-    String labelPath = saveDir + title + "-labels.tif"
-    IJ.saveAsTiff(labelsImp, labelPath)
-    IJ.log("[Save] Label image saved: " + labelPath)
-} catch (Exception e) {
-    IJ.log("[Save] WARNING: Could not save label image: " + e.getMessage())
-}
+// ── 9. Save the label image ──────────────────────────────────────────────────
+try { IJ.saveAsTiff(labels, saveDir + title + "-labels.tif"); IJ.log("[9] Saved " + title + "-labels.tif") }
+catch (Exception e) { IJ.log("[9] WARNING: could not save labels: " + e.getMessage()) }
+
+// Mark output windows as "saved" so the user can close them without a save prompt.
+[binary, dist, labels, overlay].each { if (it != null) it.changes = false }
 
 IJ.log("═══════════════════════════════════════")
-IJ.log(" SEGMENTATION COMPLETE")
-IJ.log(" Input image : " + imp.getTitle())
-IJ.log(" Cells found : " + cellCount)
-IJ.log(" Labels image: " + labelsImp.getTitle())
-IJ.log(" Overlay     : " + (rgbImp != null ? rgbImp.getTitle() : "n/a"))
-IJ.log(" Measurements: " + title + "-measurements.csv")
-if (gtTitle != null)
-    IJ.log(" Comparison  : " + title + "-overlap.csv")
+IJ.log(" DONE — input: " + original)
+IJ.log("        objects: " + count)
+IJ.log("        labels : " + labels.getTitle())
+IJ.log("        overlay: " + (overlay != null ? overlay.getTitle() : "n/a"))
 IJ.log("═══════════════════════════════════════")

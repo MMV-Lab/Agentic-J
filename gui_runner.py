@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import QObject, Signal, Slot, QThread, Qt, QSize, QEvent, QTimer
 from queue import Queue
 
-from imagentj.agents import init_agent
+from imagentj.agents import init_agent, set_qa_enabled
 from imagentj.imagej_context import get_ij
 from imagentj.chat_history import ChatHistoryManager
 from imagentj.tools.analyst_tools import kill_running_processes
@@ -219,7 +219,7 @@ class ChatScrollArea(QWidget):
         self._container = QWidget()
         self._container.setStyleSheet("background: white;")
         self._msg_layout = QVBoxLayout(self._container)
-        self._msg_layout.setContentsMargins(8, 8, 8, 8)
+        self._msg_layout.setContentsMargins(2,2,2,2)
         self._msg_layout.setSpacing(6)
         self._msg_layout.setAlignment(Qt.AlignTop)
         self._last_bubble = None
@@ -1118,20 +1118,13 @@ class ImageJAgentGUI(QWidget):
 
     def _on_qa_toggled(self, enabled: bool):
         if self._agent_is_busy():
-            # Revert the checkbox — can't reinit while agent is running
+            # Revert the checkbox — can't change while agent is running
             self.metrics_panel._qa_checkbox.blockSignals(True)
             self.metrics_panel._qa_checkbox.setChecked(not enabled)
             self.metrics_panel._qa_checkbox.blockSignals(False)
             self.set_status("Cannot change QA Agent setting while agent is running.")
             return
-        (self.supervisor,
-         self.checkpointer,
-         self._metrics,
-         self._metrics_bridge,
-         self._tracker_cb) = init_agent(enable_qa=enabled)
-        self.worker.supervisor = self.supervisor
-        self._metrics_bridge.updated.connect(self.metrics_panel.update_metrics)
-        #self.set_status(f"QA Agent {'enabled' if enabled else 'disabled'}.")
+        set_qa_enabled(enabled)
 
 
     # ------------------------------------------------------------------
@@ -1165,10 +1158,12 @@ class ImageJAgentGUI(QWidget):
     def on_agent_error(self, msg: str):
         log.error(f"Agent error: {msg}")
         self._stop_heartbeat()
-        self._agent_had_error    = True
         self._current_ai_bubble  = None
         self._ai_response_buffer = ""
         self._status_bubble      = None
+        if hasattr(self, 'worker') and self.worker._stop_requested:
+            return
+        self._agent_had_error    = True
         self.chat_scroll.add_message('error', f"Agent error:\n{msg}")
         self.status_label.setText("Error")
         self.status_label.setStyleSheet("color: red;")

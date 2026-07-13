@@ -1,147 +1,129 @@
-# MorphoLibJ — OVERVIEW
+# MorphoLibJ — OVERVIEW  (installed version: **1.6.5**)
 
 ## What It Is
-MorphoLibJ is a comprehensive Fiji/ImageJ plugin library implementing mathematical
-morphology operators that are absent from core ImageJ. It is developed and maintained
-by INRA (now INRAE) and is freely available via the IJPB-plugins Fiji update site.
+MorphoLibJ is a comprehensive Fiji/ImageJ library of **mathematical morphology** operators
+that are absent from core ImageJ. It is developed by David Legland and Ignacio
+Arganda-Carreras at the INRAE–IJPB lab (Java package root `inra.ijpb`), is GPL-licensed,
+and is distributed through the **IJPB-plugins** Fiji update site. It operates on binary,
+grayscale, and label images in both 2D and 3D.
 
-The library covers four major domains:
-- **Morphological filtering** — erosion, dilation, opening, closing, top-hats, gradients, Laplacian
-- **Morphological reconstruction** — hole filling, border removal, attribute filtering
-- **Watershed segmentation** — classic, marker-controlled, interactive, morphological, distance-transform-based
-- **Quantitative region analysis** — 2D and 3D shape descriptors, intensity measurements, label overlap
+Functional domains:
+- **Morphological filtering** — erosion, dilation, opening, closing, white/black top-hats,
+  morphological gradient and Laplacian, internal/external gradients, directional filtering,
+  and (new in 1.6.5) binary morphological filters based on the Euclidean distance transform.
+- **Morphological & geodesic reconstruction** — hole filling, border killing, geodesic
+  reconstruction by dilation/erosion, grayscale attribute filtering, regional/extended minima
+  and maxima.
+- **Watershed segmentation** — Classic Watershed, Marker-controlled Watershed,
+  Distance Transform Watershed (2D/3D), and the interactive Morphological Segmentation GUI.
+- **Binary & label utilities** — connected-components labelling, Euclidean/Chamfer/geodesic
+  distance maps, size/area opening, keep/remove largest region, label editing, merging,
+  expansion, ROI conversion.
+- **Quantitative region analysis (2D & 3D)** — area/volume, perimeter/surface area (Crofton),
+  Euler number, circularity/sphericity, equivalent ellipse/ellipsoid, geodesic diameter,
+  largest inscribed disc/ball, intensity statistics per label, label-overlap (Jaccard/Dice).
 
 ---
 
 ## Typical Inputs and Use Cases
 
-### Fluorescence microscopy — cell / nucleus segmentation
-- **Input:** 8-bit or 16-bit grayscale fluorescence image of stained nuclei or cells
-- **Pipeline:** Threshold → Chamfer Distance Map → Regional Maxima → Marker-controlled Watershed
-- **Goal:** Separate touching or overlapping round objects; count cells; measure size and shape
-- **Key plugins:** Chamfer Distance Map, Regional Min & Max, Connected Components Labeling, Marker-controlled Watershed, Analyze Regions
+### Fluorescence microscopy — nucleus / cell segmentation
+- **Input:** 8/16-bit grayscale, bright nuclei on dark background.
+- **Pipeline:** Threshold → Chamfer Distance Map → Extended Maxima → Connected Components
+  → Marker-controlled Watershed → Remove Border Labels → Size Opening → Analyze Regions.
+- **Goal:** separate touching nuclei, count, measure size/shape. See the workflow script.
 
-### Brightfield microscopy — cell colony analysis
-- **Input:** 8-bit grayscale phase contrast or brightfield image
-- **Pipeline:** Morphological Gradient → Extended Minima → Marker-controlled Watershed → Remove Border Labels → Analyze Regions
-- **Goal:** Segment colony boundaries, measure colony area, count cells
-- **Key plugins:** Morphological Filters (Gradient), Extended Min & Max, Marker-controlled Watershed, Label Size Opening
+### Materials / particle analysis
+- **Input:** 8/16-bit SEM/TEM of touching particles or grains.
+- **Pipeline:** Threshold → **Distance Transform Watershed** → Label Size Filtering → Analyze Regions.
+- **Goal:** split touching particles; size distribution, circularity, Feret diameter.
 
-### Plant cell imaging — cell wall segmentation
-- **Input:** 8-bit or 16-bit fluorescence image with bright cell walls and dark cell interiors
-- **Pipeline:** Morphological Segmentation (border image mode) → Analyze Regions
-- **Goal:** Segment individual plant cells bounded by bright walls; measure cell area, perimeter, elongation
-- **Key plugins:** Morphological Segmentation, Analyze Regions (2D or 3D)
+### Brightfield colony / tissue analysis
+- **Input:** 8-bit grayscale.
+- **Pipeline:** Morphological Filters (Gradient) → Extended Minima → Marker-controlled Watershed.
 
-### 3D tissue analysis (confocal stacks)
-- **Input:** 16-bit 3D stack
-- **Pipeline:** Morphological Filters 3D (Gradient) → Extended Min & Max 3D → Marker-controlled Watershed (3D via Java API) → Analyze Regions 3D
-- **Goal:** Segment 3D cells or organelles; measure volume, surface area, inertia ellipsoid
-- **Key plugins:** Morphological Filters (3D), Extended Min & Max 3D, Analyze Regions 3D
+### 3D confocal stacks
+- **Input:** 16-bit 3D stack.
+- **Pipeline:** Morphological Filters (3D) → Extended Min & Max 3D → Distance Transform
+  Watershed 3D → Analyze Regions 3D (volume, surface area, equivalent ellipsoid).
 
-### Materials science — particle / grain analysis
-- **Input:** 8-bit or 16-bit SEM/TEM image of particles, fibres, or grains
-- **Pipeline:** Threshold → Distance Transform Watershed → Label Size Opening → Analyze Regions
-- **Goal:** Separate touching particles; measure size distribution, circularity, Feret diameter
-- **Key plugins:** Distance Transform Watershed, Analyze Regions, Max Feret Diameter
+### Thin curvilinear structures (vessels, fibres, walls)
+- Directional Filtering → Threshold → Connected Components → Geodesic Diameter.
 
-### Thin structures — blood vessels, fibres, cell walls
-- **Input:** 2D fluorescence or bright-field image with curvilinear structures
-- **Pipeline:** Directional Filtering (Max, Opening) → Threshold → Connected Components → Geodesic Diameter
-- **Goal:** Enhance and segment thin curvilinear structures; measure length, tortuosity
-- **Key plugins:** Directional Filtering, Connected Components Labeling, Geodesic Diameter
-
-### Segmentation validation / comparison
-- **Input:** Two label images (predicted segmentation vs. ground truth)
-- **Pipeline:** Label Overlap Measures
-- **Goal:** Quantify segmentation accuracy with Jaccard index, Dice coefficient, overlap fractions
-- **Key plugins:** Label Overlap Measures
+### Segmentation validation
+- Two label images → **Label Overlap Measures** → Jaccard, Dice, volume similarity.
 
 ---
 
-## Input Image Requirements by Task
+## Input requirements by task
+| Task | Required input |
+|------|----------------|
+| Morphological filters | 8/16/32-bit gray or RGB (RGB filters only) |
+| Chamfer / Euclidean distance map, Distance Transform Watershed | **8-bit binary, values 0/255** |
+| Connected Components Labeling | binary image |
+| Marker-controlled Watershed | grayscale landscape + label markers (+ optional binary mask) |
+| Analyze Regions (2D/3D) | label image (integer) |
+| Intensity Measurements | grayscale image + label image, same size |
+| Label Overlap Measures | two label images, same size |
 
-| Task | Required type | Notes |
-|------|--------------|-------|
-| Morphological filters | 8/16/32-bit gray or RGB | RGB supported for filters only |
-| Distance Transform (Chamfer) | Binary 8-bit (0/255) | Must be 8-bit for Distance Transform Watershed |
-| Watershed segmentation | 8/16-bit grayscale | Gradient or inverted distance map |
-| Connected Components Labeling | Binary (any bit-depth) | |
-| Analyze Regions | Label image (integer values) | Binary treated as single region |
-| Analyze Regions 3D | Label image stack | |
-| Label Overlap Measures | Two label images, same size | |
-
----
-
-## Typical Output Types
-
-| Output type | Produced by |
-|-------------|-------------|
-| Filtered grayscale image | Morphological Filters, Directional Filtering |
-| Binary image | Morphological Reconstruction, Fill Holes, Kill Borders, Regional Min & Max |
-| Label image (integer) | Connected Components Labeling, Watershed variants |
-| Distance map (32-bit float) | Chamfer Distance Map, Geodesic Distance Map |
-| ImageJ ResultsTable | Analyze Regions, Intensity Measurements, Label Overlap Measures |
-| RGB color image | Labels to RGB |
+## Typical outputs
+| Output | Produced by |
+|--------|-------------|
+| Filtered grayscale | Morphological / Directional Filters |
+| Binary image | Reconstruction, Fill Holes, Kill Borders, Regional Min & Max |
+| Label image (integer) | Connected Components, watershed variants |
+| 16/32-bit distance map | Chamfer / Euclidean / Geodesic Distance Map |
+| ResultsTable | Analyze Regions, Intensity Measurements, Label Overlap |
+| RGB image | Labels To RGB |
 
 ---
 
 ## Automation Level
 **Fully scriptable** via `IJ.run()` macro commands or the `inra.ijpb.*` Java/Groovy API.
-- All standard plugins record in the Fiji macro recorder (Plugins ▶ Macros ▶ Record…)
-- Interactive plugins (Interactive Marker-controlled Watershed, Interactive Morphological
-  Reconstruction) require user ROI input and cannot run headless, but all have
-  programmatic equivalents
-- Morphological Segmentation uses `IJ.run()` + `IJ.call()` (two-step approach)
+- All non-interactive plugins record in the macro recorder (**Plugins ▸ Macros ▸ Record…**)
+  and run unattended — *provided you give complete option strings* (an empty `""` makes the
+  dialog block; see `SKILL.md` Rule 1).
+- The `inra.ijpb.*` Java API never shows dialogs and is preferred for robust cleanup/counting.
+- **Interactive-only** (open a persistent GUI, not for headless scripts): Morphological
+  Segmentation, Interactive Marker-controlled Watershed, Interactive Morphological
+  Reconstruction (2D/3D), Interactive Geodesic Distance Map, Label Edition.
 
 ---
+
+## What changed 1.4 → 1.6.5 (so old macros/skills are corrected)
+- **Renames** (old name kept only under a `_Deprecated` submenu):
+  *Inertia Ellipse* → **Equivalent Ellipse** (1.4.2); *Inertia Ellipsoid* → **Equivalent
+  Ellipsoid** (1.4.1); *Label Size Opening* → **Label Size Filtering** (1.4.2, with more
+  filter operators).
+- **Added:** Average Thickness, Convexify, Neighbor Labels (1.4.2); Merge Labels, Dilate
+  Labels (1.4.3); watershed **Compactness** parameter, 6-weight 3D chamfer masks (1.5.0);
+  Label Morphological Filters, Fill Label Holes, Region Boundaries Labeling, Binary/Label
+  Overlay, Draw Labels as Overlay (1.6.0); Skeleton Geodesic Diameter, **Label Map to ROIs**
+  (1.6.3/1.6.4); **Euclidean Distance Map**, binary morphological filters, Region Influence
+  Zones, Skeletonize Labels, **Binarize Image**, Max-Feret/Geodesic in Analyze Regions 3D,
+  center-of-mass in Intensity Measures (1.6.5).
 
 ## Installation
+**Fiji:** Help ▸ Update… ▸ Manage update sites ▸ activate **IJPB-plugins** ▸ Apply changes ▸
+Restart. *(Already installed on this system — `Plugins ▸ MorphoLibJ` is present.)*
+Update site: `https://sites.imagej.net/IJPB-plugins/`
 
-**Fiji (recommended):**
-1. Help ▶ Update…
-2. Click **Manage update sites**
-3. Activate **IJPB-plugins**
-4. Click **Apply changes**, then **Restart Fiji**
+## Known limitations
+- Distance transforms / Distance Transform Watershed require **8-bit binary (0/255)** input.
+- `Connected Components Labeling` 32-bit output is `type=float` (not `[32 bits]`); on label
+  overflow it errors ("Try with larger data type").
+- Label image capacity: 8-bit ≤ 255 labels, 16-bit ≤ 65 535, float ≈ 16 million.
+- `dynamic`/`tolerance` scales with intensity range (see SKILL.md).
+- RGB images are accepted only by morphological filters — not by segmentation/analysis.
+- Interactive plugins cannot run headless and leave windows open.
 
-**ImageJ (plain):**
-Download the latest MorphoLibJ `.jar` from https://github.com/ijpb/MorphoLibJ/releases
-and place it in `ImageJ/plugins/`, then restart ImageJ.
-
-Update site URL: `http://sites.imagej.net/IJPB-plugins/`
-
----
-
-## Known Limitations
-
-- `Distance Transform Watershed` requires an **8-bit binary** input image. Convert with
-  `Image ▶ Type ▶ 8-bit` and apply a threshold before using it.
-- `Chamfer Distance Map` also requires binary input (8-bit, values 0 and 255).
-- Geodesic diameter uses Chamfer approximation and may slightly overestimate true geodesic length.
-- `Morphological Segmentation` macro automation requires `wait(1000)` between launching
-  the plugin and calling methods via `IJ.call()`, otherwise the GUI is not ready.
-- Image titles containing spaces must be wrapped in brackets in parameter strings:
-  `"input=[my image] mask=None"`.
-- Tolerance in Morphological Segmentation is intensity-scale-dependent: use ~10 for
-  8-bit images and ~2000 for 16-bit images.
-- Label image capacity: byte = 255 labels, short = 65 535, 32-bit float ≈ 16 million.
-- 3D plugins generally do not provide a live Preview option.
-- RGB images are accepted only by morphological filters — not by segmentation or analysis plugins.
-
----
-
-## Citation
-
-> Legland, D., Arganda-Carreras, I., & Andrey, P. (2016).
-> MorphoLibJ: integrated library and plugins for mathematical morphology with ImageJ.
-> *Bioinformatics*, 32(22), 3532–3534.
-> DOI: 10.1093/bioinformatics/btw413
-
-## Links
+## Citation & links
+Legland, D., Arganda-Carreras, I., & Andrey, P. (2016). *MorphoLibJ: integrated library and
+plugins for mathematical morphology with ImageJ.* Bioinformatics 32(22):3532–3534.
+DOI: 10.1093/bioinformatics/btw413
 
 | Resource | URL |
 |----------|-----|
-| Project homepage | http://ijpb.github.io/MorphoLibJ/ |
+| Homepage / wiki | https://imagej.net/plugins/morpholibj |
 | GitHub (source + releases) | https://github.com/ijpb/MorphoLibJ |
-| JavaDoc API | http://ijpb.github.io/MorphoLibJ/javadoc/ |
-| ImageJ wiki page | https://imagej.net/plugins/morpholibj |
+| JavaDoc | https://ijpb.github.io/MorphoLibJ/javadoc/ |

@@ -3,7 +3,9 @@ name: supervisor_pipeline_phases
 description: >
   Detailed step-by-step instructions for each phase of the ImageJ analysis pipeline.
   The supervisor MUST read the relevant phase file BEFORE entering that phase.
-  Phase sequence: 1(gather) → 2(plan) → 3(setup) → 4a(io) → 4b(process) → 
+  Two tracks: FAST (single self-contained operation) reads `phase_fast.md` only;
+  FULL (multi-phase study) follows the sequence
+  1(gather) → 2(plan) → 3(setup) → 4a(io) → 4b(process) →
   4c(stats) → 4d(plot) → 5(summarize) → 6(document) → 7(qa).
 ---
 
@@ -11,7 +13,8 @@ description: >
 
 | File | When to Load |
 |------|-------------|
-| `phase_1_gathering.md` | Start of every new project |
+| `phase_fast.md` | FAST track — one self-contained operation (segment/threshold/count/filter/convert), no study |
+| `phase_1_gathering.md` | Start of every new project (FULL track) |
 | `phase_2_planning.md` | After Phase 1, before proposing pipelines |
 | `phase_3_setup.md` | After user approves pipeline |
 | `phase_4a_io_check.md` | Before any image processing |

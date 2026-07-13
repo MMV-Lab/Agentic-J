@@ -43,23 +43,46 @@ def kill_running_processes() -> int:
 @tool
 def inspect_csv_header(file_path: str):
     """
-    Reads the column names, data types, and first 5 rows of any CSV file on the PC.
-    Use this tool BEFORE writing any Python code to verify paths and column names.
+    Returns the COMPLETE schema of a CSV — every column name and dtype — plus a 5-row
+    sample preview. This is a SCHEMA tool, not a data loader: it intentionally truncates
+    to the first 5 rows (the remaining rows are NOT shown and you do NOT need them). The
+    column names and dtypes it returns are the full, exhaustive set — that is everything
+    required to write pandas code against this file.
+
+    Call this exactly ONCE per file, BEFORE writing code. The schema never changes while
+    you work, so re-calling it (or re-reading the script) returns identical output and
+    just wastes turns. Your Python script will read the full data at run time via
+    pd.read_csv — you do not need to see the remaining rows here.
+
     Input MUST be a valid absolute file path (e.g., 'C:/Users/Name/data.csv').
-    ONLY shows the FIRST 5 ROWS to minimize token usage. If the file cannot be read, returns an error message.
     """
     try:
         # No more path joining; use the path directly
         if not os.path.exists(file_path):
             return f"Error: The file path '{file_path}' does not exist on this PC."
-            
+
         df = pd.read_csv(file_path, nrows=5)
-        
+
         buffer = io.StringIO()
         df.info(buf=buffer)
         info_str = buffer.getvalue()
-        
-        return f"Structure of {os.path.basename(file_path)}:\n{info_str}\nData Preview of only first 5 rows:\n{df.to_string()}"
+
+        # Total row count so the model knows the sample is deliberate, not all the data.
+        try:
+            with open(file_path, "rb") as _f:
+                total_rows = max(sum(1 for _ in _f) - 1, 0)  # minus header
+            total_str = f"{total_rows} data rows"
+        except Exception:
+            total_str = "unknown row count"
+
+        base = (
+            f"Structure of {os.path.basename(file_path)} ({len(df.columns)} columns, {total_str}):\n"
+            f"{info_str}\n"
+            f"Sample preview — first 5 of {total_str} (truncated on purpose; the column list "
+            f"above is COMPLETE and is all you need to write your code):\n{df.to_string()}\n"
+            f"You now have the full schema. Do NOT inspect or re-read again — write your script."
+        )
+        return base
     except Exception as e:
         return f"Error reading file at {file_path}: {str(e)}"
 

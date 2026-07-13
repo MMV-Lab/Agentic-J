@@ -14,6 +14,7 @@ substring search finds them.
 | Cellpose 3 | env `cellpose` (Python 3.10, cellpose 3.1.1.2) | Includes Omnipose. |
 | Cellpose models: cyto / cyto2 / cyto3 / nuclei / livecell / tissuenet | bundled with the cellpose package (envs `cellpose` and `cellpose4`) | Weights download to `~/.cellpose` on first use. |
 | Omnipose | env `cellpose` (omnipose 1.1.4, with cellpose 3) | Not present in the `cellpose4` env. |
+| Cellpose (BIOP) Fiji plugin / direct cellpose / cellpose segmentation in Fiji / Cellpose command / CellposeSAM command | Fiji jar `ijl-utilities-wrappers` 0.12.1 (BIOP wrapper); shells to env `cellpose` (cyto3/nuclei) or env `cellpose4` (cpsam) | Direct single-image Cellpose segmentation in Fiji, NO TrackMate. Returns the label image in-process. See the `cellpose_documentation` skill. Use for still images; TrackMate-Cellpose is only for tracking over time. |
 
 ---
 
@@ -415,7 +416,7 @@ Generated from `pip list --format=freeze | sed 's/ @ .*//'` on 2026-04-30.
 | scikit-image | 0.25.2 |
 | scikit-learn | 1.7.2 |
 | imagecodecs | 2025.3.30 |
-| tifffile | 2023.2.28 |
+| tifffile | 2025.5.10 |
 | pillow | 12.1.1 |
 | opencv-python-headless | 4.13.0.92 |
 | fastremap | 1.18.0 |
@@ -597,6 +598,7 @@ Generated from `pip list --format=freeze | sed 's/ @ .*//'` on 2026-04-30.
 | fiji | 2.17.1-SNAPSHOT |
 | groovy + modules | 4.0.23 |
 | ij (ImageJ 1.x) | 1.54p |
+| ijl-utilities-wrappers (BIOP Cellpose/CellposeSAM direct wrapper) | 0.12.1 |
 | imagej | 2.16.0 |
 | imagej-common | 2.1.1 |
 | imagej-legacy | 2.0.3 |

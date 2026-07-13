@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "napari-mcp": {
+      "command": "/opt/conda/envs/napari-mcp/bin/napari-mcp",
+      "transport": "stdio",
+      "description": "In-container NapariMCP standalone server. Runs over stdio in its own conda env; the napari Viewer is created lazily (only on the first napari tool call), so nothing heavy runs until the agent uses it.",
+      "env": {
+        "QT_QPA_PLATFORM": "xcb",
+        "QT_QPA_PLATFORM_PLUGIN_PATH": "/opt/conda/envs/napari-mcp/lib/python3.11/site-packages/PyQt6/Qt6/plugins",
+        "QT_QPA_FONTDIR": "/opt/conda/envs/napari-mcp/lib/python3.11/site-packages/PyQt6/Qt6/lib/fonts",
+        "LIBGL_ALWAYS_SOFTWARE": "1"
+      }
+    }
+  }
+}

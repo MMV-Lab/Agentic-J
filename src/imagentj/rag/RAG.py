@@ -48,8 +48,7 @@ from imagentj.rag.loaders import (
 )
 
 from config.rag_config import (
-    QDRANT_DATA_PATH, DOCS_COLLECTION_NAME, MISTAKES_COLLECTION_NAME,
-    RECIPES_COLLECTION_NAME,
+    QDRANT_DATA_PATH, DOCS_COLLECTION_NAME,
     PLUGINS_COLLECTION_NAME, INGESTION_FOLDERS, BATCH_SIZE,
     SKIP_PATTERNS, SUPPORTED_EXTENSIONS
 )
@@ -420,13 +419,7 @@ def initialize_rag_system():
     docs_store = init_vector_store(DOCS_COLLECTION_NAME, client=client)
     print(f"✓ Initialized Hybrid docs collection: {DOCS_COLLECTION_NAME}")
 
-    mistakes_store = init_vector_store(MISTAKES_COLLECTION_NAME, client=client)
-    print(f"✓ Initialized Hybrid experience collection: {MISTAKES_COLLECTION_NAME}")
-
-    recipes_store = init_vector_store(RECIPES_COLLECTION_NAME, client=client)
-    print(f"✓ Initialized Hybrid recipes collection: {RECIPES_COLLECTION_NAME}")
-
-    return docs_store, mistakes_store, recipes_store
+    return docs_store
 
 
 def ingest_documents():
