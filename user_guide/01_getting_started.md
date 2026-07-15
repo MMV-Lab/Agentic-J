@@ -10,15 +10,15 @@
 
 ## 1. Create a `.env` file
 
-Copy `.env.template` and paste the file into the project root (i.e. the cloned repo), rename this as `.env`. This files helps pass credentials into the container. The `GMAIL_APP_PASSWORD` (not an actual password, trust us) is for sending the error report directly to the developers. A minimal example of the `.env` file content:
+Copy `.env.template` into the project root (i.e. the cloned repo) and rename it to `.env`. This file passes credentials into the container. `GMAIL_APP_PASSWORD` is optional and is only used if you want the in-app issue-report email flow. A minimal example of the `.env` file content:
 
 ```env
-# Required: pick one 
+# Required: pick one
 OPENAI_API_KEY=your-openai-api-key-here
 OPEN_ROUTER_API_KEY=your-openrouter-api-key-here
 
-# For reporting issues directly
-GMAIL_APP_PASSWORD=sntt iusy rddg mtoi
+# Optional: only needed for the in-app "Report Issue" email flow
+GMAIL_APP_PASSWORD=
 
 ```
 
