@@ -25,6 +25,9 @@ services:
       - IMAGENTJ_MCP_DISCOVERY_TIMEOUT_SECONDS=${IMAGENTJ_MCP_DISCOVERY_TIMEOUT_SECONDS:-20}
       - IMAGENTJ_MCP_TOOL_TIMEOUT_SECONDS=${IMAGENTJ_MCP_TOOL_TIMEOUT_SECONDS:-90}
       - IMAGENTJ_MCP_KEEP_ALIVE=${IMAGENTJ_MCP_KEEP_ALIVE:-true}
+      # Hard per-message backstop for tool results sent to an LLM. Individual
+      # tools use smaller semantic limits where appropriate.
+      - IMAGENTJ_MAX_TOOL_OUTPUT_CHARS=${IMAGENTJ_MAX_TOOL_OUTPUT_CHARS:-100000}
       - DISPLAY=:1
       # Optional: Set a VNC password (recommended if exposing to network)
       - VNC_PASSWORD=${VNC_PASSWORD:-}
@@ -54,8 +57,14 @@ services:
       - ./.imagentj:/app/.imagentj:ro
       - ./gui_runner.py:/app/gui_runner.py:ro
       - ./setup_wizard.py:/app/setup_wizard.py:ro
-      # Folder to save data
-      - ./data:/app/data
+      # Runtime config (LLM per role + Vision/QA switches). Edit on the host and
+      # it takes effect next run — no rebuild. See imagentj_config.yaml.
+      - ./imagentj_config.yaml:/app/imagentj_config.yaml:ro
+      # Folder to save data. The benchmark adapter sets IMAGENTJ_APP_DATA_DIR to a
+      # per-run mkdtemp so parallel benchmark runs do not see each other's
+      # projects; without it the shared ./data checkout leaks old artifacts into
+      # the collector.
+      - ${IMAGENTJ_APP_DATA_DIR:-./data}:/app/data
       # User home — persists api_keys.env (outside /app/data so agent can't read it)
       - imagentj_home:/home/imagentj
       # Cellpose models — named volume seeded from models baked into the image.
@@ -79,11 +88,19 @@ services:
       - imagent_net
 
     # ── Resource limits ────────────────────────────────────────────────────
+    # memory: the JVM heaps are derived from THIS number at startup
+    # (imagej_context._default_heap_gb takes half for the app JVM,
+    # script_tools._batch_env a quarter for the batch worker), so raising it
+    # raises them and lowering it lowers them — no separate tuning needed.
+    #   8G  -> 4 g app + 2 g batch   (was OOM-killing the container at 6 g + 2 g)
+    #  12G  -> 6 g app + 3 g batch   <- current: fits a 4-channel 8x8 mosaic stitch
+    # Keep headroom on the host: this is a limit, not a reservation, but the
+    # kernel will OOM-kill the container if the host itself runs out.
     deploy:
       resources:
         limits:
           cpus: '4'
-          memory: 8G
+          memory: 12G
         reservations:
           memory: 2G
 
@@ -111,4 +128,4 @@ networks:
       driver: default
       config:
         # Using 10.10.10.0/24 is usually safe from 172.x conflicts
-        - subnet: 10.10.10.0/24
+        - subnet: ${IMAGENTJ_SUBNET:-10.10.10.0/24}

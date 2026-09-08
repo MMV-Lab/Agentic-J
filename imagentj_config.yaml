@@ -1,0 +1,76 @@
+# ============================================================================
+# Imagent_J runtime configuration
+# ============================================================================
+# A single place to choose the LLM for each agent role and to turn the optional
+# Vision (VLM) judge and QA reporter on/off — WITHOUT editing .env or the
+# benchmark adapter. Edit this file on the host; it is bind-mounted into the
+# container (see docker-compose.yml), so changes take effect on the next run,
+# no rebuild needed.
+#
+# Resolution order (first that exists wins):
+#   1. $IMAGENTJ_CONFIG
+#   2. /app/imagentj_config.yaml   (the in-container mount)
+#   3. <repo-root>/imagentj_config.yaml
+# Any missing file or missing key falls back to the built-in defaults shown
+# below, so deleting a line just restores that default.
+# ----------------------------------------------------------------------------
+
+# LLM per agent role. Names are provider-prefixed.
+#   * With OPEN_ROUTER_API_KEY set, the full "provider/model" is used as-is
+#     (e.g. "openai/gpt-5.4", "google/gemini-3.5-flash", "anthropic/...").
+#   * With only OPENAI_API_KEY, the "openai/" prefix is stripped and any
+#     non-openai/ model is rejected.
+models:
+  supervisor: "openai/gpt-5.4"          # orchestrator / planner
+  worker:     "openai/gpt-5.3-codex"    # imagej_coder + imagej_debugger
+  analyst:    "openai/gpt-5.3-codex"    # python_data_analyst
+  nano:       "openai/gpt-5.4-nano"     # fast-path / lightweight calls
+  curator:    "openai/gpt-5.4-mini"     # background Librarian + deep recall
+  vlm:        "google/gemini-3.5-flash" # Vision judge (OpenRouter); on OpenAI-only
+                                        # installs this falls back to gpt-5.6-luna
+
+# ── Thinking budget per role ────────────────────────────────────────────────
+# Mirrors `models:` above. The values below are the SHIPPED DEFAULTS — leaving
+# this block absent, or a key unset, reproduces previous behaviour exactly.
+#
+#   <effort>  "minimal" | "low" | "medium" | "high"  (endpoint-dependent)
+#   null      send no reasoning_effort at all for that role
+#
+# Precedence: this block  >  IMAGENTJ_REASONING_EFFORT (blanket env override)
+#             >  the shipped default. An explicit per-role value wins over the
+#             env var on purpose — otherwise declaring effort per role could be
+#             silently overridden by a stray environment setting.
+reasoning_effort:
+  supervisor: medium   # orchestrator / planner
+  worker:     medium   # imagej_coder + imagej_debugger
+  analyst:    medium   # python_data_analyst
+  nano:       null     # watchdog fast path — see note below
+  curator:    low      # background Librarian + deep recall
+  vlm:        high     # Vision judge
+#
+# Why nano and curator differ from the rest (previously hard-pinned in code):
+#   nano    — the watchdog verdict path. It must reach the SAME verdict on
+#             identical evidence every time; extra thinking makes it less
+#             predictable, not more correct.
+#   curator — background recall filtering. It is latency-sensitive (it runs off
+#             the hot path but a slow one delays the next turn) and makes no
+#             judgement calls that extra thinking would improve.
+# Both are now overridable here if you want to measure the effect.
+
+# Optional agents. These drive BENCHMARK (auto-pilot) runs, where there is no
+# human to click the on-screen toggles. In an interactive GUI session the
+# "Vision Judge" / "QA Agent" checkboxes remain the live control.
+agents:
+  vlm: true   # Vision (VLM) judge — reviews input images and result plots
+  qa:  true   # QA reporter — audits the finished project folder at the end
+
+# Runtime / infrastructure options.
+runtime:
+  # Unattended = no human watching (e.g. an HPC batch node). When true, the
+  # container skips the browser-facing VNC layer (x11vnc :5900 + noVNC :6080),
+  # which is wasted on a batch node AND collides when several containers share a
+  # node (acute under Apptainer, which shares the host network). Xvfb + the
+  # window manager still run, so Fiji windows, plugin-dialog screenshots, napari
+  # rendering and the VLM judge all keep working — only the live view is gone.
+  # The env var IMAGENTJ_UNATTENDED overrides this if set.
+  unattended: false

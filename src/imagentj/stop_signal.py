@@ -61,15 +61,23 @@ class SubagentRunner:
     The underlying thread is a daemon so it will not keep the process alive.
     """
 
-    def __init__(self, fn, *args, **kwargs):
+    def __init__(self, fn, *args, watchdog=None, **kwargs):
         self._fn     = fn
         self._args   = args
         self._kwargs = kwargs
         self._result = None
         self._error: BaseException | None = None
         self._thread: threading.Thread | None = None
+        # Optional agent_watchdog.AgentHandle supervising this turn.
+        self._watchdog = watchdog
 
     def _target(self):
+        # Bind the watchdog handle INSIDE the worker thread: ContextVars are not
+        # inherited across Thread.start(), but LangChain copies the context into
+        # its tool-executor threads, so setting it here reaches the middleware.
+        if self._watchdog is not None:
+            from . import agent_watchdog
+            agent_watchdog.CURRENT.set(self._watchdog)
         try:
             self._result = self._fn(*self._args, **self._kwargs)
         except BaseException as exc:
@@ -80,6 +88,9 @@ class SubagentRunner:
             raise StopRequested("Stop already requested — subagent not started.")
 
         self._thread = threading.Thread(target=self._target, daemon=True)
+        if self._watchdog is not None:
+            from . import agent_watchdog
+            agent_watchdog.start(self._watchdog, self._thread)
         self._thread.start()
 
         while self._thread.is_alive():
@@ -88,6 +99,26 @@ class SubagentRunner:
                 _inject_exit(self._thread)
                 self._thread.join(timeout=5.0)   # give it a moment to react
                 raise StopRequested("Stop requested — subagent interrupted.")
+            if (self._watchdog is not None and self._watchdog.terminated
+                    and self._thread.is_alive()):
+                # The agent watchdog already injected SystemExit; give the thread
+                # a moment, then stop waiting on it either way. A tool blocked in
+                # a C call (e.g. a JVM round-trip) cannot be interrupted, so we
+                # abandon the daemon thread rather than hang with it — the caller
+                # returns its graceful handoff and the pipeline continues.
+                self._thread.join(timeout=5.0)
+                from . import agent_watchdog
+                raise agent_watchdog.AgentAborted(
+                    self._watchdog.kill_reason or "agent watchdog terminated the turn")
+
+        # The worker usually dies from the injected SystemExit before the loop
+        # above notices, so the abort has to be re-checked here too. Without this
+        # the SystemExit we injected is re-raised into the caller and takes the
+        # interpreter down instead of degrading into a graceful handoff.
+        if self._watchdog is not None and self._watchdog.terminated:
+            from . import agent_watchdog
+            raise agent_watchdog.AgentAborted(
+                self._watchdog.kill_reason or "agent watchdog terminated the turn")
 
         if self._error is not None:
             if isinstance(self._error, StopRequested):

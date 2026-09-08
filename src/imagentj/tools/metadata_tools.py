@@ -63,11 +63,14 @@ def _estimate_tiff_uncompressed_bytes(file_path: str) -> int:
     """
     try:
         with tifffile.TiffFile(file_path) as tif:
-            page     = tif.pages[0]
-            dtype_sz = np.dtype(page.dtype).itemsize
-            page_px  = int(np.prod(page.shape))   # (H, W) or (H, W, C)
-            n_pages  = len(tif.pages)
-            return page_px * dtype_sz * n_pages
+            # Use the logical series, not the number of IFDs. ImageJ can store a
+            # contiguous hyperstack in one IFD followed by raw planes; in that case
+            # ``len(tif.pages)`` is 1 even though ``series.shape`` contains the full
+            # T/C/Z extent. The old page-size * page-count estimate therefore
+            # undercounted these files by hundreds of times and let them through the
+            # pre-load OOM guard.
+            series = tif.series[0]
+            return int(np.prod(series.shape)) * np.dtype(series.dtype).itemsize
     except Exception:
         return 0
 # ────────────────────────────────────────────────────────────────────────────
@@ -854,7 +857,12 @@ def extract_file_metadata(file_path: str) -> Dict[str, Any]:
 
     # ---- Metadata / calibration (header reads only — no pixel data) ----
     try:
-        if suffix in ['.tif', '.tiff'] and not is_ome:
+        # .lsm (and .stk/.sgi) are TIFF variants tifffile reads natively. Without
+        # them here they fell through to the generic PIL branch, which reported a
+        # 64-tile 3z 4-channel uint16 LSM mosaic as "1024x1024 RGBA" — so the agent
+        # never learned the file was a mosaic at all and planned as if it were one
+        # plane. Route them through the same series-aware path as .tif.
+        if suffix in ['.tif', '.tiff', '.lsm', '.stk'] and not is_ome:
             with tifffile.TiffFile(file_path) as tif:
                 tags         = tif.pages[0].tags
                 x_res_tag    = tags.get('XResolution')
@@ -875,6 +883,135 @@ def extract_file_metadata(file_path: str) -> Dict[str, Any]:
                 dims['height'] = shape[0]
                 dims['width']  = shape[1] if len(shape) > 1 else 1
                 dims['pages']  = len(tif.pages)
+
+                # `len(tif.pages)` counts IFDs, which is 1 for a CONTIGUOUS ImageJ
+                # hyperstack no matter how many planes it holds — a 263x3x2048x2048
+                # 6.2 GiB movie reported as "pages: 1", i.e. indistinguishable from a
+                # single 8 MiB plane. An agent told that opens the whole thing and dies
+                # of OOM. Read the series instead: it knows the real T/C/Z extent.
+                try:
+                    series = tif.series[0]
+                    axes = getattr(series, 'axes', '') or ''
+                    dims['series_shape'] = list(series.shape)
+                    dims['series_axes'] = axes
+                    dims['n_series'] = len(tif.series)
+                    # Take Y/X from the series axes when they are labelled. page[0].shape
+                    # is not always (Y, X): an LSM page is (C, Y, X), which made the
+                    # positional read above report height=4 (the channel count) for a
+                    # 1024x1024 image.
+                    if 'Y' in axes and 'X' in axes:
+                        dims['height'] = int(series.shape[axes.index('Y')])
+                        dims['width'] = int(series.shape[axes.index('X')])
+                    for axis, label in (('T', 'n_timepoints'), ('C', 'n_channels'),
+                                        ('Z', 'n_slices'), ('M', 'n_mosaic_tiles')):
+                        if axis in axes:
+                            dims[label] = int(series.shape[axes.index(axis)])
+                    # A mosaic's tiles live on the M axis INSIDE one series — they are
+                    # NOT separate series. Scripts that assume "one series per tile"
+                    # assert len(series)==n_tiles and fail with a baffling "expected 64
+                    # tile series, got 2". Say it outright.
+                    if 'M' in axes:
+                        dims['tiles_note'] = (
+                            f"MOSAIC: {dims['n_mosaic_tiles']} tiles live on the M axis of "
+                            f"series 0 (axes {axes}), NOT as separate series — this file has "
+                            f"{len(tif.series)} series in total. Index the M axis to get a "
+                            "tile; do not equate series count with tile count. (Note other "
+                            "readers disagree: Bio-Formats may instead expose one series per "
+                            "tile x channel, so never hardcode a series count.)"
+                        )
+                    if len(tif.series) > 1:
+                        extra = []
+                        for idx, s in enumerate(tif.series[1:], start=1):
+                            sh = 'x'.join(str(v) for v in s.shape)
+                            extra.append(f"series[{idx}] {sh} ({s.dtype})")
+                        dims['other_series'] = extra
+                        dims['other_series_note'] = (
+                            "Extra series are often THUMBNAILS/label images, not data — check "
+                            "the shape before using one (a 128x128 uint8 series next to a "
+                            "1024x1024 uint16 series is a thumbnail)."
+                        )
+                    # Zeiss LSM mosaics carry their true stage positions in the
+                    # vendor `TilePositions` block. Bio-Formats does NOT surface these
+                    # as OME StageLabel — `Image.getStageLabel()` returns null for every
+                    # series, which reads as "this file has no tile positions" and sends
+                    # a stitching script off trying to infer the lattice from scratch.
+                    # A real run failed exactly here: "Missing stage coordinates for
+                    # series 0", then "Positioned series count=0 (< 64)". The positions
+                    # were in the file the whole time. Hand them over.
+                    try:
+                        lsm_md = getattr(tif, 'lsm_metadata', None) or {}
+                        tp = lsm_md.get('TilePositions')
+                        if tp is not None:
+                            import numpy as _np
+                            tp = _np.asarray(tp, dtype=float)
+                            if tp.ndim == 2 and tp.shape[0] > 1 and tp.shape[1] >= 2:
+                                # Positions are in METRES; round before uniquing or
+                                # float noise splits one row into two (a real run got
+                                # "Expected 8 axis groups, got 9" this way).
+                                ux = _np.unique(_np.round(tp[:, 0], 9))
+                                uy = _np.unique(_np.round(tp[:, 1], 9))
+                                grid = {'n_tiles': int(tp.shape[0]),
+                                        'grid_x': int(ux.size), 'grid_y': int(uy.size),
+                                        'positions_unit': 'metres (multiply by 1e6 for um)'}
+                                if ux.size > 1:
+                                    grid['step_x_um'] = round(float(_np.diff(ux).mean()) * 1e6, 3)
+                                if uy.size > 1:
+                                    grid['step_y_um'] = round(float(_np.diff(uy).mean()) * 1e6, 3)
+                                vx = lsm_md.get('VoxelSizeX')
+                                if vx and 'step_x_um' in grid and dims.get('width'):
+                                    tile_um = dims['width'] * float(vx) * 1e6
+                                    if tile_um > 0:
+                                        grid['tile_width_um'] = round(tile_um, 2)
+                                        grid['overlap_percent'] = round(
+                                            100.0 * (1.0 - grid['step_x_um'] / tile_um), 1)
+                                grid['note'] = (
+                                    "Tile stage positions come from the LSM `TilePositions` "
+                                    "block, NOT from OME StageLabel (Bio-Formats leaves "
+                                    "getStageLabel() null here — do not treat that as "
+                                    "'no positions'). Read them with "
+                                    "tifffile.TiffFile(path).lsm_metadata['TilePositions'] "
+                                    "and feed BigStitcher this grid/overlap directly instead "
+                                    "of inferring the lattice."
+                                )
+                                dims['mosaic_grid'] = grid
+                    except Exception:
+                        pass
+
+                    n_planes = 1
+                    for axis, size in zip(axes, series.shape):
+                        if axis not in ('Y', 'X', 'S'):
+                            n_planes *= int(size)
+                    dims['n_planes'] = n_planes
+                    # bit_depth is MEASURED here, not left to the caller. Nothing in
+                    # this module set it before, so the ledger only ever carried a
+                    # value the supervisor typed in — which makes any downstream
+                    # decision keyed on it (e.g. the modality hint in state_ledger)
+                    # an LLM judgement wearing the costume of a measurement.
+                    try:
+                        dims['bit_depth'] = int(np.dtype(series.dtype).itemsize) * 8
+                        dims['dtype'] = str(series.dtype)
+                    except Exception:
+                        pass
+
+                    itemsize = getattr(series.dtype, 'itemsize', 2)
+                    total = 1
+                    for size in series.shape:
+                        total *= int(size)
+                    full_mib = total * itemsize / (1 << 20)
+                    dims['full_size_mib'] = round(full_mib, 1)
+                    dims['plane_size_mib'] = round(
+                        dims['height'] * dims['width'] * itemsize / (1 << 20), 2)
+                    # Say it plainly rather than leaving the agent to multiply.
+                    if full_mib >= 1024:
+                        dims['size_warning'] = (
+                            f"This file is {full_mib / 1024:.2f} GiB in memory "
+                            f"({n_planes} planes). Do NOT open it whole — it will exhaust "
+                            "the JVM/container heap. Open a virtual stack, or read only "
+                            "the planes you need (e.g. tifffile.memmap(path)[index], which "
+                            "materialises just that slice)."
+                        )
+                except Exception:
+                    pass
 
         elif is_ome or suffix in ['.ome.tif', '.ome.tiff']:
             with tifffile.TiffFile(file_path) as tif:
@@ -966,6 +1103,18 @@ def extract_file_metadata(file_path: str) -> Dict[str, Any]:
                     dims['height']   = img.height
                     dims['mode']     = img.mode          # e.g. 'L', 'RGB', 'RGBA'
                     dims['channels'] = len(img.getbands())
+                    # Per-CHANNEL depth, matching the TIFF branch: 'RGB' is 8 bits
+                    # per channel, not 24. PIL mode is the only depth signal here.
+                    _PIL_DEPTH = {'1': 1, 'L': 8, 'P': 8, 'RGB': 8, 'RGBA': 8, 'CMYK': 8,
+                                  'YCbCr': 8, 'LAB': 8, 'HSV': 8,
+                                  'I;16': 16, 'I;16B': 16, 'I;16L': 16,
+                                  'I': 32, 'F': 32}
+                    depth = _PIL_DEPTH.get(img.mode)
+                    if depth is not None:
+                        dims['bit_depth'] = depth
+                    # n_channels mirrors the TIFF branch's key so consumers do not
+                    # have to know which reader produced the metadata.
+                    dims['n_channels'] = dims['channels']
                     # DPI embedded in JPEG/PNG JFIF/Exif headers → physical pixel size
                     dpi = img.info.get('dpi')
                     if dpi and dpi[0] > 0 and not scales:

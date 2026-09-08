@@ -1,13 +1,22 @@
 ---
 name: trackmate_documentation
-description: TrackMate is a Fiji/ImageJ plugin for single-particle tracking (SPT) — detecting objects and LINKING them into tracks over time in 2D/3D timelapses, using built-in detectors (LoG, DoG, Threshold, LabelImage) or deep-learning detectors (Cellpose, StarDist). Use this skill when the goal involves tracking objects across time frames. For segmenting a SINGLE still image with Cellpose (no tracking), use the cellpose_documentation skill instead — the direct BIOP Cellpose wrapper is cleaner (returns the label image in-process, no /tmp scraping). Use this skill for scripting TrackMate tracking workflows in Groovy, understanding the GUI, integrating Cellpose/StarDist detectors for timelapses, and exporting tracks to CSV or XML.
+description: >-
+  TrackMate is the Fiji/ImageJ plugin for single-particle TRACKING (SPT) — LINKING objects
+  across TIME into trajectories in 2D/3D timelapses (LAP, Kalman, nearest-neighbour trackers),
+  with per-frame detection supplied by a built-in detector (LoG, DoG, Threshold, LabelImage)
+  or a deep-learning detector (Cellpose, StarDist). Use this skill ONLY when the data has a
+  time dimension and the goal is trajectories, motility/displacement, track features, or
+  lineage — scripting tracking workflows in Groovy, the tracking GUI, wiring a detector into
+  a timelapse, and exporting tracks to CSV or XML. This is not a segmentation skill; if the
+  goal is segmenting a still image (or per-frame masks with no linking), use a dedicated
+  segmentation plugin or package instead.
 ---
 
 # TrackMate — Documentation Index
 
 TrackMate is bundled with Fiji (core detectors and trackers). Cellpose and StarDist integration require additional update sites. All scripting uses the TrackMate Java API directly — not `IJ.run()`.
 
-> **Segmentation vs. tracking — read first.** TrackMate is for **linking objects across time** (tracking). If you only need to **segment a single still image** with Cellpose (no tracking), use the **`cellpose_documentation`** skill instead: the BIOP Cellpose wrapper runs Cellpose directly and returns the label image in-process — no full tracking pipeline, no recovering masks from `/tmp`. `GROOVY_WORKFLOW_CELLPOSE_SINGLE_IMAGE.groovy` below remains valid but is the **legacy** single-frame path; prefer it only when you specifically need TrackMate spots/ROIs from that frame.
+> **Tracking only — read first.** TrackMate links objects across **time**. No time dimension, no TrackMate: segment a still image with a dedicated segmentation plugin or package and pick whichever one fits the data.
 
 ## Files
 
@@ -15,14 +24,21 @@ TrackMate is bundled with Fiji (core detectors and trackers). Cellpose and StarD
 |------|---------------|
 | `SCRIPT_API.md` | Complete Groovy scripting reference: detector/tracker settings keys, feature access, CSV/XML export, all imports |
 | `GROOVY_WORKFLOW_PARTICLE_TRACKING.groovy` | Ready-to-run script: LoG detection → filtering → LAP tracking → CSV + XML + overlay |
-| `CELLPOSE_DETECTOR_API.md` | Cellpose integration: all detector settings keys, available models (cyto3, nuclei, etc.), backend setup, pitfalls — covers single-image segmentation and timelapse tracking |
-| `GROOVY_WORKFLOW_CELLPOSE_GENERIC.groovy` | Ready-to-run generic script: auto-detects Python/conda/micromamba backend → Cellpose segment → track → CSV + XML + label TIFF; works on any active image |
-| `GROOVY_WORKFLOW_CELLPOSE_GUI.groovy` | Ready-to-run project-specific script: opens a hardcoded file, GPU-enabled Cellpose → tracking → CSV + XML + label TIFF + HyperStack overlay + TrackScheme GUI |
-| `GROOVY_WORKFLOW_CELLPOSE_SINGLE_IMAGE.groovy` | Verified single-image segmentation: TrackMate-Cellpose on a 2D image → label image + binary mask + per-label CSV. Encodes pitfalls C5/C7/C8/C9 (reflection-based tracker loader, mask-from-`/tmp` recovery, no SpotRoi → RoiManager, MorphoLibJ-free measurement). Use as the canonical pattern for single-frame Cellpose. |
+| `CELLPOSE_DETECTOR_API.md` | Cellpose **detector** integration for timelapses: all detector settings keys, available models (cyto3, nucleitorch_0, etc.), backend setup, pitfalls C0–C9 |
+| `GROOVY_WORKFLOW_CELLPOSE_GENERIC.groovy` | Ready-to-run generic script: verifies the Cellpose backend, auto-selects a working CUDA device or CPU → segment → track → CSV + XML + label TIFF; works on any active image |
+| `GROOVY_WORKFLOW_CELLPOSE_GUI.groovy` | Ready-to-run project-specific script: opens a hardcoded file, verifies/auto-selects CUDA or CPU → tracking → CSV + XML + label TIFF + HyperStack overlay + TrackScheme GUI |
 | `UI_GUIDE.md` | GUI reference: every panel and control in the TrackMate wizard explained |
 | `UI_WORKFLOW_PARTICLE_TRACKING.md` | GUI walkthrough: step-by-step from open image to exported CSV |
 
 ## Critical pitfalls
+
+- **Never hardcode `USE_GPU=false` merely because GPU availability is unknown.**
+  Probe CUDA from the same Cellpose conda environment that TrackMate invokes,
+  including a CUDA tensor allocation and synchronization. Then pass the result
+  to `USE_GPU`. Use the tri-state `useGpuOverride` pattern in the canonical
+  Cellpose workflows: `null` auto-selects, `true` requires a usable GPU and fails
+  early otherwise, and `false` explicitly requests CPU. See
+  `CELLPOSE_DETECTOR_API.md` § GPU selection and preflight.
 
 - **`Image must be 2D over time, got an image with multiple Z.`** — the input
   was loaded with planes in Z instead of T (typical when an image sequence
@@ -56,8 +72,11 @@ TrackMate is bundled with Fiji (core detectors and trackers). Cellpose and StarD
   is installed. Use plain pixel iteration for label-image measurements
   (no MorphoLibJ import required). See `CELLPOSE_DETECTOR_API.md` § Pitfall C9.
 
-- **`uknown selection 'nuclei' for parameter 'Pretrained model`** - 
-  the parameter for the nuclei model is "nucleitorch_0" 
+- **`uknown selection 'nuclei' for parameter 'Pretrained model'`** — the deployed
+  nuclei model is named **`nucleitorch_0`**, not `nuclei`. Set
+  `CELLPOSE_MODEL`/the model string to `"nucleitorch_0"`.
 
-For the canonical end-to-end pattern that addresses all of the above in one
-script, copy [`GROOVY_WORKFLOW_CELLPOSE_SINGLE_IMAGE.groovy`](GROOVY_WORKFLOW_CELLPOSE_SINGLE_IMAGE.groovy).
+For the canonical end-to-end **tracking** pattern that addresses all of the above
+in one script, copy [`GROOVY_WORKFLOW_CELLPOSE_GENERIC.groovy`](GROOVY_WORKFLOW_CELLPOSE_GENERIC.groovy)
+(Cellpose detector → tracking) or [`GROOVY_WORKFLOW_PARTICLE_TRACKING.groovy`](GROOVY_WORKFLOW_PARTICLE_TRACKING.groovy)
+(LoG detector → tracking).

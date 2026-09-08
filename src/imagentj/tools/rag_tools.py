@@ -38,7 +38,12 @@ def get_expanded_queries(query: str) -> list[str]:
         "Output only the queries, one per line."
     )
     variants = (prompt | llm | StrOutputParser()).invoke({"question": query}).strip().split("\n")
-    return list(set([query] + [v.strip("- ").strip() for v in variants]))
+    # A blank line in the LLM's output (trailing newline, blank line between
+    # bullets, ...) becomes an empty-string "variant" here. Left in, it reaches
+    # embed_query("") downstream, which OpenAI's embeddings endpoint hard-rejects
+    # with a 400 — uncaught, that crashes the whole agent run.
+    cleaned = [v.strip("- ").strip() for v in variants]
+    return list({query, *[v for v in cleaned if v]})
 
 
 @tool("rag_retrieve")

@@ -1,6 +1,7 @@
 ---
 name: 3d_imagej_suite_documentation
-description: 3D ImageJ Suite is a Fiji/ImageJ plugin collection for 3D filtering, segmentation, measurement, and ROI management. This skill keeps a compact validated workflow set for this repo: a default threshold-based segment-and-measure pipeline, 3D watershed, automatic-seed 3D spot segmentation, 3D nuclei segmentation, label-image measurement, and the installed 3D Manager V4 macro extensions. Read the files listed at the end of this SKILL for exact Groovy calls, menu paths, and scope limits.
+description: >-
+  3D ImageJ Suite is a Fiji/ImageJ plugin collection for 3D filtering, segmentation, measurement, and ROI management. This skill keeps a compact validated workflow set for this repo: a default threshold-based segment-and-measure pipeline, 3D watershed, automatic-seed 3D spot segmentation, 3D nuclei segmentation, label-image measurement, and the installed 3D Manager V4 macro extensions. Read the files listed at the end of this SKILL for exact Groovy calls, menu paths, and scope limits.
 ---
 
 ## Primary Use Case in This Skill Set

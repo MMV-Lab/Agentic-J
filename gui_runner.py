@@ -27,8 +27,10 @@ from queue import Queue
 from imagentj.agents import init_agent, set_qa_enabled
 from imagentj.imagej_context import get_ij
 from imagentj.chat_history import ChatHistoryManager
-from imagentj.tools.analyst_tools import kill_running_processes
 import imagentj.stop_signal as stop_signal
+from imagentj import run_control
+from imagentj import watchdog
+from imagentj.safety_filter import is_bio_refusal
 
 from imagentj.benchmark_gui_hooks import is_benchmark_mode, setup_benchmark_gui
 
@@ -138,10 +140,29 @@ def _md_to_html(text: str) -> str:
 # ---------------------------------------------------------------------------
 
 class _BubbleLabel(QLabel):
-    """QLabel that lets its parent layout freely constrain its width."""
+    """QLabel that lets its parent layout freely constrain its width.
+
+    Also pads its reported height by a few px: QLabel's own heightForWidth()/
+    sizeHint() for word-wrapped rich text can undercount by a couple of pixels,
+    most visibly on a wrapped line that mixes bold and plain spans (e.g. markdown
+    **bold**, common in these messages) — Qt's own document layout renders that
+    line slightly taller than the hint it reports. Since a widget always clips
+    its own painting to its allotted rect, the shortfall clips that line's
+    descenders against the bubble's bottom edge. A small fixed safety margin
+    absorbs the discrepancy regardless of its exact per-line cause.
+    """
+    _HEIGHT_SLACK = 6  # px
+
     def minimumSizeHint(self):
         sh = super().minimumSizeHint()
-        return QSize(1, sh.height())
+        return QSize(1, sh.height() + self._HEIGHT_SLACK)
+
+    def heightForWidth(self, width):
+        return super().heightForWidth(width) + self._HEIGHT_SLACK
+
+    def sizeHint(self):
+        sh = super().sizeHint()
+        return QSize(sh.width(), sh.height() + self._HEIGHT_SLACK)
 
 
 class MessageBubble(QFrame):
@@ -200,6 +221,11 @@ class MessageBubble(QFrame):
             self._label.setText(f'<div align="right">{content}</div>')
         else:
             self._label.setText(content)
+        # Streamed updates keep replacing this same label's text as tokens arrive;
+        # force the layout to re-check its size hint each time rather than trust
+        # a cached one from an earlier, shorter version of this bubble.
+        self._label.updateGeometry()
+        self.updateGeometry()
 
 
 class ChatScrollArea(QWidget):
@@ -303,13 +329,13 @@ class SubagentHeartbeatTimer:
             "Data Scientist is adding publication-quality plot settings…",
             "Data Scientist is saving the script…",
         ],
-        # "vlm_judge": [  # VLM disabled
-        #     "Vision AI is capturing the ImageJ window…",
-        #     "Vision AI is building the comparison panel…",
-        #     "Vision AI is sending the image for analysis…",
-        #     "Vision AI is evaluating against expected output…",
-        #     "Vision AI is compiling the verdict…",
-        # ],
+        "vlm_judge": [
+            "Vision Judge is preparing the image preview…",
+            "Vision Judge is building the comparison panel…",
+            "Vision Judge is inspecting visible structures…",
+            "Vision Judge is evaluating the expected output…",
+            "Vision Judge is compiling the visual handoff…",
+        ],
         "qa_reporter": [
             "QA Agent is scanning the project folder…",
             "QA Agent is reading script documentation…",
@@ -355,6 +381,7 @@ class MetricsPanelWidget(QWidget):
     """Shows token/cost/tool metrics for the active conversation."""
 
     qa_toggled = Signal(bool)
+    vision_toggled = Signal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -445,6 +472,22 @@ class MetricsPanelWidget(QWidget):
         qa_desc.setWordWrap(True)
         qa_desc.setStyleSheet("color:#555; font-size:10px; padding-left:18px;")
         agent_layout.addWidget(qa_desc)
+
+        self._vision_checkbox = QCheckBox("Vision Judge")
+        self._vision_checkbox.setChecked(False)
+        self._vision_checkbox.stateChanged.connect(
+            lambda _: self.vision_toggled.emit(self._vision_checkbox.isChecked())
+        )
+        agent_layout.addWidget(self._vision_checkbox)
+
+        vision_desc = QLabel(
+            "Reviews a representative input and every image-producing step.<br>"
+            "<span style='color:#c0392b;'>Adds API calls and token cost.</span>"
+        )
+        vision_desc.setTextFormat(Qt.RichText)
+        vision_desc.setWordWrap(True)
+        vision_desc.setStyleSheet("color:#555; font-size:10px; padding-left:18px;")
+        agent_layout.addWidget(vision_desc)
         root.addWidget(agent_box)
 
         root.addStretch()
@@ -713,6 +756,11 @@ class AgentWorker(QObject):
     event_received = Signal(dict)
     finished = Signal()
     error = Signal(str)
+    # (scripts signalled, scripts that ignored the stop) — lets the UI tell the
+    # user the truth when a Groovy script cannot actually be killed.
+    stop_report = Signal(int, int)
+    # Watchdog verdicts, surfaced in the chat rather than buried in the log.
+    watchdog_notice = Signal(str)
 
     def __init__(self, supervisor, thread_id: str, tracker_callback):
         super().__init__()
@@ -752,7 +800,22 @@ class AgentWorker(QObject):
                 self.event_received.emit(event)
         except Exception as e:
             log.exception(f"_run_prompt exception: {e}")
-            self.error.emit(str(e))
+            if is_bio_refusal(e):
+                # A provider biological-risk refusal has already been retried
+                # with reasoning state stripped (and sensitive terms neutralised)
+                # downstream. Reaching here means every reformulation was refused;
+                # say so explicitly instead of reporting a generic "unhandled
+                # agent error" that loses why the run actually stopped.
+                self.error.emit(
+                    "Provider flagged this task as a possible biological-risk prompt. "
+                    "The request was reformulated (injected skill catalogue and "
+                    "reasoning state removed, then pathogen names neutralised) and "
+                    "retried; every formulation was refused. No further automatic "
+                    "retry is safe — rephrase the task description upstream if you "
+                    "want to try again. Details: " + str(e)
+                )
+            else:
+                self.error.emit(str(e))
         finally:
             log.debug("_run_prompt finished")
             self.finished.emit()
@@ -763,10 +826,19 @@ class AgentWorker(QObject):
     def request_stop(self):
         self._stop_requested = True
         stop_signal.request_stop()
-        # Kill any running subprocesses immediately (Python scripts, etc.)
-        killed = kill_running_processes()
-        if killed:
-            log.info(f"Stop: killed {killed} running subprocess(es)")
+
+        # Terminate whatever code is executing right now. Python subprocesses die
+        # outright (whole process group); an in-JVM Groovy script can only be asked
+        # to abort, so report back which ones actually stopped rather than assuming.
+        handles = run_control.terminate_all("Stopped by user", by="user")
+        if not handles:
+            return
+        stubborn = [h for h in handles if h.terminate_succeeded is False]
+        log.info(
+            f"Stop: signalled {len(handles)} running script(s), "
+            f"{len(stubborn)} did not stop"
+        )
+        self.stop_report.emit(len(handles), len(stubborn))
 
 
 # ---------------------------------------------------------------------------
@@ -917,6 +989,7 @@ class ImageJAgentGUI(QWidget):
         self.metrics_panel._btn_save.clicked.connect(self._save_report)
         self.metrics_panel._btn_report.clicked.connect(self._open_feedback_dialog)
         self.metrics_panel.qa_toggled.connect(self._on_qa_toggled)
+        self.metrics_panel.vision_toggled.connect(self._on_vision_toggled)
 
         splitter.addWidget(self.history_panel)
         splitter.addWidget(chat_widget)
@@ -949,6 +1022,11 @@ class ImageJAgentGUI(QWidget):
         self.worker.event_received.connect(self.handle_event)
         self.worker.finished.connect(self.on_agent_finished)
         self.worker.error.connect(self.on_agent_error)
+        self.worker.stop_report.connect(self.on_stop_report)
+        self.worker.watchdog_notice.connect(self.on_watchdog_notice)
+        # The watchdog fires from its own thread; hop onto the GUI thread via the
+        # worker's signal rather than touching widgets directly.
+        watchdog.set_notifier(self.worker.watchdog_notice.emit)
         self.thread.start()
 
         self._current_status_bubble = None
@@ -983,6 +1061,7 @@ class ImageJAgentGUI(QWidget):
 
         self.chat_scroll.clear_messages()
         self.chat_scroll.add_message('ai', intro_message)
+        self._set_vision_checkbox(False)
 
         self.history_panel.populate(self.history_manager.list_threads())
         self.history_panel.set_active(thread_id)
@@ -1001,7 +1080,9 @@ class ImageJAgentGUI(QWidget):
 
         self.chat_scroll.clear_messages()
 
-        messages = self.history_manager.get_messages_for_display(self.supervisor, thread_id)
+        state_values = self.history_manager.get_state_values(self.supervisor, thread_id)
+        messages = state_values.get("messages", [])
+        self._set_vision_checkbox(bool(state_values.get("vision_enabled", False)))
         if not messages:
             self.chat_scroll.add_message('ai', intro_message)
         else:
@@ -1126,6 +1207,31 @@ class ImageJAgentGUI(QWidget):
             return
         set_qa_enabled(enabled)
 
+    def _on_vision_toggled(self, enabled: bool):
+        if self._agent_is_busy():
+            # Revert the checkbox — can't change while agent is running
+            self.metrics_panel._vision_checkbox.blockSignals(True)
+            self.metrics_panel._vision_checkbox.setChecked(not enabled)
+            self.metrics_panel._vision_checkbox.blockSignals(False)
+            self.set_status("Cannot change Vision Judge setting while agent is running.")
+            return
+
+        config = {"configurable": {"thread_id": self.current_thread_id}}
+        try:
+            self.supervisor.update_state(config, {"vision_enabled": enabled})
+            state = "enabled" if enabled else "disabled"
+            self.set_status(f"Vision Judge {state} for this chat.")
+        except Exception as exc:
+            self._set_vision_checkbox(not enabled)
+            log.exception(f"Failed to update Vision Judge setting: {exc}")
+            self.set_status("Could not update Vision Judge setting for this chat.")
+
+    def _set_vision_checkbox(self, enabled: bool):
+        checkbox = self.metrics_panel._vision_checkbox
+        checkbox.blockSignals(True)
+        checkbox.setChecked(enabled)
+        checkbox.blockSignals(False)
+
 
     # ------------------------------------------------------------------
     # Agent lifecycle
@@ -1138,6 +1244,25 @@ class ImageJAgentGUI(QWidget):
             self.chat_scroll.add_message('system', "Stopping agent...")
             self.worker.request_stop()
             self.set_status("Stopping...")
+
+    def on_stop_report(self, signalled: int, stubborn: int):
+        """Say what the Stop button actually achieved — not what we wish it had."""
+        if stubborn:
+            self.chat_scroll.add_message(
+                'system',
+                f"Stop sent to {signalled} running script(s), but {stubborn} did not "
+                f"respond. Groovy runs inside the shared Fiji JVM and cannot be "
+                f"force-killed, so it may still be running in the background. "
+                f"Restart Fiji if it must be stopped for certain."
+            )
+        else:
+            self.chat_scroll.add_message(
+                'system', f"Terminated {signalled} running script(s)."
+            )
+
+    def on_watchdog_notice(self, message: str):
+        self.chat_scroll.add_message('system', message)
+        self.set_status("Watchdog intervened")
 
     def on_agent_finished(self):
         log.debug("on_agent_finished called")
@@ -1164,6 +1289,7 @@ class ImageJAgentGUI(QWidget):
         if hasattr(self, 'worker') and self.worker._stop_requested:
             return
         self._agent_had_error    = True
+        self._last_agent_error   = msg
         self.chat_scroll.add_message('error', f"Agent error:\n{msg}")
         self.status_label.setText("Error")
         self.status_label.setStyleSheet("color: red;")
@@ -1233,7 +1359,7 @@ class ImageJAgentGUI(QWidget):
 
         # These are the subagent tool names that run for a long time with no streaming.
         _SUBAGENT_TOOLS = {"imagej_coder", "imagej_debugger",
-                        "python_data_analyst", "qa_reporter"}  # vlm_judge disabled
+                        "python_data_analyst", "qa_reporter", "vlm_judge"}
 
         # Non-subagent tool start messages (short, fire-and-forget tools)
         _TOOL_START = {
@@ -1263,7 +1389,7 @@ class ImageJAgentGUI(QWidget):
             "python_data_analyst":       "Data Scientist finished.",
             "execute_script":            "Script execution complete.",
             "qa_reporter":               "QA report generated.",
-            # "vlm_judge":              "Vision AI inspection complete.",  # VLM disabled
+            "vlm_judge":                 "Vision Judge inspection complete.",
             "setup_analysis_workspace":  "Project workspace ready.",
             "install_fiji_plugin":       "Plugin installed — please restart Fiji.",
         }
@@ -1284,7 +1410,7 @@ class ImageJAgentGUI(QWidget):
             messages = node_data.get("messages", []) if isinstance(node_data, dict) else []
 
             for msg in messages:
-                content    = getattr(msg, "content", "") or ""
+                content    = _extract_text(getattr(msg, "content", "") or "")
                 tool_calls = getattr(msg, "tool_calls", None) or []
                 msg_type   = getattr(msg, "type", "") or ""
 

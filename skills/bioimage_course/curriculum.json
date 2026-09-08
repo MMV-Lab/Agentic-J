@@ -1,0 +1,589 @@
+{
+  "title": "Introduction to Bioimage Analysis",
+  "author": "Pete Bankhead",
+  "source_url": "https://bioimagebook.github.io",
+  "source_repo": "https://github.com/bioimagebook/bioimagebook.github.io",
+  "source_commit": "a017bbc2656a747ab3c87e5d721e9897881ed4c2",
+  "license": "CC-BY 4.0",
+  "generated_at": "2026-07-02T14:35:45Z",
+  "n_parts": 5,
+  "n_chapters": 22,
+  "parts": [
+    {
+      "num": "0",
+      "title": "Before we begin",
+      "kind": "intro",
+      "chapters": [
+        "0.1",
+        "0.2"
+      ]
+    },
+    {
+      "num": "1",
+      "title": "Introducing images",
+      "kind": "core",
+      "chapters": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6"
+      ]
+    },
+    {
+      "num": "2",
+      "title": "Processing & analysis",
+      "kind": "core",
+      "chapters": [
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5",
+        "2.6",
+        "2.7"
+      ]
+    },
+    {
+      "num": "3",
+      "title": "Fluorescence microscopy",
+      "kind": "core",
+      "chapters": [
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4"
+      ]
+    },
+    {
+      "num": "4",
+      "title": "Appendices",
+      "kind": "appendix",
+      "chapters": [
+        "4.1",
+        "4.2",
+        "4.3"
+      ]
+    }
+  ],
+  "chapters": {
+    "0.1": {
+      "id": "0.1",
+      "part": "0",
+      "title": "",
+      "slug": "preface",
+      "source_dir": "chapters/0-preamble/preface",
+      "concept_file": "content/0.1/concept.md",
+      "tracks": {},
+      "subpages": [],
+      "figures": [
+        "0.1#1"
+      ],
+      "n_practicals": 0,
+      "has_imagej": false,
+      "has_python": false
+    },
+    "0.2": {
+      "id": "0.2",
+      "part": "0",
+      "title": "How to read this book",
+      "slug": "reading",
+      "source_dir": "chapters/0-preamble/reading",
+      "concept_file": "content/0.2/concept.md",
+      "tracks": {},
+      "subpages": [],
+      "figures": [
+        "0.2#1",
+        "0.2#2"
+      ],
+      "n_practicals": 1,
+      "has_imagej": false,
+      "has_python": false
+    },
+    "1.1": {
+      "id": "1.1",
+      "part": "1",
+      "title": "Images & pixels",
+      "slug": "1-images_and_pixels",
+      "source_dir": "chapters/1-concepts/1-images_and_pixels",
+      "concept_file": "content/1.1/concept.md",
+      "tracks": {
+        "imagej": "content/1.1/imagej.md",
+        "python": "content/1.1/python.md"
+      },
+      "subpages": [],
+      "figures": [
+        "1.1#1",
+        "1.1#2",
+        "1.1#3"
+      ],
+      "n_practicals": 2,
+      "has_imagej": true,
+      "has_python": true
+    },
+    "1.2": {
+      "id": "1.2",
+      "part": "1",
+      "title": "Measurements & histograms",
+      "slug": "2-measurements",
+      "source_dir": "chapters/1-concepts/2-measurements",
+      "concept_file": "content/1.2/concept.md",
+      "tracks": {
+        "imagej": "content/1.2/imagej.md",
+        "python": "content/1.2/python.md"
+      },
+      "subpages": [],
+      "figures": [
+        "1.2#1",
+        "1.2#2",
+        "1.2#3"
+      ],
+      "n_practicals": 6,
+      "has_imagej": true,
+      "has_python": true
+    },
+    "1.3": {
+      "id": "1.3",
+      "part": "1",
+      "title": "Types & bit-depths",
+      "slug": "3-bit_depths",
+      "source_dir": "chapters/1-concepts/3-bit_depths",
+      "concept_file": "content/1.3/concept.md",
+      "tracks": {
+        "imagej": "content/1.3/imagej.md",
+        "python": "content/1.3/python.md"
+      },
+      "subpages": [],
+      "figures": [
+        "1.3#1",
+        "1.3#2",
+        "1.3#3",
+        "1.3#4"
+      ],
+      "n_practicals": 10,
+      "has_imagej": true,
+      "has_python": true
+    },
+    "1.4": {
+      "id": "1.4",
+      "part": "1",
+      "title": "Channels & colors",
+      "slug": "4-colors",
+      "source_dir": "chapters/1-concepts/4-colors",
+      "concept_file": "content/1.4/concept.md",
+      "tracks": {
+        "imagej": "content/1.4/imagej.md",
+        "python": "content/1.4/python.md"
+      },
+      "subpages": [],
+      "figures": [
+        "1.4#1",
+        "1.4#2",
+        "1.4#3",
+        "1.4#4",
+        "1.4#5",
+        "1.4#6",
+        "1.4#7",
+        "1.4#8"
+      ],
+      "n_practicals": 3,
+      "has_imagej": true,
+      "has_python": true
+    },
+    "1.5": {
+      "id": "1.5",
+      "part": "1",
+      "title": "Pixel size & dimensions",
+      "slug": "5-pixel_size",
+      "source_dir": "chapters/1-concepts/5-pixel_size",
+      "concept_file": "content/1.5/concept.md",
+      "tracks": {
+        "imagej": "content/1.5/imagej.md",
+        "python": "content/1.5/python.md"
+      },
+      "subpages": [],
+      "figures": [
+        "1.5#1",
+        "1.5#2",
+        "1.5#3",
+        "1.5#4",
+        "1.5#5",
+        "1.5#6",
+        "1.5#7",
+        "1.5#8"
+      ],
+      "n_practicals": 7,
+      "has_imagej": true,
+      "has_python": true
+    },
+    "1.6": {
+      "id": "1.6",
+      "part": "1",
+      "title": "Files & file formats",
+      "slug": "6-files",
+      "source_dir": "chapters/1-concepts/6-files",
+      "concept_file": "content/1.6/concept.md",
+      "tracks": {
+        "imagej": "content/1.6/imagej.md",
+        "python": "content/1.6/python.md"
+      },
+      "subpages": [],
+      "figures": [
+        "1.6#1",
+        "1.6#2",
+        "1.6#3",
+        "1.6#4"
+      ],
+      "n_practicals": 3,
+      "has_imagej": true,
+      "has_python": true
+    },
+    "2.1": {
+      "id": "2.1",
+      "part": "2",
+      "title": "Image processing & analysis",
+      "slug": "1-processing_and_analysis",
+      "source_dir": "chapters/2-processing/1-processing_and_analysis",
+      "concept_file": "content/2.1/concept.md",
+      "tracks": {},
+      "subpages": [],
+      "figures": [
+        "2.1#1"
+      ],
+      "n_practicals": 0,
+      "has_imagej": false,
+      "has_python": false
+    },
+    "2.2": {
+      "id": "2.2",
+      "part": "2",
+      "title": "Point operations",
+      "slug": "2-point_operations",
+      "source_dir": "chapters/2-processing/2-point_operations",
+      "concept_file": "content/2.2/concept.md",
+      "tracks": {
+        "imagej": "content/2.2/imagej.md"
+      },
+      "subpages": [],
+      "figures": [
+        "2.2#1",
+        "2.2#2",
+        "2.2#3",
+        "2.2#4",
+        "2.2#5",
+        "2.2#6"
+      ],
+      "n_practicals": 6,
+      "has_imagej": true,
+      "has_python": false
+    },
+    "2.3": {
+      "id": "2.3",
+      "part": "2",
+      "title": "Thresholding",
+      "slug": "3-thresholding",
+      "source_dir": "chapters/2-processing/3-thresholding",
+      "concept_file": "content/2.3/concept.md",
+      "tracks": {
+        "imagej": "content/2.3/imagej.md"
+      },
+      "subpages": [],
+      "figures": [
+        "2.3#1",
+        "2.3#2",
+        "2.3#3",
+        "2.3#4",
+        "2.3#5",
+        "2.3#6",
+        "2.3#7",
+        "2.3#8",
+        "2.3#9",
+        "2.3#10",
+        "2.3#11",
+        "2.3#12",
+        "2.3#13",
+        "2.3#14",
+        "2.3#15",
+        "2.3#16",
+        "2.3#17",
+        "2.3#18"
+      ],
+      "n_practicals": 6,
+      "has_imagej": true,
+      "has_python": false
+    },
+    "2.4": {
+      "id": "2.4",
+      "part": "2",
+      "title": "Filters",
+      "slug": "4-filters",
+      "source_dir": "chapters/2-processing/4-filters",
+      "concept_file": "content/2.4/concept.md",
+      "tracks": {
+        "imagej": "content/2.4/imagej.md"
+      },
+      "subpages": [],
+      "figures": [
+        "2.4#1",
+        "2.4#2",
+        "2.4#3",
+        "2.4#4",
+        "2.4#5",
+        "2.4#6",
+        "2.4#7",
+        "2.4#8",
+        "2.4#9",
+        "2.4#10",
+        "2.4#11",
+        "2.4#12",
+        "2.4#13",
+        "2.4#14",
+        "2.4#15",
+        "2.4#16",
+        "2.4#17",
+        "2.4#18",
+        "2.4#19",
+        "2.4#20"
+      ],
+      "n_practicals": 8,
+      "has_imagej": true,
+      "has_python": false
+    },
+    "2.5": {
+      "id": "2.5",
+      "part": "2",
+      "title": "Morphological operations",
+      "slug": "5-morph",
+      "source_dir": "chapters/2-processing/5-morph",
+      "concept_file": "content/2.5/concept.md",
+      "tracks": {
+        "imagej": "content/2.5/imagej.md"
+      },
+      "subpages": [],
+      "figures": [
+        "2.5#1",
+        "2.5#2",
+        "2.5#3",
+        "2.5#4",
+        "2.5#5",
+        "2.5#6",
+        "2.5#7",
+        "2.5#8",
+        "2.5#9",
+        "2.5#10",
+        "2.5#11",
+        "2.5#12",
+        "2.5#13",
+        "2.5#14"
+      ],
+      "n_practicals": 2,
+      "has_imagej": true,
+      "has_python": false
+    },
+    "2.6": {
+      "id": "2.6",
+      "part": "2",
+      "title": "Image transforms",
+      "slug": "6-transforms",
+      "source_dir": "chapters/2-processing/6-transforms",
+      "concept_file": "content/2.6/concept.md",
+      "tracks": {
+        "imagej": "content/2.6/imagej.md"
+      },
+      "subpages": [],
+      "figures": [
+        "2.6#1",
+        "2.6#2",
+        "2.6#3",
+        "2.6#4",
+        "2.6#5",
+        "2.6#6",
+        "2.6#7",
+        "2.6#8",
+        "2.6#9",
+        "2.6#10"
+      ],
+      "n_practicals": 1,
+      "has_imagej": true,
+      "has_python": false
+    },
+    "2.7": {
+      "id": "2.7",
+      "part": "2",
+      "title": "Multidimensional processing",
+      "slug": "7-multidimensional_processing",
+      "source_dir": "chapters/2-processing/7-multidimensional_processing",
+      "concept_file": "content/2.7/concept.md",
+      "tracks": {
+        "imagej": "content/2.7/imagej.md"
+      },
+      "subpages": [],
+      "figures": [
+        "2.7#1",
+        "2.7#2",
+        "2.7#3",
+        "2.7#4"
+      ],
+      "n_practicals": 5,
+      "has_imagej": true,
+      "has_python": false
+    },
+    "3.1": {
+      "id": "3.1",
+      "part": "3",
+      "title": "From photons to pixels",
+      "slug": "1-formation_overview",
+      "source_dir": "chapters/3-fluorescence/1-formation_overview",
+      "concept_file": "content/3.1/concept.md",
+      "tracks": {},
+      "subpages": [],
+      "figures": [
+        "3.1#1"
+      ],
+      "n_practicals": 0,
+      "has_imagej": false,
+      "has_python": false
+    },
+    "3.2": {
+      "id": "3.2",
+      "part": "3",
+      "title": "Blur & the PSF",
+      "slug": "2-formation_spatial",
+      "source_dir": "chapters/3-fluorescence/2-formation_spatial",
+      "concept_file": "content/3.2/concept.md",
+      "tracks": {},
+      "subpages": [],
+      "figures": [
+        "3.2#1",
+        "3.2#2",
+        "3.2#3",
+        "3.2#4",
+        "3.2#5",
+        "3.2#6",
+        "3.2#7",
+        "3.2#8",
+        "3.2#9",
+        "3.2#10"
+      ],
+      "n_practicals": 5,
+      "has_imagej": false,
+      "has_python": false
+    },
+    "3.3": {
+      "id": "3.3",
+      "part": "3",
+      "title": "Noise",
+      "slug": "3-formation_noise",
+      "source_dir": "chapters/3-fluorescence/3-formation_noise",
+      "concept_file": "content/3.3/concept.md",
+      "tracks": {},
+      "subpages": [],
+      "figures": [
+        "3.3#1",
+        "3.3#2",
+        "3.3#3",
+        "3.3#4",
+        "3.3#5",
+        "3.3#6",
+        "3.3#7",
+        "3.3#8",
+        "3.3#9",
+        "3.3#10",
+        "3.3#11",
+        "3.3#12",
+        "3.3#13"
+      ],
+      "n_practicals": 4,
+      "has_imagej": false,
+      "has_python": false
+    },
+    "3.4": {
+      "id": "3.4",
+      "part": "3",
+      "title": "Microscopes & detectors",
+      "slug": "4-microscope_types",
+      "source_dir": "chapters/3-fluorescence/4-microscope_types",
+      "concept_file": "content/3.4/concept.md",
+      "tracks": {},
+      "subpages": [],
+      "figures": [
+        "3.4#1",
+        "3.4#2",
+        "3.4#3",
+        "3.4#4",
+        "3.4#5"
+      ],
+      "n_practicals": 4,
+      "has_imagej": false,
+      "has_python": false
+    },
+    "4.1": {
+      "id": "4.1",
+      "part": "4",
+      "title": "Beyond this book",
+      "slug": "next_steps",
+      "source_dir": "chapters/appendices/next_steps",
+      "concept_file": "content/4.1/concept.md",
+      "tracks": {},
+      "subpages": [],
+      "figures": [
+        "4.1#1",
+        "4.1#2"
+      ],
+      "n_practicals": 0,
+      "has_imagej": false,
+      "has_python": false
+    },
+    "4.2": {
+      "id": "4.2",
+      "part": "4",
+      "title": "Python Primer",
+      "slug": "python",
+      "source_dir": "chapters/appendices/python",
+      "concept_file": "content/4.2/concept.md",
+      "tracks": {},
+      "subpages": [],
+      "figures": [],
+      "n_practicals": 0,
+      "has_imagej": false,
+      "has_python": false
+    },
+    "4.3": {
+      "id": "4.3",
+      "part": "4",
+      "title": "ImageJ: Writing macros",
+      "slug": "macros",
+      "source_dir": "chapters/appendices/macros",
+      "concept_file": "content/4.3/concept.md",
+      "tracks": {},
+      "subpages": [
+        {
+          "num": "4.3.1",
+          "title": "Difference of Gaussians",
+          "file": "content/4.3.1/concept.md",
+          "figures": [
+            "4.3.1#1",
+            "4.3.1#2",
+            "4.3.1#3",
+            "4.3.1#4",
+            "4.3.1#5"
+          ]
+        },
+        {
+          "num": "4.3.2",
+          "title": "Simulating image formation",
+          "file": "content/4.3.2/concept.md",
+          "figures": [
+            "4.3.2#1",
+            "4.3.2#2"
+          ]
+        }
+      ],
+      "figures": [],
+      "n_practicals": 0,
+      "has_imagej": false,
+      "has_python": false
+    }
+  }
+}

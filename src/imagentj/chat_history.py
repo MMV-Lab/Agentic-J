@@ -92,6 +92,10 @@ class ChatHistoryManager:
         Returns a list of LangChain BaseMessage objects (or an empty list on
         failure / no history yet).
         """
+        return self.get_state_values(supervisor, thread_id).get("messages", [])
+
+    def get_state_values(self, supervisor, thread_id: str) -> dict:
+        """Return the persisted LangGraph state values for one chat thread."""
         import logging
         _log = logging.getLogger("imagentj")
         try:
@@ -101,15 +105,15 @@ class ChatHistoryManager:
             _log.debug(f"[ChatHistory] state={state!r}")
             if state is None:
                 _log.debug("[ChatHistory] state is None")
-                return []
-            msgs = state.values.get("messages", [])
-            _log.debug(f"[ChatHistory] returning {len(msgs)} messages")
-            return msgs
+                return {}
+            values = dict(state.values or {})
+            _log.debug(f"[ChatHistory] returning state keys={list(values)}")
+            return values
         except Exception as e:
             import traceback
             _log.error(f"[ChatHistory] Could not load thread {thread_id}: {e}\n{traceback.format_exc()}")
             print(f"[ChatHistory] Could not load thread {thread_id}: {e}")
-            return []
+            return {}
 
     def format_messages_as_html(self, messages: list) -> str:
         """

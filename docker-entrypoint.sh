@@ -47,6 +47,73 @@ _seed_volume "fiji_jars"    "$FIJI_HOME/jars.seed"    "$FIJI_HOME/jars"    "$FIJ
 _seed_volume "fiji_plugins" "$FIJI_HOME/plugins.seed" "$FIJI_HOME/plugins" "$FIJI_HOME/plugins/.seeded"
 _seed_volume "imagentj_home" "/home/imagentj.seed" "/home/imagentj" "/home/imagentj/.seeded"
 
+# ── Link user-provided fine-tuned Cellpose models into ~/.cellpose/models ────
+# data/fine-tuned-models is the host-writable bind mount (./data/fine-tuned-models on
+# the host) — the user drops a model file there and it becomes usable two ways:
+#   - cp.model_path = new File("/app/data/fine-tuned-models/<file>")  — works immediately,
+#     no restart needed, cellpose accepts any existing path directly.
+#   - cp.model = "<file>"  — the SAME bare-name convention as built-in models (cyto3,
+#     nucleitorch_0, ...). This is what the symlink+registration below enables: cellpose
+#     resolves a bare name by checking its built-in list plus every line in
+#     ~/.cellpose/models/gui_models.txt (cellpose/models.py get_user_models() /
+#     get_model_params()), and then expects the file to physically exist at
+#     ~/.cellpose/models/<name> — a symlink alone is not enough, gui_models.txt must list
+#     it too. Runs on every start (idempotent) so files added since the last start are
+#     picked up on the next restart.
+_FINE_TUNED_MODELS_DIR="/app/data/fine-tuned-models"
+_CELLPOSE_MODELS_DIR="/home/imagentj/.cellpose/models"
+mkdir -p "$_FINE_TUNED_MODELS_DIR" "$_CELLPOSE_MODELS_DIR"
+python3 - "$_FINE_TUNED_MODELS_DIR" "$_CELLPOSE_MODELS_DIR" <<'PYEOF'
+import sys
+from pathlib import Path
+
+src_dir, models_dir = Path(sys.argv[1]), Path(sys.argv[2])
+gui_list_path = models_dir / "gui_models.txt"
+
+existing_names = []
+if gui_list_path.exists():
+    existing_names = [l.strip() for l in gui_list_path.read_text().splitlines() if l.strip()]
+
+# Prune symlinks we created for files the user has since removed from
+# data/fine-tuned-models. Only ever touches symlinks pointing into src_dir —
+# never a real (non-symlink) model file, seeded or user-added.
+pruned = 0
+for entry in models_dir.iterdir():
+    if entry.is_symlink():
+        target = entry.resolve(strict=False)
+        if src_dir in target.parents and not target.exists():
+            entry.unlink()
+            pruned += 1
+
+linked = 0
+# Keep an existing registered name only if its file/symlink still exists — otherwise
+# a deleted fine-tuned model stays "registered" forever and cellpose fails on it with
+# a confusing missing-file error instead of a clean "unknown model" one.
+current_names = {n for n in existing_names if (models_dir / n).exists()}
+for f in (sorted(src_dir.iterdir()) if src_dir.exists() else []):
+    if not f.is_file() or f.name.startswith('.'):
+        continue
+    link = models_dir / f.name
+    if link.exists() and not link.is_symlink():
+        print(f'[entrypoint] WARNING: {f.name} already exists in .cellpose/models as a '
+              'real file — not overwriting', flush=True)
+        continue
+    try:
+        if link.is_symlink():
+            link.unlink()
+        link.symlink_to(f)
+        linked += 1
+        current_names.add(f.name)
+    except OSError as e:
+        print(f'[entrypoint] WARNING: could not link {f.name}: {e}', flush=True)
+
+if current_names != set(existing_names):
+    gui_list_path.write_text("\n".join(sorted(current_names)) + "\n")
+
+print(f'[entrypoint] fine-tuned Cellpose models: {linked} linked, {pruned} stale '
+      f'symlinks pruned, {len(current_names)} custom names registered', flush=True)
+PYEOF
+
 # ── Lock environment snapshot read-only ──────────────────────────────────────
 # The agent reads this file via check_environment() to know what's installed.
 # It must never be edited at runtime — frozen artifact of the image build.
@@ -336,26 +403,56 @@ echo "[entrypoint] Starting fluxbox window manager..."
 fluxbox &
 sleep 1
 
-# ── Start VNC server ─────────────────────────────────────────────────────────
-
-echo "[entrypoint] Starting x11vnc on display :1..."
-if [ -n "$VNC_PASSWORD" ]; then
-    mkdir -p /home/imagentj/.vnc
-    x11vnc -storepasswd "$VNC_PASSWORD" /home/imagentj/.vnc/passwd 2>/dev/null
-    x11vnc -display :1 -forever -rfbauth /home/imagentj/.vnc/passwd -shared -rfbport 5900 -quiet &
-    echo "[entrypoint] VNC started with password authentication"
-else
-    x11vnc -display :1 -forever -nopw -shared -rfbport 5900 -quiet &
-    echo "[entrypoint] WARNING: VNC started WITHOUT password (set VNC_PASSWORD env var for security)"
+# ── Unattended mode? Decide whether to run the human-watch VNC layer ─────────
+# On an HPC batch node nobody watches, and x11vnc/noVNC bind fixed ports
+# (5900/6080) that collide when several containers share a node — acute under
+# Apptainer, which shares the host network namespace. In unattended mode we skip
+# both. Xvfb + fluxbox (started above) stay up, so Fiji windows, AWT-Robot
+# plugin-dialog screenshots, napari rendering and the VLM judge all keep working
+# (they read the Xvfb framebuffer, not VNC); only the live browser view is gone.
+# Toggle: env IMAGENTJ_UNATTENDED wins; otherwise runtime.unattended in
+# imagentj_config.yaml.
+UNATTENDED="${IMAGENTJ_UNATTENDED:-}"
+if [ -z "$UNATTENDED" ]; then
+    UNATTENDED=$(python3 - <<'PY' 2>/dev/null
+import yaml
+try:
+    d = yaml.safe_load(open("/app/imagentj_config.yaml")) or {}
+    v = str((d.get("runtime") or {}).get("unattended", "")).strip().lower()
+    print("1" if v in ("1", "true", "yes", "on") else "")
+except Exception:
+    print("")
+PY
+)
 fi
-sleep 1
+case "$(printf '%s' "$UNATTENDED" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes|on) UNATTENDED=1 ;;
+    *)             UNATTENDED=0 ;;
+esac
 
-# ── Start noVNC websocket proxy ──────────────────────────────────────────────
-echo "[entrypoint] Starting noVNC on port 6080..."
-websockify --web /usr/share/novnc 6080 localhost:5900 &
-sleep 1
+# ── Start VNC server (skipped when unattended) ───────────────────────────────
+if [ "$UNATTENDED" = "1" ]; then
+    echo "[entrypoint] Unattended mode — skipping x11vnc + noVNC (Xvfb + fluxbox only; ports 5900/6080 not bound)"
+else
+    echo "[entrypoint] Starting x11vnc on display :1..."
+    if [ -n "$VNC_PASSWORD" ]; then
+        mkdir -p /home/imagentj/.vnc
+        x11vnc -storepasswd "$VNC_PASSWORD" /home/imagentj/.vnc/passwd 2>/dev/null
+        x11vnc -display :1 -forever -rfbauth /home/imagentj/.vnc/passwd -shared -rfbport 5900 -quiet &
+        echo "[entrypoint] VNC started with password authentication"
+    else
+        x11vnc -display :1 -forever -nopw -shared -rfbport 5900 -quiet &
+        echo "[entrypoint] WARNING: VNC started WITHOUT password (set VNC_PASSWORD env var for security)"
+    fi
+    sleep 1
 
-echo "[entrypoint] noVNC is listening on http://localhost:6080"
+    # ── Start noVNC websocket proxy ──────────────────────────────────────────
+    echo "[entrypoint] Starting noVNC on port 6080..."
+    websockify --web /usr/share/novnc 6080 localhost:5900 &
+    sleep 1
+
+    echo "[entrypoint] noVNC is listening on http://localhost:6080"
+fi
 
 # ── Ensure langgraph-checkpoint-sqlite is installed (needed for chat persistence) ──
 python3 -c "import langgraph.checkpoint.sqlite" 2>/dev/null || {
@@ -417,12 +514,12 @@ if command -v nvidia-smi &>/dev/null; then
 else
     echo "[entrypoint] No NVIDIA GPU device visible."
 fi
-if /opt/conda/envs/cellpose/bin/python -c "import torch,sys; sys.exit(0 if torch.cuda.is_available() else 1)" 2>/dev/null; then
+if /opt/conda/envs/cellpose/bin/python -c "import torch; assert torch.cuda.is_available(); x=torch.zeros(1, device='cuda'); torch.cuda.synchronize()" 2>/dev/null; then
     export IMAGENTJ_GPU=true
-    echo "[entrypoint] GPU acceleration ACTIVE — cellpose PyTorch sees CUDA (IMAGENTJ_GPU=true)"
+    echo "[entrypoint] GPU acceleration ACTIVE — cellpose PyTorch completed a CUDA tensor probe (IMAGENTJ_GPU=true)"
 else
     export IMAGENTJ_GPU=false
-    echo "[entrypoint] GPU acceleration INACTIVE — running on CPU (IMAGENTJ_GPU=false)"
+    echo "[entrypoint] GPU acceleration INACTIVE — cellpose CUDA tensor probe failed; running on CPU (IMAGENTJ_GPU=false)"
 fi
 
 # ── Launch the application ───────────────────────────────────────────────────

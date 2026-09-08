@@ -28,8 +28,8 @@ GMAIL_APP_PASSWORD=sntt iusy rddg mtoi
 
 | Provider | Variable | Notes |
 |----------|----------|-------|
-| **OpenAI** | `OPENAI_API_KEY` | Direct access to GPT models. Straightforward billing per token. |
-| **OpenRouter** | `OPEN_ROUTER_API_KEY` | Proxy that routes to many providers (GPT-4o, Claude, etc.). Useful if you prefer a single billing account or need model flexibility. |
+| **OpenAI** | `OPENAI_API_KEY` | Direct access to GPT models. OpenAI-only setups use `gpt-5.6-luna` through the Responses API with high reasoning for the VLM Judge. |
+| **OpenRouter** | `OPEN_ROUTER_API_KEY` | Proxy that routes to many providers. The VLM Judge uses `google/gemini-3.5-flash`; this route takes priority when both keys are present. |
 
 If neither key is set in the `.env` when the container starts, a **setup wizard** will appear in the browser before Fiji launches. You can insert the key there.
 

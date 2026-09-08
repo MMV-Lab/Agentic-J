@@ -7,10 +7,10 @@ All identifiers below are verified against the installed jar
 
 | Class | Use for | conda env |
 |-------|---------|-----------|
-| `ch.epfl.biop.wrappers.cellpose.ij2commands.Cellpose` | cellpose v3 models: `cyto3`, `cyto2`, `nuclei`, `tissuenet_cp3`, `livecell_cp3`, `bact_*`, custom | `/opt/conda/envs/cellpose` (cellpose **3.1.1.2**) |
+| `ch.epfl.biop.wrappers.cellpose.ij2commands.Cellpose` | cellpose v3 models: `cyto3`, `cyto2`, `nucleitorch_0`, `tissuenet_cp3`, `livecell_cp3`, `bact_*`, custom | `/opt/conda/envs/cellpose` (cellpose **3.1.1.2**) |
 | `ch.epfl.biop.wrappers.cellpose.ij2commands.CellposeSAM` | Cellpose-SAM model `cpsam` | `/opt/conda/envs/cellpose4` (cellpose **4.1.1**) |
 
-The verified, primary path is the `Cellpose` command with `cyto3`/`nuclei` in the
+The verified, primary path is the `Cellpose` command with `cyto3`/`nucleitorch_0` in the
 `cellpose` env. `CellposeSAM` inherits the same fields (`imp`, `env_path`, `env_type`,
 `model`, `model_path`, `verbose`, `cellpose_imp`) but targets the `cellpose4` env + `cpsam`
 model. It has **no `ch1`/`ch2`** (channel-agnostic — setting them throws
@@ -120,7 +120,7 @@ Pass the name as `cp.model`. Common, useful ones:
 |---------------|--------|
 | `cyto3` | general cells / cytoplasm (current default, robust). Has a size model → `diameter=0f` works |
 | `cyto2` | cells / cytoplasm (previous generation) |
-| `nuclei` | nuclei (fluorescence). Set `ch1=0` for a single nuclei channel |
+| `nucleitorch_0` | nuclei (fluorescence). Set `ch1=0` for a single nuclei channel |
 | `tissuenet_cp3` | tissue / multiplexed |
 | `livecell_cp3` | label-free / phase live cells |
 | `bact_phase_cp3`, `bact_fluor_cp3`, `deepbacs_cp3` | bacteria (phase / fluorescence) |

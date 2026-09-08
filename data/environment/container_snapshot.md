@@ -516,6 +516,53 @@ Generated from `pip list --format=freeze | sed 's/ @ .*//'` on 2026-04-30.
 
 ---
 
+### conda env `napari-mcp` — Python 3.11.15 (micro_sam + in-container napari MCP viewer)
+
+Added after the original 2026-04-30 snapshot (versions captured 2026-07-16). Hosts
+`micro_sam` ("Segment Anything for Microscopy") for both the interactive napari viewer
+(backend `napari`, driven via `mcp__napari_mcp__*`) and the headless batch route
+(`# imagentj-env: napari-mcp`). On the GPU build, torch/torchvision are swapped to the
+cu126 CUDA wheels so micro_sam uses the A100 (`cuda_build 12.6`, verified).
+
+| Package | Version |
+|---------|---------|
+| micro_sam | 1.8.2 |
+| torch | 2.11.0+cu126 |
+| torchvision | 0.26.0+cu126 |
+| torch_em | 0.10.0 |
+| python-elf | 0.9.2 |
+| segment-anything-py | 1.0.1 |
+| mobile_sam | 1.0 |
+| timm | 1.0.27 |
+| huggingface_hub | 1.23.0 |
+| napari | 0.7.1 |
+| napari-mcp | 0.1.0 |
+| napari-console | 0.1.4 |
+| napari-plugin-engine | 0.2.1 |
+| napari-plugin-manager | 0.1.11 |
+| napari-svg | 0.2.1 |
+| napari-metadata | 0.4.0 |
+| magicgui | 0.10.2 |
+| superqt | 0.8.2 |
+| QtPy | 2.4.3 |
+| PyQt5 | 5.15.11 |
+| vispy | 0.16.2 |
+| fastmcp | 2.14.7 |
+| mcp | 1.28.1 |
+| numpy | 2.4.4 |
+| scipy | 1.17.1 |
+| scikit-image | 0.26.0 |
+| scikit-learn | 1.9.0 |
+| tifffile | 2026.3.3 |
+| ImageIO | 2.37.3 |
+| pillow | 12.2.0 |
+| zarr | 3.1.6 |
+| pandas | 3.0.3 |
+| xarray | 2026.7.0 |
+| pooch | 1.9.0 |
+
+---
+
 ## Fiji plugins (`/opt/Fiji.app/plugins/`)
 
 | JAR | Version |

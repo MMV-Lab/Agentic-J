@@ -9,42 +9,120 @@ from docling.datamodel.base_models import InputFormat
 from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend
 
 
-def walk(dir_path: str, depth: int, max_depth: int = 5, recursive: bool = True, max_files_per_dir: int = 10) -> dict:
+_ARRAY_STORE_SUFFIXES = (".zarr", ".n5")
+
+
+def _is_array_store(dir_path: str) -> bool:
+    """Return whether a directory is a chunked array store.
+
+    Zarr/N5 internals are implementation details, not a useful project overview.
+    A single microscopy store can contain tens of thousands of chunk directories,
+    so expanding one in a tool response can exceed the model API's per-message
+    limit even when every individual directory contains very few files.
+    """
+    return os.path.basename(dir_path).lower().endswith(_ARRAY_STORE_SUFFIXES)
+
+
+def walk(
+    dir_path: str,
+    depth: int,
+    max_depth: int = 5,
+    recursive: bool = True,
+    max_files_per_dir: int = 10,
+    max_dirs_per_dir: int = 50,
+    max_total_entries: int = 500,
+    expand_array_stores: bool = False,
+    _budget: dict | None = None,
+) -> dict:
+    """Build a bounded directory tree.
+
+    The limits apply while traversing, rather than after constructing the full
+    tree.  This matters for chunked image stores: one failed BigStitcher run
+    produced 16,384 top-level Zarr directories and an 11 MB tool result.
+    """
+    if _budget is None:
+        _budget = {"remaining": max(0, int(max_total_entries))}
+
     node = {
         "name": os.path.basename(dir_path) or dir_path,
         "type": "directory",
         "children": []
     }
+
+    if not expand_array_stores and _is_array_store(dir_path):
+        node["type"] = "array_store"
+        node["children_omitted"] = True
+        node["reason"] = "chunked array-store internals are hidden by default"
+        return node
+
     if depth >= max_depth:
+        node["max_depth_reached"] = True
         return node
     try:
         entries = sorted(os.listdir(dir_path))
-    except PermissionError:
+    except OSError as exc:
         node["children"].append({
-            "name": "<permission denied>",
-            "type": "error"
+            "name": f"<{type(exc).__name__}: {exc}>",
+            "type": "error",
         })
         return node
 
+    directories = []
     files = []
     for entry in entries:
         full_path = os.path.join(dir_path, entry)
         if os.path.isdir(full_path):
-            if recursive:
-                node["children"].append(walk(full_path, depth + 1, max_depth, recursive, max_files_per_dir))
-            else:
-                node["children"].append({"name": entry, "type": "directory"})
+            directories.append(entry)
         elif os.path.isfile(full_path):
             files.append(entry)
 
-    # Add files with truncation
-    visible_files = files[:max_files_per_dir]
-    for f in visible_files:
-        node["children"].append({"name": f, "type": "file"})
+    visible_dirs = directories[:max(0, max_dirs_per_dir)]
+    emitted_dirs = 0
+    for entry in visible_dirs:
+        if _budget["remaining"] <= 0:
+            break
+        _budget["remaining"] -= 1
+        emitted_dirs += 1
+        full_path = os.path.join(dir_path, entry)
+        if recursive:
+            node["children"].append(walk(
+                full_path,
+                depth + 1,
+                max_depth,
+                recursive,
+                max_files_per_dir,
+                max_dirs_per_dir,
+                max_total_entries,
+                expand_array_stores,
+                _budget,
+            ))
+        else:
+            child_type = (
+                "array_store"
+                if not expand_array_stores and _is_array_store(full_path)
+                else "directory"
+            )
+            node["children"].append({"name": entry, "type": child_type})
 
-    hidden = len(files) - max_files_per_dir
-    if hidden > 0:
-        node["children"].append({"name": f"... and {hidden} more file(s)", "type": "truncated"})
+    omitted_dirs = len(directories) - emitted_dirs
+    if omitted_dirs > 0:
+        node["omitted_directories"] = omitted_dirs
+
+    visible_files = files[:max(0, max_files_per_dir)]
+    emitted_files = 0
+    for filename in visible_files:
+        if _budget["remaining"] <= 0:
+            break
+        _budget["remaining"] -= 1
+        emitted_files += 1
+        node["children"].append({"name": filename, "type": "file"})
+
+    omitted_files = len(files) - emitted_files
+    if omitted_files > 0:
+        node["omitted_files"] = omitted_files
+
+    if _budget["remaining"] <= 0 and (omitted_dirs > 0 or omitted_files > 0):
+        node["entry_budget_exhausted"] = True
 
     return node
 

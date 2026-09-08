@@ -24,9 +24,41 @@ def ICP_ITERATIONS = 100
 def PIXEL_TYPE = "32-bit floating point"
 def FUSION_DOWNSAMPLING = 1
 
-def xmlPath   = new File(OUTPUT_DIR, "dataset.xml").absolutePath
+def xmlPath   = null
 def outputDir = new File(OUTPUT_DIR)
 outputDir.mkdirs()
+
+// INPUT_DIR must contain only prepared tile TIFFs. Dataset artifacts from an
+// earlier attempt are not valid inputs and can confuse Automatic Loader.
+def unexpectedInputs = new File(INPUT_DIR).listFiles()?.findAll {
+    !it.name.toLowerCase().endsWith('.tif') && !it.name.toLowerCase().endsWith('.tiff')
+} ?: []
+if (unexpectedInputs) {
+    throw new IllegalStateException("Prepared tile directory contains non-TIFF artifacts: " +
+        unexpectedInputs*.name.join(', '))
+}
+
+// BigStitcher 3.0.8 direct loading requires singleton-Z prepared TIFFs when
+// phase correlation downsamples XY. Validate every tile before dataset setup;
+// project each channel with ZProjector.run(..., "max") upstream if this fails.
+def preparedTiles = new File(INPUT_DIR).listFiles()?.findAll {
+    it.name.toLowerCase().endsWith('.tif') || it.name.toLowerCase().endsWith('.tiff')
+} ?: []
+preparedTiles.each { tileFile ->
+    def tileImp = IJ.openImage(tileFile.absolutePath)
+    if (tileImp == null) {
+        throw new IllegalStateException("Could not open prepared tile: " + tileFile.absolutePath)
+    }
+    try {
+        if (tileImp.getNSlices() != 1) {
+            throw new IllegalStateException(
+                "Prepared tile must be C x 1Z x 1T before BigStitcher: " +
+                tileFile.name + " has NSlices=" + tileImp.getNSlices())
+        }
+    } finally {
+        tileImp.close()
+    }
+}
 
 // Define global optimization strategy
 final String GLOBAL_OPT_STRATEGY = "Two-Round using metadata to align unconnected Tiles"
@@ -39,8 +71,7 @@ Set<String> allowedStrategies = new HashSet<>(Arrays.asList(
 ))
 
 if (!allowedStrategies.contains(GLOBAL_OPT_STRATEGY)) {
-    IJ.error("Invalid global optimization strategy: " + GLOBAL_OPT_STRATEGY)
-    return
+    throw new IllegalStateException("Invalid global optimization strategy: " + GLOBAL_OPT_STRATEGY)
 }
 
 IJ.runMacro("setBatchMode(true);")
@@ -52,9 +83,7 @@ IJ.log("Output : " + OUTPUT_DIR)
 IJ.log("Grid   : " + TILES_X + " x " + TILES_Y + " x " + TILES_Z)
 IJ.log("=" * 60)
 
-IJ.log("\n[Step 1] Defining dataset and re-saving as HDF5...")
-
-def exportPath = new File(OUTPUT_DIR, "dataset").absolutePath
+IJ.log("\n[Step 1] Defining a virtually loaded dataset...")
 
 IJ.run("Define Multi-View Dataset",
     "define_dataset=[Automatic Loader (Bioformats based)] " +
@@ -74,32 +103,29 @@ IJ.run("Define Multi-View Dataset",
     "overlap_y_(%)=" + OVERLAP_Y + " " +
     "overlap_z_(%)=" + OVERLAP_Z + " " +
     "keep_metadata_rotation " +
-    "how_to_load_images=[Re-save as multiresolution HDF5] " +
-    "dataset_save_path=" + OUTPUT_DIR + " " +
-    "check_stack_sizes " +
-    "subsampling_factors=[{ {1,1,1}, {2,2,2}, {4,4,4} }] " +
-    "hdf5_chunk_sizes=[{ {16,16,16}, {16,16,16}, {16,16,16} }] " +
-    "timepoints_per_partition=1 setups_per_partition=0 " +
-    "use_deflate_compression " +
-    "export_path=" + exportPath)
+    "how_to_store_input_images=[Load raw data directly (no resaving)] " +
+    "load_raw_data_virtually " +
+    "metadata_save_path_(XML)=" + OUTPUT_DIR + " " +
+    "image_data_save_path=" + OUTPUT_DIR + " " +
+    "check_stack_sizes")
 
-// XML fallback selection logic AFTER Step 1
-if (!(new File(xmlPath).exists())) {
-    def fallbackFiles = new File(OUTPUT_DIR).listFiles()?.findAll { it.name.startsWith("dataset.xml~") }
-    if (fallbackFiles) {
-        def latestFallback = fallbackFiles.sort { it.lastModified() }.last()
-        xmlPath = latestFallback.absolutePath
-    }
-}
+// BigStitcher 3.0.8 may ignore dataset_save_path for virtual datasets and
+// place project_filename beside the prepared input tiles. Both are valid.
+def xmlCandidates = [
+    new File(OUTPUT_DIR, "dataset.xml"),
+    new File(INPUT_DIR, "dataset.xml")
+]
+xmlCandidates.addAll(new File(OUTPUT_DIR).listFiles()?.findAll { it.name.startsWith("dataset.xml~") } ?: [])
+xmlCandidates.addAll(new File(INPUT_DIR).listFiles()?.findAll { it.name.startsWith("dataset.xml~") } ?: [])
+def usableXml = xmlCandidates.findAll { it.exists() && it.length() > 0L }
+                             .sort { a, b -> b.lastModified() <=> a.lastModified() }
+if (usableXml) xmlPath = usableXml[0].absolutePath
 
-if (!new File(xmlPath).exists()) {
-    IJ.error("BigStitcher Pipeline",
-        "Dataset definition failed — XML not created.\n\n" +
-        "Most likely cause: GRID_TYPE has wrong trailing spaces.\n" +
-        "Fix: open Plugins › Macros › Record… and run Define Dataset\n" +
-        "manually to capture the exact grid_type string for your version.")
-    IJ.runMacro("setBatchMode(false);")
-    return
+if (xmlPath == null) {
+    throw new IllegalStateException(
+        "Dataset definition failed — XML not created. " +
+        "Verify that INPUT_DIR contains only prepared per-tile images, and that " +
+        "GRID_TYPE exactly matches the value recorded for this Fiji version.")
 }
 IJ.log("Dataset defined: " + xmlPath)
 
@@ -116,7 +142,9 @@ IJ.run("Calculate pairwise shifts ...",
     "channels=[Average Channels] " +
     "downsample_in_x=" + DOWNSAMPLE_PC + " " +
     "downsample_in_y=" + DOWNSAMPLE_PC + " " +
-    "downsample_in_z=" + DOWNSAMPLE_PC)
+    // This template is for a projected 2D tile mosaic (TILES_Z=1). A
+    // singleton Z axis must not be downsampled by the direct virtual loader.
+    "downsample_in_z=1")
 
 IJ.log("Pairwise shifts calculated.")
 

@@ -22,8 +22,18 @@ dependencies:
   - seaborn
   - matplotlib
   - matplotlib-base
+  # Grammar-of-graphics plotting (ggplot2-style) — the 'plotnine' skill. statsmodels
+  # backs geom_smooth(method="lm"/"lowess"); scikit-misc backs method="loess".
+  - plotnine
+  - statsmodels
+  - scikit-misc
   - xarray
   - tifffile
+  # Image analysis / ML (python_coder agent)
+  - scikit-image
+  - scikit-learn
+  # imageio: used by the bioimage course python demos
+  - imageio
   # LangChain / LangGraph
   - langchain
   - langgraph
@@ -50,8 +60,23 @@ dependencies:
       - anthropic
       - antlr4-python3-runtime
       - beautifulsoup4
+      # Big-FISH: non-deep-learning smFISH/puncta spot detection (LoG + local maxima)
+      # whose intensity threshold is chosen AUTOMATICALLY by the elbow method, so the
+      # agent supplies only physical values (voxel size + spot radius in nm). Pulls
+      # `mrc` as its only new transitive dep; every other requirement is a lower bound
+      # already satisfied by this env (verified: no downgrades on install).
+      - big-fish
+      # scientific image reading used by the bioimage course (chapters 1.5/1.6)
+      - bioio
+      - bioio-ome-tiff
+      - bioio-tifffile
       - click
       - colorlog
+      # CellProfiler's measurement engine as a library. MUST come from GitHub —
+      # the PyPI 'cp-measure' exposes the older featurize() API. Builds mahotas
+      # from sdist (no cp313 wheel exists) and downgrades pillow to <12 via
+      # centrosome; both verified harmless for pyimagej/matplotlib/seaborn.
+      - cp_measure @ git+https://github.com/afermg/cp_measure.git
       - dataclasses-json
       - daytona
       - ddgs

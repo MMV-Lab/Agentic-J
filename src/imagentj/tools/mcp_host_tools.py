@@ -521,12 +521,43 @@ def _make_host_tool(
     args_schema = _schema_to_args_model(public_name, mcp_tool.get("input_schema"))
 
     def invoke_mcp_tool(**kwargs: Any) -> dict:
-        return _run_async(
-            _with_timeout(
-                _call_server_tool(server_name, server_config, upstream_name, kwargs),
-                _tool_timeout_seconds(),
+        # A failure here MUST come back as a tool RESULT, never as a raised
+        # exception. LangGraph's ToolNode re-raises, which unwinds the whole
+        # session
+        timeout_seconds = _tool_timeout_seconds()
+        try:
+            return _run_async(
+                _with_timeout(
+                    _call_server_tool(server_name, server_config, upstream_name, kwargs),
+                    timeout_seconds,
+                )
             )
-        )
+        except (asyncio.TimeoutError, TimeoutError):
+            return {
+                "status": "error",
+                "error_type": "timeout",
+                "server_name": server_name,
+                "tool_name": upstream_name,
+                "timeout_seconds": timeout_seconds,
+                "message": (
+                    f"`{public_name}` did not return within {timeout_seconds}s and was "
+                    "abandoned by the client. IMPORTANT: the call was NOT cancelled — it "
+                    "may still be running inside the MCP server, so re-issuing the SAME "
+                    "call may compete with it. Do not simply retry unchanged. Either work "
+                    "on a smaller region/fewer slices, move heavy compute to "
+                    "python_data_analyst (supervised, far larger budget) instead of the "
+                    "MCP path, or raise IMAGENTJ_MCP_TOOL_TIMEOUT_SECONDS if the operation "
+                    "is legitimately this slow."
+                ),
+            }
+        except Exception as exc:
+            return {
+                "status": "error",
+                "error_type": type(exc).__name__,
+                "server_name": server_name,
+                "tool_name": upstream_name,
+                "message": f"{type(exc).__name__}: {exc}",
+            }
 
     invoke_mcp_tool.__name__ = f"invoke_{public_name}"
     return StructuredTool.from_function(

@@ -1,0 +1,20 @@
+{
+  "source_repo": "https://github.com/bioimagebook/bioimagebook.github.io",
+  "source_commit": "a017bbc2656a747ab3c87e5d721e9897881ed4c2",
+  "license": "CC-BY 4.0",
+  "generated_at": "2026-07-02T14:35:45Z",
+  "stats": {
+    "parts": 5,
+    "chapters": 22,
+    "figures_total": 217,
+    "figures_static": 81,
+    "figures_generated_pending_render": 0,
+    "practicals": 73,
+    "assets_copied": 96,
+    "python_code_examples": 84,
+    "figures_generated_rendered": 136
+  },
+  "missing_assets": [],
+  "unhandled_directives": {},
+  "figures_harvested_at": "2026-07-02T14:41:16Z"
+}

@@ -37,6 +37,11 @@ checkpoints*
 /data/learned/.lintcursor
 # don't push the verified recipe scripts (kept locally); ship only the empty dir
 /data/learned/recipes/code/*
+# fine-tuned-models: ship the folder + README as a discoverable drop point, but
+# never commit a user's actual (often large, binary) model files.
+!/data/fine-tuned-models/
+/data/fine-tuned-models/*
+!/data/fine-tuned-models/README.md
 
 
 .env

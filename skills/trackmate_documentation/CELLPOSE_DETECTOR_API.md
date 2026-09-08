@@ -67,8 +67,27 @@ instead of String) raises `IllegalArgumentException` from `process()`.
 | `TARGET_CHANNEL` | **String** | `"0"` | 0-based channel index, **as a String**. Passing an `Integer` causes `IllegalArgumentException: 'Target channel' expects String. Got Integer`. |
 | `OPTIONAL_CHANNEL_2` | **String** | `"0"` | Second channel (nuclei hint for cyto3) as String; `"0"` to skip. |
 | `CELL_DIAMETER` | double | `30.0` | Expected cell diameter **in physical units** (µm if calibrated). Use `30.0d` literal in Groovy — bare `30.0` is `BigDecimal` and will fail at `process()`. |
-| `USE_GPU` | boolean | `true` | Default is **true**; set `false` for CPU. Falls back silently if GPU is unavailable. |
+| `USE_GPU` | boolean | `true` | Plugin default is **true**, but it may fall back silently. Do not trust the default: run the CUDA execution preflight below and pass its result. |
 | `SIMPLIFY_CONTOURS` | boolean | `true` | Smooth/simplify mask outlines |
+
+### GPU selection and preflight
+
+Use a tri-state override in generated workflows:
+
+- `null`: auto-select GPU only when the actual Cellpose environment completes a
+  CUDA tensor allocation and synchronization; otherwise use CPU.
+- `true`: require that CUDA preflight to pass; abort rather than silently running
+  a long job on CPU.
+- `false`: explicitly force CPU.
+
+Do not infer Cellpose GPU support from `nvidia-smi`, a visible device node, or
+the JVM. Probe through the same micromamba shim and environment that
+TrackMate-Cellpose invokes. `torch.cuda.is_available()` is necessary but not
+sufficient, so also allocate a tensor and call `torch.cuda.synchronize()`.
+The canonical bounded implementation is in
+[`GROOVY_WORKFLOW_CELLPOSE_GENERIC.groovy`](GROOVY_WORKFLOW_CELLPOSE_GENERIC.groovy).
+Keep its `useGpuOverride = null` default unless the user explicitly requests CPU
+or requires GPU.
 
 ### Minimal Groovy example
 
@@ -81,10 +100,19 @@ import fiji.plugin.trackmate.cellpose.CellposeDetectorFactory
 import fiji.plugin.trackmate.tracking.jaqaman.SparseLAPTrackerFactory
 import fiji.plugin.trackmate.features.FeatureFilter
 import ij.IJ
+import java.util.concurrent.TimeUnit
 
 def imp = IJ.getImage()
 def model = new Model()
 model.setLogger(Logger.IJ_LOGGER)
+
+def cudaProc = new ProcessBuilder([
+    '/usr/local/opt/micromamba/bin/micromamba', 'run', '-n', 'base', 'python', '-c',
+    "import torch; assert torch.cuda.is_available(); x=torch.zeros(1, device='cuda'); torch.cuda.synchronize()"
+] as String[]).redirectErrorStream(true).start()
+boolean cudaFinished = cudaProc.waitFor(60L, TimeUnit.SECONDS)
+if (!cudaFinished) cudaProc.destroyForcibly()
+boolean useGpu = cudaFinished && cudaProc.exitValue() == 0
 
 def settings = new Settings(imp)
 settings.detectorFactory = new CellposeDetectorFactory()
@@ -96,7 +124,7 @@ settings.detectorSettings = [
     'TARGET_CHANNEL'           : '0',            // String, 0-based
     'OPTIONAL_CHANNEL_2'       : '0',            // String
     'CELL_DIAMETER'            : 30.0d,          // Double — bare 30.0 is BigDecimal
-    'USE_GPU'                  : false,
+    'USE_GPU'                  : useGpu,         // result of the bounded CUDA preflight above
     'SIMPLIFY_CONTOURS'        : true,
 ]
 settings.initialSpotFilterValue = 0.0
@@ -203,7 +231,7 @@ settings.detectorSettings = [
     'TARGET_CHANNEL'           : '0',
     'OPTIONAL_CHANNEL_2'       : '0',
     'CELL_DIAMETER'            : 30.0d,
-    'USE_GPU'                  : false,
+    'USE_GPU'                  : useGpu,         // result of the bounded CUDA preflight above
     'SIMPLIFY_CONTOURS'        : true,
     // Advanced-only keys:
     'FLOW_THRESHOLD'           : 0.4d,
@@ -228,7 +256,7 @@ when `CELLPOSE_MODEL = 'cpsam'`. Lives in
 | `CELLPOSE_MODEL_FILEPATH` | String | `""` | Custom model path; `""` for the pretrained `cpsam`. |
 | `PRETRAINED_OR_CUSTOM` | String | `CELLPOSE_MODEL` | `"CELLPOSE_MODEL"` or `"CUSTOM_MODEL"`. |
 | `TARGET_CHANNEL` | **String** | `"0"` | 0-based channel index, as String. |
-| `USE_GPU` | boolean | `true` | Enable GPU. |
+| `USE_GPU` | boolean | `true` | Enable GPU. Probe the `cellpose4` environment before enabling it; do not reuse a Cellpose 3 probe result. |
 | `SIMPLIFY_CONTOURS` | boolean | `true` | Smooth outlines. |
 
 (There is no `OPTIONAL_CHANNEL_2` or `CELL_DIAMETER` for SAM — cpsam does not
@@ -244,7 +272,7 @@ settings.detectorSettings = [
     'CELLPOSE_MODEL_FILEPATH'  : '',
     'PRETRAINED_OR_CUSTOM'     : 'CELLPOSE_MODEL',
     'TARGET_CHANNEL'           : '0',
-    'USE_GPU'                  : false,
+    'USE_GPU'                  : useGpu,         // result of a bounded CUDA preflight in cellpose4
     'SIMPLIFY_CONTOURS'        : true,
 ]
 ```
@@ -292,6 +320,8 @@ For Groovy callers this means:
 Verify the shim end-to-end:
 ```bash
 /usr/local/opt/micromamba/bin/micromamba run -n base cellpose --version
+/usr/local/opt/micromamba/bin/micromamba run -n base python -c \
+  "import torch; assert torch.cuda.is_available(); x=torch.zeros(1, device='cuda'); torch.cuda.synchronize(); print(torch.cuda.get_device_name(torch.cuda.current_device()))"
 ```
 
 ### Pitfall C1.5 — Groovy `BigDecimal` literals fail tracker validation

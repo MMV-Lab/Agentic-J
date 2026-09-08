@@ -407,6 +407,14 @@ def recall(query: str, language: str = "Groovy") -> str:
     only inputs); a merely related recipe is a template to adapt. Empty when nothing
     matches.
     """
+    # The model does not always honour the `str` annotation — it may send a list of
+    # keywords. LangChain passes that straight through, so every downstream regex
+    # then raises TypeError and takes the agent turn down with it. Coerce instead.
+    if not isinstance(query, str):
+        query = " ".join(str(q) for q in query) if isinstance(query, (list, tuple)) else str(query)
+    if not isinstance(language, str):
+        language = str(language)
+
     want = _tokens(query)
     if not want:
         return ""
@@ -444,6 +452,32 @@ def _loose(a: str, b: str) -> bool:
     check, so no LLM call is made when nothing is even lexically close."""
     return len(a) >= 4 and len(b) >= 4 and (a[:4] == b[:4] or a in b or b in a)
 
+def _message_text(content) -> str:
+    """Normalize a LangChain message's `.content` to plain text.
+
+    `.content` is NOT always a str. Reasoning models on the Responses API (this
+    curator runs on gpt-5.4-mini there) return a LIST of content blocks, e.g.
+    [{"type": "text", "text": "NONE"}]. Feeding that straight to `re.split` raises
+    `TypeError: expected string or bytes-like object, got 'list'`, which escapes the
+    recall tool and ends the whole agent turn — observed killing a run mid-task.
+
+    A twin of this lives in imagej_tools._message_text; it is duplicated rather than
+    imported because that module pulls in imagej_context, which configures and starts
+    the JVM at import time — far too heavy for the learned-memory path.
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict) and isinstance(block.get("text"), str):
+                parts.append(block["text"])
+        return "".join(parts)
+    return str(content or "")
+
+
 def _deep_recall(query: str, want: set, language: str, cap: int = 8) -> str:
     """Gated LLM fallback for recall: only runs when exact scoring found nothing AND a
     lexically-near candidate exists (_loose). Shows the curator LLM the near candidates
@@ -472,7 +506,7 @@ def _deep_recall(query: str, want: set, language: str, cap: int = 8) -> str:
             f"TASK/ERROR: {query}\n\nCANDIDATES:\n{listing}").content
     except Exception:
         return ""
-    picked = {h.strip() for h in re.split(r"[,\s]+", ans) if h.strip()}
+    picked = {h.strip() for h in re.split(r"[,\s]+", _message_text(ans)) if h.strip()}
     hits = [_body(b) for b in candidates if _hash_of(b) in picked]
     return ("RELEVANT (semantic match — adapt as needed):\n" + "\n".join(hits[:RECALL_K])) if hits else ""
 

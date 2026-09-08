@@ -8,7 +8,7 @@
  * WHEN TO USE THIS (vs GROOVY_WORKFLOW_CELLPOSE_SEGMENTATION.groovy):
  *   - Use THIS for the cpsam (Cellpose-SAM, Cellpose 4) model — newest, most general,
  *     highest accuracy. Best with a GPU.
- *   - Use the OTHER workflow for the v3 models (cyto3, nuclei, cyto2, tissuenet, ...),
+ *   - Use the OTHER workflow for the v3 models (cyto3, nucleitorch_0, cyto2, tissuenet, ...),
  *     which are much faster on CPU.
  *
  * KEY DIFFERENCES from the v3 workflow (do not copy v3 fields here):
@@ -36,7 +36,7 @@
  *
  * PERFORMANCE: the SAM transformer is very slow on CPU (many minutes even for a small
  * image). Add "--use_gpu" to flags on a GPU deployment. On CPU-only, prefer the v3
- * workflow with cyto3/nuclei unless you specifically need cpsam accuracy.
+ * workflow with cyto3/nucleitorch_0 unless you specifically need cpsam accuracy.
  *
  * Requires (already configured in this image): BIOP wrapper jar on the classpath,
  * cellpose4 conda env, and BASH_ENV=/opt/conda/etc/profile.d/conda.sh so the wrapper's

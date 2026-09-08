@@ -19,6 +19,8 @@
  *       /usr/local/opt/micromamba/bin/micromamba run -n base cellpose --version
  *     (the shim re-routes -n base → the real cellpose env). Verify with the
  *     command above before running this script.
+ *   - GPU selection is automatic by default and requires a successful CUDA
+ *     tensor allocation in that same Cellpose environment.
  *
  * INPUT
  *   - Active image in Fiji (preferred), OR set imageName to a specific open window title.
@@ -36,6 +38,7 @@
  * CORE PARAMETERS (edit below)
  *   - cellposeModel: default "cyto3"; common choices: "cyto3", "nucleitorch_0", "cyto2"
  *     (NOTE: legacy "cyto" is REJECTED by this build — see CELLPOSE_DETECTOR_API.md.)
+ *   - useGpuOverride: null auto-selects; true requires GPU; false forces CPU.
  *   - targetChannel/optionalChannel, cellDiameter, linkingDist, gapClosingDist, maxFrameGap
  *
  * TROUBLESHOOTING
@@ -63,6 +66,7 @@ import java.io.File
 import java.io.FileWriter
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
+import java.util.concurrent.TimeUnit
 import java.util.regex.Pattern
 
 // ── PARAMETERS ───────────────────────────────────────────────────────────────
@@ -75,7 +79,9 @@ def optionalChannel    = 0
 def cellDiameter       = 30.0d
 def cellposeModel      = 'cyto3'
 def customModelPath    = ''
-def useGpu             = false
+// null = auto-detect CUDA in the actual Cellpose env; true = require GPU;
+// false = explicitly force CPU. Keep null unless the user requests an override.
+Boolean useGpuOverride = null
 def simplifyContours   = true
 
 def linkingDist         = 40.0d
@@ -93,6 +99,19 @@ final String outputLabelTiffPath= '/app/data/projects/trackmate_cellpose_project
 
 boolean overallSuccess = false
 boolean workflowSuccess = false
+boolean useGpu = false
+
+// Run a small, bounded backend check. Using the micromamba shim here guarantees
+// that the probe and TrackMate-Cellpose execute in the same conda environment.
+def runPreflightCommand = { List<String> command, long timeoutSeconds ->
+    def proc = new ProcessBuilder(command as String[]).redirectErrorStream(true).start()
+    boolean finished = proc.waitFor(timeoutSeconds, TimeUnit.SECONDS)
+    if (!finished) {
+        proc.destroyForcibly()
+        return [finished: false, exitCode: -1, output: 'timed out after ' + timeoutSeconds + 's']
+    }
+    return [finished: true, exitCode: proc.exitValue(), output: proc.inputStream.getText('UTF-8').trim()]
+}
 
 try {
     ImagePlus imp = null
@@ -113,6 +132,46 @@ try {
         return
     }
 
+    // Verify both the Cellpose executable and real CUDA execution before loading
+    // the movie into TrackMate. torch.cuda.is_available() alone is insufficient:
+    // the tensor allocation + synchronize catches unusable drivers/devices.
+    final List<String> cellposeEnvCommand = [
+        '/usr/local/opt/micromamba/bin/micromamba', 'run', '-n', 'base'
+    ]
+    def versionCheck
+    try {
+        versionCheck = runPreflightCommand(cellposeEnvCommand + ['cellpose', '--version'], 60L)
+    } catch (Exception e) {
+        IJ.log('[ERROR] Cellpose backend preflight could not start: ' + e.getMessage())
+        println('FINAL STATUS: FAILURE - Cellpose backend unavailable.')
+        return
+    }
+    if (!versionCheck.finished || versionCheck.exitCode != 0) {
+        IJ.log('[ERROR] Cellpose backend preflight failed: ' + versionCheck.output)
+        println('FINAL STATUS: FAILURE - Cellpose backend unavailable.')
+        return
+    }
+    IJ.log('[INFO] Cellpose backend preflight passed: ' + versionCheck.output)
+
+    final String cudaProbeCode = "import torch; assert torch.cuda.is_available(), 'torch.cuda.is_available() is false'; x=torch.zeros(1, device='cuda'); torch.cuda.synchronize(); print('CUDA_DEVICE_COUNT=' + str(torch.cuda.device_count())); print('CUDA_DEVICE_NAME=' + torch.cuda.get_device_name(torch.cuda.current_device()))"
+    def cudaCheck
+    try {
+        cudaCheck = runPreflightCommand(cellposeEnvCommand + ['python', '-c', cudaProbeCode], 60L)
+    } catch (Exception e) {
+        cudaCheck = [finished: false, exitCode: -1, output: e.getMessage()]
+    }
+    boolean cudaUsable = cudaCheck.finished && cudaCheck.exitCode == 0
+    IJ.log((cudaUsable ? '[INFO]' : '[WARN]') + ' Cellpose CUDA preflight: ' + (cudaUsable ? 'PASSED' : 'UNAVAILABLE') + '. ' + cudaCheck.output)
+
+    if (useGpuOverride == Boolean.TRUE && !cudaUsable) {
+        IJ.log('[ERROR] GPU was explicitly required, but the Cellpose CUDA preflight failed. Refusing silent CPU fallback.')
+        println('FINAL STATUS: FAILURE - Required Cellpose GPU unavailable.')
+        return
+    }
+    useGpu = (useGpuOverride == null) ? cudaUsable : useGpuOverride.booleanValue()
+    IJ.log('[INFO] TrackMate-Cellpose execution device: ' + (useGpu ? 'GPU' : 'CPU') +
+        (useGpuOverride == null ? ' (auto-selected)' : ' (explicit override)'))
+
     def imp2 = imp.duplicate()
 
     IJ.log('[INFO] Processing image: ' + imp.getTitle())
@@ -128,22 +187,6 @@ try {
     def model = new Model()
     model.setLogger(Logger.IJ_LOGGER)
     def settings = new Settings(imp)
-
-    // Verify the micromamba shim can reach cellpose before we hand off to TrackMate.
-    try {
-        String[] cmd = ['/usr/local/opt/micromamba/bin/micromamba', 'run', '-n', 'base', 'cellpose', '--version'] as String[]
-        IJ.log('[INFO] Cellpose preflight: ' + cmd.join(' '))
-        def proc = new ProcessBuilder(cmd).redirectErrorStream(true).start()
-        def outText = proc.inputStream.getText('UTF-8')
-        int exitCode = proc.waitFor()
-        if (exitCode != 0) {
-            IJ.log('[WARN] Cellpose preflight failed (exit=' + exitCode + '). Output: ' + (outText == null ? '' : outText.trim()))
-        } else {
-            IJ.log('[INFO] Cellpose version: ' + (outText == null ? '' : outText.trim()))
-        }
-    } catch (Exception e) {
-        IJ.log('[WARN] Cellpose preflight exception: ' + e.getMessage())
-    }
 
     settings.detectorFactory = new CellposeDetectorFactory()
     settings.detectorSettings = [

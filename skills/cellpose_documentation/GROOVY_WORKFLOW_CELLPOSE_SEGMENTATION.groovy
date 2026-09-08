@@ -37,7 +37,7 @@ import ij.process.ImageConverter
 def imagePath = "/app/data/.../input.tif"          // "" to use the currently active image
 def outputDir = "/app/data/.../cellpose_out"
 def envPath   = "/opt/conda/envs/cellpose"          // cellpose v3.1.1.2 (use cellpose4 + CellposeSAM for cpsam)
-def model     = "cyto3"                             // or "nuclei", "cyto2", "tissuenet_cp3", ... (see SCRIPT_API.md)
+def model     = "cyto3"                             // or "nucleitorch_0", "cyto2", "tissuenet_cp3", ... (see SCRIPT_API.md)
 float diameter = 30f                                // expected object diameter in px; 0f = auto (cyto* only)
 int   ch1     = 0                                   // channel to segment (0 = grayscale)
 int   ch2     = 0                                   // optional nucleus channel (0 = none)

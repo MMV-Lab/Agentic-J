@@ -85,7 +85,11 @@ def inspect_folder_tree(
     path: str,
     recursive: bool = True,
     max_depth: int = 5,
-    max_files_per_dir: int = 10
+    max_files_per_dir: int = 10,
+    max_dirs_per_dir: int = 50,
+    max_total_entries: int = 500,
+    max_output_chars: int = 50_000,
+    expand_array_stores: bool = False,
 ) -> str:
     """
     Inspects a folder and returns its subfolder structure and file names.
@@ -95,6 +99,10 @@ def inspect_folder_tree(
         recursive: Whether to recurse into subfolders.
         max_depth: Maximum depth to traverse (root = depth 0).
         max_files_per_dir: Maximum number of files to list per directory before truncating.
+        max_dirs_per_dir: Maximum number of subdirectories to list per directory.
+        max_total_entries: Maximum total file/directory entries in the returned tree.
+        max_output_chars: Hard character limit for the serialized result.
+        expand_array_stores: Whether to recurse into .zarr/.n5 chunk stores. Off by default.
     Returns:
         A JSON-like string describing the folder tree.
     """
@@ -103,10 +111,46 @@ def inspect_folder_tree(
         return f"ERROR: Path does not exist: {root}"
     if not os.path.isdir(root):
         return f"ERROR: Path is not a directory: {root}"
-    tree = walk(root, depth=0, max_depth=max_depth, recursive=recursive,
-                max_files_per_dir=max_files_per_dir)
-    import json
-    return json.dumps(tree, indent=2)
+    # Clamp model-controlled values to keep this inspection tool safe even when a
+    # caller requests an accidentally enormous traversal.
+    max_depth = max(0, min(int(max_depth), 20))
+    max_files_per_dir = max(0, min(int(max_files_per_dir), 1_000))
+    max_dirs_per_dir = max(0, min(int(max_dirs_per_dir), 1_000))
+    max_total_entries = max(1, min(int(max_total_entries), 10_000))
+    max_output_chars = max(2_000, min(int(max_output_chars), 100_000))
+
+    tree = walk(
+        root,
+        depth=0,
+        max_depth=max_depth,
+        recursive=recursive,
+        max_files_per_dir=max_files_per_dir,
+        max_dirs_per_dir=max_dirs_per_dir,
+        max_total_entries=max_total_entries,
+        expand_array_stores=expand_array_stores,
+    )
+    serialized = json.dumps(tree, indent=2, ensure_ascii=False)
+    if len(serialized) <= max_output_chars:
+        return serialized
+
+    # Keep the response valid JSON if unusually long names still push a bounded
+    # tree over the character budget. The preview is intentionally a JSON string,
+    # not a syntactically broken prefix masquerading as the full tree.
+    preview = serialized[:max_output_chars]
+    payload = {
+        "type": "truncated_folder_tree",
+        "root": root,
+        "original_chars": len(serialized),
+        "max_output_chars": max_output_chars,
+        "message": "Narrow the path or lower traversal depth to inspect omitted entries.",
+        "preview": preview,
+    }
+    limited = json.dumps(payload, indent=2, ensure_ascii=False)
+    while len(limited) > max_output_chars and preview:
+        preview = preview[:max(0, len(preview) - (len(limited) - max_output_chars) - 64)]
+        payload["preview"] = preview
+        limited = json.dumps(payload, indent=2, ensure_ascii=False)
+    return limited[:max_output_chars]
 
 
 @tool("smart_file_reader")
@@ -116,6 +160,12 @@ def smart_file_reader(file_path: str):
 
     Use this tool when a user provides a new file (PDF, TXT, PY, IPYNB, groovy) and asks
     questions that require information contained within that specific file.
+
+    Read a given file at most ONCE. Its content does not change while you work, so a
+    second read returns byte-identical output and only wastes a turn. In particular,
+    NEVER read back a file you just wrote in order to 'verify' it — the writing tool's
+    return value is the confirmation, and re-reading your own output is the classic way
+    an agent falls into a save→read→save loop that never terminates.
 
     Logic:
     - Small files (<15KB or <3 pages): Returns 'context' type. You must prepend
@@ -386,6 +436,11 @@ def save_markdown(file_path: str, content: str) -> dict:
     Writes a markdown string to a .md file at the specified absolute path.
     Creates any missing parent directories automatically.
 
+    A returned success=True IS the confirmation that the file is on disk with the
+    content you supplied. Do NOT read the file back to verify it, and do NOT write
+    it a second time — that save→read→save cycle is self-perpetuating and never
+    converges. Write once, trust the return value, move on.
+
     Args:
         file_path (str): Absolute path for the output file, e.g.
                          '/app/data/project_name/QA_Checklist_Report.md'
@@ -432,4 +487,3 @@ def save_markdown(file_path: str, content: str) -> dict:
             "error": str(e),
         }
     
-

@@ -350,27 +350,30 @@
     "update_site_url": "https://sites.imagej.net/BIG-EPFL/",
     "requires_restart": true,
     "documentation_url": "http://bigwww.epfl.ch/thevenaz/stackreg/",
-    "description": "StackReg recursively registers a 2D image stack by aligning each slice to the previous one using a chosen geometric transform, with the current slice as the global anchor, via TurboReg.",
+    "description": "TurboReg performs intensity-based pairwise registration of one 2D source image to a fixed 2D target using a rigid or affine transform (translation, rigid body, scaled rotation, affine, or bilinear); its companion StackReg applies the same engine slice-to-slice across a stack using the current slice as the anchor.",
     "category": "registration",
     "tags": [
       "registration",
       "alignment",
+      "pairwise",
+      "two-image",
       "stack",
       "turboreg",
+      "rigid",
       "translation",
       "rigid-body",
       "affine",
       "scaled-rotation"
     ],
-    "input_data": "2D ImageJ images or image stacks of admissible types (all data types except RGB-stack and HSB-stack); stacks of RGB color images are admissible.",
-    "output_data": "Replaces the original image/stack in-place with the registered result (same name and type).",
-    "use_when": "Use it to align a 2D image or stack by propagating translation, rigid body, scaled rotation, or affine transforms from slice to slice using the current slice as the anchor.",
-    "do_not_use_when": "Do not use it if TurboReg is not installed, if the input is an RGB-stack or HSB-stack, or if you need bilinear or non-rigid/elastic registration.",
+    "input_data": "Either two separate 2D images — a moving source and a fixed target (TurboReg pairwise) — or a single 2D image/stack (StackReg); admissible types are all except RGB-stack and HSB-stack, and stacks of RGB color images are admissible.",
+    "output_data": "TurboReg returns the registered source as a new float image the size of the target; StackReg replaces the original stack in-place with the registered result (same name and type).",
+    "use_when": "Use it to align two 2D images (a source to a target, via TurboReg) or a stack (via StackReg) with a rigid or affine transform — translation, rigid body, scaled rotation, or affine. Prefer it over elastic/non-rigid registration whenever the misalignment is a whole-field shift, rotation, or tilt (e.g. a sample re-mounted on the microscope between two acquisitions), and ALWAYS when the registered image feeds quantitative intensity or ratio measurement, because a rigid/affine transform preserves pixel intensities where a B-spline warp would locally resample them. The recovered transform can be reused to move additional channels via -transform.",
+    "do_not_use_when": "Do not use it if TurboReg is not installed, if the input is an RGB-stack or HSB-stack, or if the distortion is genuinely non-rigid/elastic and a rigid or affine transform cannot capture it (use bUnwarpJ instead).",
     "typical_use_cases": [
-      "Aligning serial histology sections in a stack using an anchor slice",
-      "Correcting drift in a time-lapse stack using translation or rigid-body transforms",
-      "Registering a stack with gradual rotation and scale changes between consecutive slices",
-      "Aligning a stack of RGB color images by estimating geometry from a grayscale PCA-based representation"
+      "Aligning two images of the same field acquired before and after a processing step using a rigid-body or affine transform, then reusing the transform on the other channels",
+      "Registering a moving 2D source image to a fixed 2D target for quantitative comparison without warping intensities",
+      "Correcting drift in a time-lapse stack using translation or rigid-body transforms (StackReg)",
+      "Aligning serial histology sections in a stack using an anchor slice (StackReg)"
     ]
   },
   {
@@ -393,8 +396,8 @@
     ],
     "input_data": "Two open 2D images (8-, 16-, 32-bit grayscale or RGB); optionally point selections/landmarks, polygon masks, or image+mask provided as a 2-slice stack (slice 1 image, slice 2 mask); can also load saved transformation/landmark files.",
     "output_data": "Registered (deformed) images; in Accurate/Fast mode two result stacks (source→target and target→source) each containing the warped image, the fixed image, and a warped mask, plus a Results window (and optionally deformation field/grid and logs in verbose mode).",
-    "use_when": "Use it when two 2D images need non-rigid alignment due to local elastic distortions and you want a B-spline warp optionally constrained by landmarks and/or masks.",
-    "do_not_use_when": "Do not use it for 3D/volumetric registration or when a rigid/affine transform is sufficient.",
+    "use_when": "Use it when two 2D images need non-rigid alignment due to genuine local elastic distortions (the field warps differently in different regions) and you want a B-spline warp optionally constrained by landmarks and/or masks.",
+    "do_not_use_when": "Do not use it for 3D/volumetric registration, or when a rigid/affine transform is sufficient — e.g. the images differ only by a whole-field shift, rotation, or tilt, where TurboReg/StackReg is the correct choice. Also avoid it when the registered image will feed quantitative intensity or ratio measurement, because the elastic B-spline warp locally resamples and redistributes pixel intensities and can bias per-object measurements; use a rigid/affine registration (TurboReg/StackReg) instead.",
     "typical_use_cases": [
       "Non-rigidly aligning serial 2D tissue sections with local warping",
       "Registering 2D images with different distortions using landmark constraints",

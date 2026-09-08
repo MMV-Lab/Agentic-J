@@ -40,6 +40,21 @@ CHATS_DIR = Path(os.environ.get("CHAT_DATA_PATH", "/app/data/chats"))
 PRICE_TABLE: dict[str, tuple[float, float, float]] = {
     # model-name-substring                          input    output  cache_factor
     # cache_factor = fraction of p_in charged for cached tokens (None = no caching)
+    #
+    # Keys match as substrings, LONGEST KEY FIRST (see _price_for_model), so
+    # "gpt-5.4-mini" wins over "gpt-5.4" no matter what order they appear in here.
+    # Prefer UNPREFIXED keys: the tracker sees the provider prefix stripped on
+    # OpenAI-direct installs ("gpt-5.4") but intact via OpenRouter
+    # ("openai/gpt-5.4"), and a bare key matches both spellings.
+    #
+    # ── models this deployment configures (imagentj_config.yaml) ──────────────
+    # Rates verified 2026-07-29 against developers.openai.com/api/docs/pricing
+    # and openrouter.ai. Cached input is 10% of input on all of them -> 0.10.
+    "gpt-5.4-mini":              (0.75,   4.50,  0.10),  # curator / Librarian
+    "gpt-5.4-nano":              (0.20,   1.25,  0.10),  # nano fast-path
+    "gpt-5.4":                   (2.50,  15.00,  0.10),  # supervisor
+    "gpt-5.3-codex":             (1.75,  14.00,  0.10),  # worker + analyst
+    "gemini-3.5-flash":          (1.50,   9.00,  0.10),  # vision judge
     "gpt-4o-mini":               (0.15,   0.60,  0.50),
     "gpt-4o":                    (2.50,  10.00,  0.50),
     "gpt-4.1-nano":              (0.10,   0.40,  0.25),
@@ -47,10 +62,17 @@ PRICE_TABLE: dict[str, tuple[float, float, float]] = {
     "gpt-4.1":                   (2.00,   8.00,  0.25),
     "o4-mini":                   (1.10,   4.40,  0.50),
     "o4":                        (10.00, 40.00,  0.50),
-    "openai/gpt-5-nano":         (0.05,   0.40,  0.50),
-    "openai/gpt-5.2":            (1.75,  14.00,  0.50),
-    "openai/gpt-5.3-codex":      (1.75,  14.00,  0.50),
-    "openai/gpt-5":              (2.00,  16.00,  0.50),  # 5.x fallback
+    # Bare keys, not "openai/…": a prefixed key is LONGER than the bare key for a
+    # more specific model, so "openai/gpt-5" used to shadow "gpt-5.4" under
+    # longest-first matching. Bare keys match both spellings and sort correctly.
+    "gpt-5-nano":                (0.05,   0.40,  0.50),
+    "gpt-5.2":                   (1.75,  14.00,  0.50),
+    # Verified live against openrouter.ai/api/v1/models on 2026-08-10: prompt
+    # $0.10/Mtok, completion $0.60/Mtok, cache read $0.01/Mtok. The previous
+    # (1.00, 6.00) was 10x high on both, so every estimated cost for this model
+    # was inflated by an order of magnitude.
+    "gpt-5.6-luna":              (0.10,   0.60,  0.10),
+    "gpt-5":                     (1.25,  10.00,  0.10),  # 5.x fallback (unknown 5.x)
     "default":                   (1.00,   3.00,  None),  # fallback, no cache discount
     "gemini-3-flash-preview":    (0.50,   3.00,  None),
     "kimi-k2.5":                 (0.45,   2.25,  None),
@@ -69,11 +91,21 @@ PRICE_TABLE: dict[str, tuple[float, float, float]] = {
     "google/gemini-3.1-pro-preview-customtools": (2.00, 12.00, None),
 }
 
+# Longest-first so the most specific key wins: "gpt-5.4-mini" must beat "gpt-5.4",
+# and "openai/gpt-5.3-codex" must beat "openai/gpt-5". The old first-match-on-dict-
+# order rule made correctness depend on how the table happened to be written, which
+# is how every gpt-5.x model silently fell through to "default" ($1/$3, no cache
+# discount) and produced cost figures unrelated to real pricing.
+_PRICE_KEYS_BY_SPECIFICITY = sorted(
+    (k for k in PRICE_TABLE if k != "default"), key=len, reverse=True
+)
+
+
 def _price_for_model(model_name: str) -> tuple[float, float, float | None]:
     lower = model_name.lower()
-    for key, prices in PRICE_TABLE.items():
-        if key != "default" and key in lower:
-            return prices
+    for key in _PRICE_KEYS_BY_SPECIFICITY:
+        if key in lower:
+            return PRICE_TABLE[key]
     return PRICE_TABLE["default"]
 
 
@@ -469,6 +501,13 @@ class UsageTrackerCallback(BaseCallbackHandler):
 
         # ── new: per-query accumulators ───────────────────────────────────
         self._q_model_breakdown: dict[str, dict] = {}
+        # Session-cumulative per-model usage. Deliberately independent of the
+        # per-query records: those live in the conversation FILE and are dropped
+        # whenever ConversationLogger._thread_id is unset (append_query returns
+        # early), which is why exported reports can show real `total_tokens`
+        # beside `"queries": []`. This dict is in-memory and always populated,
+        # so the breakdown survives that path.
+        self._session_model_totals: dict[str, dict] = {}
         # {"model_name": {"input": int, "output": int, "cost": float}}
         self._q_tool_log: list[dict] = []
          # [{"tool": str, "status": "ok"|"error"|"soft_error", "detail": str|None, "code_preview": str|None}]
@@ -670,8 +709,70 @@ class UsageTrackerCallback(BaseCallbackHandler):
 
         threading.Thread(target=_poll, daemon=True).start()
 
+    def session_totals(self) -> dict:
+        """Session-wide usage, broken down per model and per configured role.
+
+        Answers the benchmark team's §4.1 request: input / output / cached per
+        model role, without per-query granularity. Built from the in-memory
+        cumulative store rather than the conversation file, so it is populated
+        even when per-query records were dropped (see _session_model_totals).
+
+        `by_role` maps each configured role to the model serving it, so several
+        roles sharing one model id (worker and analyst both on gpt-5.3-codex,
+        say) stay distinguishable instead of being silently merged. Where roles
+        share a model the SAME per-model figures appear under each: the tracker
+        observes model ids on the wire, not which role issued the call, so the
+        split between them is not measurable here and is not guessed at.
+        """
+        with self._m._lock:
+            by_model = {m: dict(v) for m, v in self._session_model_totals.items()}
+
+        totals = {
+            "input_tokens":        sum(v["input_tokens"] for v in by_model.values()),
+            "output_tokens":       sum(v["output_tokens"] for v in by_model.values()),
+            "cached_input_tokens": sum(v["cached_input_tokens"] for v in by_model.values()),
+        }
+        totals["total_tokens"] = totals["input_tokens"] + totals["output_tokens"]
+
+        by_role: dict[str, dict] = {}
+        try:
+            from . import config as _config
+            for role in ("supervisor", "worker", "analyst", "nano", "curator", "vlm"):
+                model_id = _config.model_for(role, "")
+                if not model_id:
+                    continue
+                short = model_id.split("/")[-1]
+                stats = by_model.get(model_id) or by_model.get(short)
+                by_role[role] = {
+                    "model": model_id,
+                    **(dict(stats) if stats else {
+                        "input_tokens": 0, "output_tokens": 0,
+                        "cached_input_tokens": 0, "cost_usd": 0.0}),
+                    "shares_model_with": [],
+                }
+            for role, info in by_role.items():
+                info["shares_model_with"] = sorted(
+                    r for r, o in by_role.items()
+                    if r != role and o["model"] == info["model"]
+                )
+        except Exception:
+            pass
+
+        return {
+            "totals": totals,
+            "by_model": by_model,
+            "by_role": by_role,
+            "cost_source": "openrouter_session" if self._or_fetcher else "estimated_per_model",
+        }
+
     def get_report(self) -> dict:
-        return self._logger.build_report()
+        report = self._logger.build_report()
+        # Always attach the live session totals. build_report() reads the
+        # conversation FILE, which is empty whenever per-query records were
+        # dropped; this key is derived from memory and is therefore never empty
+        # for a run that actually called a model.
+        report["session_totals"] = self.session_totals()
+        return report
     
     def set_user_feedback(self, text: str):
         """Store user-provided feedback text for inclusion in error reports."""
@@ -808,6 +909,18 @@ class UsageTrackerCallback(BaseCallbackHandler):
         if isinstance(usage, dict):
             cached_in = (usage.get("prompt_tokens_details") or {}).get("cached_tokens", 0)
         if not cached_in:
+            # Streaming responses often carry no llm_output["token_usage"] at all —
+            # the counts only arrive on the message's normalized usage_metadata,
+            # where the cached figure is input_token_details["cache_read"]. Without
+            # this the discount silently never applied on the streaming path, even
+            # though real cache hit rates run ~70%.
+            for gen_list in response.generations:
+                for gen in gen_list:
+                    meta = getattr(getattr(gen, "message", None), "usage_metadata", None)
+                    if meta:
+                        details = meta.get("input_token_details") or {}
+                        cached_in = max(cached_in, details.get("cache_read", 0))
+        if not cached_in:
             for gen_list in response.generations:
                 for gen in gen_list:
                     meta = getattr(getattr(gen, "message", None), "response_metadata", {}) or {}
@@ -834,8 +947,23 @@ class UsageTrackerCallback(BaseCallbackHandler):
             )
             entry["input_tokens"]  += added_in
             entry["output_tokens"] += added_out
+
+            cume = self._session_model_totals.setdefault(
+                model,
+                {"input_tokens": 0, "output_tokens": 0,
+                 "cached_input_tokens": 0, "cost_usd": 0.0},
+            )
+            cume["input_tokens"]        += added_in
+            cume["output_tokens"]       += added_out
+            cume["cached_input_tokens"] += cached_in
             if not self._or_fetcher:
                 entry["cost_usd"] = round(entry["cost_usd"] + cost, 6)
+                cume["cost_usd"]  = round(cume["cost_usd"] + cost, 6)
+            # On the OpenRouter path per-model cost stays 0.0: OR bills per
+            # SESSION, so there is no per-model figure to attribute and inventing
+            # one by summing local estimates would disagree with the invoice.
+            # `cost_source` says which regime produced these numbers, so a
+            # consumer never has to guess why the per-model costs sum to zero.
 
             self._emit()
 

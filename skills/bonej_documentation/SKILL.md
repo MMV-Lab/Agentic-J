@@ -1,6 +1,7 @@
 ---
 name: bonej_documentation
-description: BoneJ is a Fiji/ImageJ plugin suite for trabecular bone and porous-structure analysis from binary 2D and 3D images. This skill documents the validated Groovy automation path in this repo: clearing the shared BoneJ table, running Thickness, Area/Volume fraction, Connectivity (Modern), Surface fraction, Fractal dimension, Anisotropy, Skeletonise, and Analyse Skeleton through SciJava CommandService, plus a validated lower-level surface-area path for the local Fiji runtime. Read the files listed at the end of this SKILL for exact class calls, menu paths, and scope limits.
+description: >-
+  BoneJ is a Fiji/ImageJ plugin suite for trabecular bone and porous-structure analysis from binary 2D and 3D images. This skill documents the validated Groovy automation path in this repo: clearing the shared BoneJ table, running Thickness, Area/Volume fraction, Connectivity (Modern), Surface fraction, Fractal dimension, Anisotropy, Skeletonise, and Analyse Skeleton through SciJava CommandService, plus a validated lower-level surface-area path for the local Fiji runtime. Read the files listed at the end of this SKILL for exact class calls, menu paths, and scope limits.
 ---
 
 ## Primary Use Case in This Skill Set

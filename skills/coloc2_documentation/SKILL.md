@@ -6,7 +6,10 @@ description: Coloc 2 is the standard Fiji plugin for pixel-based colocalization 
 ### Documentation Files
 - [OVERVIEW.md](./OVERVIEW.md): Biological context and metric definitions.
 - [GROOVY_API.md](./GROOVY_API.md): Strict parameter syntax for headless execution.
-- [GROOVY_WORKFLOW.md](./GROOVY_WORKFLOW.md): Production-ready script template.
+- [GROOVY_WORKFLOW.groovy](./GROOVY_WORKFLOW.groovy): Production-ready script template.
+- [BATCH_MEMORY.md](./BATCH_MEMORY.md): **Read before writing any batch loop.** Coloc 2 leaks one
+  full result window (both source images + all derived images) per run; the heap fills until the
+  JVM dies. Contains the cause and the `disposeColoc2ResultWindows()` fix.
 - [UI_GUIDE.md](./UI_GUIDE.md): Menu navigation and parameter descriptions.
 - [UI_WORKFLOW.md](./UI_WORKFLOW.md): Manual verification and result interpretation.
 

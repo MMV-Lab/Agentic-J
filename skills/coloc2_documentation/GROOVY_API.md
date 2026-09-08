@@ -72,3 +72,8 @@ Live output proof: `Spearman's rank correlation value, 0.98384632` + `Spearman's
 2. **No Spaces around `=`** for choices/numerics: `channel_1=C1` is correct; `channel_1 = C1` fails.
 3. **Brackets** around image names with spaces: `channel_1=[Result of C1]`.
 4. **Headless Mode:** omit `display_images_in_result` and `show_save_pdf_dialog` on a server / in a loop to prevent UI hangs (a PDF-save dialog will block waiting for a human).
+5. **Batch loops leak memory.** Omitting `display_images_in_result` does *not* stop Coloc 2 from
+   building its result window — that flag only controls what the window shows. On a non-headless
+   JVM the window is created on every run and is only freed when a human clicks its close box, so
+   each iteration pins both source images plus all derived images forever. Dispose it yourself
+   after each run — see [BATCH_MEMORY.md](./BATCH_MEMORY.md).

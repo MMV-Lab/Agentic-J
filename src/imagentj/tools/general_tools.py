@@ -81,10 +81,29 @@ def get_imagej_log(last_lines: int = 100) -> str:
 
 @tool
 def internet_search(query: str, max_results: int = 5):
-    """Run a web search"""
-    ddgs = DDGS()
-    results = ddgs.text(query=query, max_results=max_results)
-    return results
+    """Run an optional web search without aborting the analysis on network failure.
+
+    Search backends are external and can be unavailable, rate limited, or time out.
+    Those conditions are evidence gaps, not fatal errors in an image-analysis run,
+    so expose them to the agent as a soft ``ERROR:`` result instead of allowing an
+    exception to escape through the LangChain tool boundary.
+    """
+    clean_query = (query or "").strip()
+    if not clean_query:
+        return "ERROR: Internet search skipped because the query was empty."
+
+    try:
+        limit = max(1, min(int(max_results), 10))
+    except (TypeError, ValueError):
+        limit = 5
+
+    try:
+        results = DDGS().text(query=clean_query, max_results=limit)
+        return results or []
+    except Exception as exc:
+        # Do not include a traceback: the supervisor only needs a concise signal
+        # that it should proceed from local evidence or report the missing source.
+        return f"ERROR: Internet search unavailable ({type(exc).__name__}: {exc})"
 
 
 @tool

@@ -48,6 +48,27 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && locale-gen en_US.UTF-8 \
     && rm -rf /var/lib/apt/lists/*
 
+# ── Register the NVIDIA OpenCL driver (GPU builds only) ──────────────────────
+# CLIJ/CLIJ2 reach the GPU through OpenCL, NOT CUDA — a separate stack from the
+# torch/TensorFlow wheels below. The container runtime (CDI) already mounts
+# libnvidia-opencl.so.1 into the GPU container, but it does NOT write the ICD
+# registration file, and the OpenCL loader discovers platforms ONLY by reading
+# /etc/OpenCL/vendors/*.icd. Without this line the sole registered vendor is
+# pocl.icd, so CLIJ2 silently enumerates just the CPU and every "GPU-accelerated"
+# CLIJ call runs on POCL — usually SLOWER than plain ImageJ, because the
+# host<->device copies are paid without any GPU speedup in return.
+#
+# Verified in the live gpu-local container (2026-08-03): before, CLIJ reported
+# one device, "cpu-haswell-AMD EPYC 7742"; after adding this file it reported
+# 8x "NVIDIA A100-SXM4-40GB" plus the CPU.
+#
+# pocl.icd is deliberately kept as the fallback (and is the only vendor on CPU
+# builds); CLIJ picks the best available device.
+RUN if [ "$USE_GPU" = "true" ] && [ "$TARGETARCH" != "arm64" ]; then \
+        mkdir -p /etc/OpenCL/vendors \
+        && echo "libnvidia-opencl.so.1" > /etc/OpenCL/vendors/nvidia.icd; \
+    fi
+
 # ── Install Fiji ──────────────────────────────────────────────────────────────
 RUN set -e; \
     if [ "$TARGETARCH" = "arm64" ]; then \
@@ -265,6 +286,54 @@ RUN /opt/conda/bin/conda create -n napari-mcp python=3.11 -y \
 COPY patch_napari_mcp/patch_qt_helpers.py /tmp/patch_qt_helpers.py
 RUN /opt/conda/envs/napari-mcp/bin/python /tmp/patch_qt_helpers.py && rm /tmp/patch_qt_helpers.py
 
+# ── micro_sam ("Segment Anything for Microscopy") into the napari-mcp env ─────
+# Installed INTO the napari env (not a separate one) so it registers as a real
+# napari plugin (GUI: Plugins > Segment Anything for Microscopy) AND is importable
+# by both the interactive viewer (via napari-mcp execute_code) and the headless
+# batch route (python_data_analyst, `# imagentj-env: napari-mcp`). Pulls torch +
+# segment-anything + torch_em + elf via conda-forge. mobile_sam (pip, from git) is
+# only needed for the tiny `vit_t*` backbones — the fastest option on CPU; the
+# base default `vit_b_lm` works without it.
+#
+# GPU: conda-forge's micro_sam pulls a CPU-ONLY torch, so on a GPU build we swap it
+# for the CUDA wheels (same torch/torchvision pin + CUDA_TAG as the cellpose envs) so
+# micro_sam uses the GPU. On a CPU build (USE_GPU=false, the default) or arm64 the
+# working conda CPU torch is left untouched — micro_sam still runs, just on CPU
+# (device auto-selects via torch.cuda.is_available()). The swap pulls torch's
+# nvidia-*-cu12 CUDA runtime wheels as dependencies — do NOT pass --no-deps or torch
+# fails to import with "libcudart.so.12: cannot open shared object file". --force-
+# reinstall is needed so BOTH torch and torchvision move off the conda CPU build. The
+# build-time check asserts it is a CUDA *build*, not that a GPU is present (the build
+# host may have none). Validated: torch 2.11.0+cu126 + torchvision 0.26.0+cu126 import
+# cleanly and micro_sam still imports afterwards.
+RUN CONDA_SOLVER=libmamba /opt/conda/bin/conda install -n napari-mcp -c conda-forge micro_sam -y \
+    && /opt/conda/envs/napari-mcp/bin/pip install --no-cache-dir \
+        "git+https://github.com/ChaoningZhang/MobileSAM.git" \
+    && if [ "$USE_GPU" = "true" ] && [ "$TARGETARCH" != "arm64" ]; then \
+           /opt/conda/envs/napari-mcp/bin/pip install --no-cache-dir --force-reinstall \
+               'torch==2.11.0' 'torchvision==0.26.0' \
+               --index-url https://download.pytorch.org/whl/${CUDA_TAG} \
+           && /opt/conda/envs/napari-mcp/bin/python -c \
+               "import torch; assert torch.version.cuda, 'expected a CUDA torch build in the GPU image'"; \
+       fi \
+    && /opt/conda/envs/napari-mcp/bin/python -c \
+        "import micro_sam, mobile_sam, torch; print('micro_sam', micro_sam.__version__, 'torch', torch.__version__, 'cuda_build', torch.version.cuda)" \
+    && /opt/conda/bin/conda clean -afy
+
+# Repair a half-finished Pillow upgrade: the torch/torchvision --force-reinstall above
+# pulls Pillow as a torchvision dependency and can leave a metadata-less
+# `pillow-<ver>.dist-info` ghost (only an sboms/ subdir, no METADATA). huggingface_hub
+# probes Pillow's version on import, so importlib.metadata trips over the ghost with
+# `MetadataNotFound` and takes down the whole `micro_sam.sam_annotator` import chain —
+# at RUNTIME, not build (the top-level `import micro_sam` above doesn't exercise it).
+# Delete any Pillow dist-info without a METADATA file, then assert the annotator (the
+# part that crashed for users) actually imports, so a regression fails the build here.
+RUN for d in /opt/conda/envs/napari-mcp/lib/python3.11/site-packages/[Pp]illow-*.dist-info; do \
+        if [ -e "$d" ] && [ ! -s "$d/METADATA" ]; then echo "removing ghost dist-info: $d"; rm -rf "$d"; fi; \
+    done; \
+    QT_QPA_PLATFORM=offscreen /opt/conda/envs/napari-mcp/bin/python -c \
+        "import micro_sam.sam_annotator; from micro_sam.sam_annotator.training_ui import TrainingWidget; print('micro_sam.sam_annotator import OK')"
+
 # napari/vispy fall back to llvmpipe software GL under headless Xvfb (no GPU).
 ENV LIBGL_ALWAYS_SOFTWARE=1
 
@@ -366,6 +435,35 @@ RUN /opt/conda/envs/stardist/bin/python -c \
 # TrackMate-StarDist looks for a Python executable via this env var
 ENV SCIJAVA_PYTHON=/opt/conda/envs/stardist/bin/python
 
+# ── BrainGlobe environment ───────────────────────────────────────────────────
+# Isolated because the full brainglobe meta-package drags in napari[all] +
+# PyQt6 + vtk + keras (7.2 GB), which collides with the main env's PySide6 GUI
+# and forces further downgrades. We install the HEADLESS subset instead (1.3 GB):
+# atlas access + whole-brain registration, no 3D viewer, no cellfinder.
+#
+# The python_coder selects this env with a first-line magic comment:
+#     # imagentj-env: brainglobe
+# See _CONDA_ENVS in src/imagentj/tools/analyst_tools.py.
+RUN /opt/conda/bin/conda create -n brainglobe python=3.12 -y \
+    && /opt/conda/envs/brainglobe/bin/pip install --no-cache-dir \
+        brainglobe-atlasapi \
+        brainglobe-space \
+        brainglobe-utils \
+        brainreg \
+    && /opt/conda/bin/conda clean -afy
+
+# Verify the BrainGlobe stack imports correctly
+RUN /opt/conda/envs/brainglobe/bin/python -c \
+    "import brainglobe_atlasapi, brainglobe_space, brainglobe_utils, brainreg; \
+     from brainglobe_atlasapi.list_atlases import get_all_atlases_lastversions; \
+     print('[OK] BrainGlobe stack:', brainglobe_atlasapi.__version__, \
+           len(get_all_atlases_lastversions()), 'atlases available')"
+
+# Atlases (hundreds of MB each) download on first use to brainglobe's default
+# $HOME/.brainglobe (config in $HOME/.config/brainglobe). $HOME is the
+# imagentj_home named volume, so they persist across restarts without being
+# baked into the image. No env var needed — the defaults already land there.
+
 # ── DeepImageJ / APPOSE environment configuration ────────────────────────────
 # DeepImageJ 3.x uses APPOSE (via dl-modelrunner) to run Python inference.
 # APPOSE creates ONE environment per framework (TF, PyTorch) stored under
@@ -406,6 +504,14 @@ RUN groupadd -g 1000 imagentj \
 # ── Application code ─────────────────────────────────────────────────────────
 WORKDIR /app
 COPY . /app
+
+# ── Runtime config baked into the image ──────────────────────────────────────
+# imagentj_config.yaml (LLM-per-role + Vision/QA switches) is already included
+# by `COPY . /app` above; this explicit copy documents the contract and keeps
+# the file present even if the build context is trimmed. docker-compose.yml
+# bind-mounts the host copy over this one, so host edits still win at runtime
+# without a rebuild; a bare `docker run` (no mount) falls back to this baked default.
+COPY imagentj_config.yaml /app/imagentj_config.yaml
 
 # Use keys_template.py as keys.py (keys.py is .dockerignored since it has real secrets)
 RUN cp /app/src/config/keys_template.py /app/src/config/keys.py

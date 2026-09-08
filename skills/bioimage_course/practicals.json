@@ -1,0 +1,513 @@
+[
+  {
+    "id": "0.2-p1",
+    "chapter": "0.2",
+    "track": "concept",
+    "prompt": "When you see a question, try to come up with your own answer first.\n\nThen, if you want to compare your answer with mine, click on the *Answer* tab.",
+    "solution": "Good! This is my answer."
+  },
+  {
+    "id": "1.1-p1",
+    "chapter": "1.1",
+    "track": "imagej",
+    "prompt": "The status bar also shows the x and y coordinates for the pixel under the cursor.\nHowever, to interpret these you need to know the *origin*, i.e. the location of the pixel at x=0, y=0.\n\nWhere is the origin of the image in ImageJ?\n\n* Top left corner\n* Top right corner\n* Bottom left corner\n* Bottom right corner\n* Image center\n\n**Tip:** You should be able to answer this question by opening an image in ImageJ, and observing the coordinates in the toolbar as you move the cursor over the image.\n\n[![launch ImageJ.JS](https://ij.imjoy.io/assets/badge/open-in-imagej-js-badge.svg)](https://ij.imjoy.io/?open=https://github.com/bioimagebook/practical-data/blob/main/images/happy_cell.tif)",
+    "solution": "The origin of the image is at the top left, i.e. the top left pixel is identified with the coordinate x=0, y=0."
+  },
+  {
+    "id": "1.1-p2",
+    "chapter": "1.1",
+    "track": "imagej",
+    "prompt": "Does adjusting any of the sliders in the brightness & contrast dialog change the pixel values or only the LUT?\n\nWhat happens if you press {guilabel}`Apply`?\n\n[![launch ImageJ.JS](https://ij.imjoy.io/assets/badge/open-in-imagej-js-badge.svg)](https://ij.imjoy.io/?open=https://github.com/bioimagebook/bioimagebook.github.io/blob/main/chapters/1-concepts/1-images_and_pixels/images/couple.png)",
+    "solution": "Adjusting the sliders changes the LUT -- and *not* the pixel values.\n\nThat is, unless you press {guilabel}`Apply`.\nIf you do press {guilabel}`Apply` then the pixel values are changed.\n\nRecent versions of ImageJ give a warning when pressing {guilabel}`Apply`, but previous versions did not... which made it an extremely dangerous button for new users of the software.\nIn most cases, the rule is:\n\n> **💡 Tip**\n>\n> **When adjusting the brightness & contrast in ImageJ, don't press {guilabel}`Apply`!**\n\n\nYou shouldn't break this rule without a good reason!"
+  },
+  {
+    "id": "1.2-p1",
+    "chapter": "1.2",
+    "track": "concept",
+    "prompt": "If two images have identical histograms and summary statistics (mean, min, max, standard deviation), does this **prove** that the images are identical?",
+    "solution": "No! For example, we might have the same pixel values in a different arrangement.\nIf I randomly shuffle the pixels in the image then the basic statistics and histogram remain unchanged -- but the image itself is very different.\n\n\n> 🖼️ *(generated figure)*\n\n\nThis means that, technically, we can only really use histograms and summary measurements to prove that images are definitely *not* the same.\n\nHowever, in practice this is usually enough.\nIf two images have identical histograms and summary statistics *and* look similar, it is *very likely* that they are the same.\n\nConceivably, someone might try to deceive us by making some very subtle change to an image that preserves the statistics, such as as swapping two pixels amongst millions so that we don't notice the difference.\nLater, we'll see how to overcome even that by checking every single pixel -- but such elaborate trickery probably isn't a very real risk for most of us.\n\nMost of the time, when things go wrong with scientific images the histogram and statistics will be compromised in an obvious way -- we just need to remember to check for these changes."
+  },
+  {
+    "id": "1.2-p1",
+    "chapter": "1.2",
+    "track": "imagej",
+    "prompt": "*similar_1.tif*, *similar_2.tif*, *similar_3.tif* and *similar_4.tif* are all, well, similar.\nHowever only two contain *identical* pixel values.\n\nWhich two images contain the same values?\n\n[![launch ImageJ.JS](https://ij.imjoy.io/assets/badge/open-in-imagej-js-badge.svg)](https://ij.imjoy.io/?open=https://github.com/bioimagebook/practical-data/blob/main/images/similar_1.tif&open=https://github.com/bioimagebook/practical-data/blob/main/images/similar_2.tif&open=https://github.com/bioimagebook/practical-data/blob/main/images/similar_3.tif&open=https://github.com/bioimagebook/practical-data/blob/main/images/similar_4.tif)",
+    "solution": "Only *similar_1.tif* and *similar_3.tif* can contain the same values.\nAn easy way to determine this is to compute the mean (average) of all pixels in each of the images.\nOnly those two images share the same mean value."
+  },
+  {
+    "id": "1.2-p2",
+    "chapter": "1.2",
+    "track": "imagej",
+    "prompt": "*disguise_matching.tif* has lost its match.\n\nWhich of the following three images have the same pixel values as *disguise_matching.tif*?\n* *disguised_1.tif*\n* *disguised_2.tif*\n* *disguised_3.tif*\n\n[![launch ImageJ.JS](https://ij.imjoy.io/assets/badge/open-in-imagej-js-badge.svg)](https://ij.imjoy.io/?open=https://github.com/bioimagebook/practical-data/blob/main/images/disguise_matching.tif&open=https://github.com/bioimagebook/practical-data/blob/main/images/disguised_1.tif&open=https://github.com/bioimagebook/practical-data/blob/main/images/disguised_2.tif&open=https://github.com/bioimagebook/practical-data/blob/main/images/disguised_3.tif)",
+    "solution": "*disguised_3.tif* is the matching image."
+  },
+  {
+    "id": "1.2-p3",
+    "chapter": "1.2",
+    "track": "imagej",
+    "prompt": "For {numref}`fig-rois_mask`, I used the ROI Manager to create a ROI with a hole in it.\n\nTo do this in *happy_cell.tif*, you can\n\n   1. Draw one ROI around the full cell, and add it to the ROI Manager\n   2. Draw a second ROI around the nucleus, and add it to the ROI Manager\n\nThen you can select both ROIs and use *one* of the combine operations -- {guilabel}`AND`, {guilabel}`OR`, {guilabel}`XOR` -- to subtract the nucleus ROI from the cell ROI.\nThe end result is a ROI representing the cytoplasm, with the nucleus removed.\n\nWhich combine operation do you need to achieve this?\n\n**Tip:** Remember {menuselection}`Edit --> Selection --> Create Mask` will let you see which pixels are inside and which pixels are outside the ROI.\n\n\n[![launch ImageJ.JS](https://ij.imjoy.io/assets/badge/launch-imagej-js-badge.svg)](https://ij.imjoy.io/?open=https://github.com/bioimagebook/practical-data/blob/main/images/happy_cell.tif)",
+    "solution": "{guilabel}`XOR` ('exclusive OR') provides a ROI that contains pixels that are inside the cell OR inside the nucleus, but NOT both."
+  },
+  {
+    "id": "1.2-p4",
+    "chapter": "1.2",
+    "track": "imagej",
+    "prompt": "Open the images *Annotated_Cyclists_1.tif* and *Annotated_Cyclists_2.tif*, which depict the 3 main cyclist characteristics I found most disconcerting as a pedestrian in Heidelberg.\n\nThe images should initially look the same, but in one the text is an overlay, while in the other the image has been flattened.\nWhich is which? Try to think of several ways to investigate this.\n\n**Tip:** Zooming in may help. So might searching the menus for overlay-related commands (aided by {kbd}`L`).\n\n[![launch ImageJ.JS](https://ij.imjoy.io/assets/badge/open-in-imagej-js-badge.svg)](https://ij.imjoy.io/?open=https://github.com/bioimagebook/practical-data/blob/main/images/Annotated_Cyclists_1.tif&open=https://github.com/bioimagebook/practical-data/blob/main/images/Annotated_Cyclists_2.tif)",
+    "solution": "*Annotated_Cyclists_1.tif* is the one with the overlay.\n\nFive ways to determine whether an annotation is an overlay or not:\n\n1.  Zoom in very closely to the region containing the annotation. If it becomes 'blocky', i.e.\nmade up of pixels, it is not an overlay.\nIf it remains smooth, then it is an overlay.\n2.  Move your cursor over the region where the annotation appears, and look at the pixel values.\nIf the values are all the same where the annotation is present, but different elsewhere, then it is unlikely to be an overlay: the annotation is influencing the pixel values.\n3.  Using the paintbrush <img src=\"../../../images/imagej/icons/brush.png\" /> tool from the toolbar, try putting some other color where the annotation appears.\nIf the annotation remains visible on top of where you drew, it must be on an overlay.\n4.  Choose {menuselection}`Image --> Overlay --> Hide Overlay` and see if the annotation disappears.\n5.  Choose {menuselection}`Image --> Overlay --> To ROI Manager` and see if anything happens at all."
+  },
+  {
+    "id": "1.2-p5",
+    "chapter": "1.2",
+    "track": "imagej",
+    "prompt": "Using the cyclist image containing the overlay from the previous practical, rearrange the annotations so that they are each positioned next to different cyclists.\n\nYou could do this by deleting the overlay and starting again, but there are other, faster possibilities (using a technique mentioned before, or the {menuselection}`Image --> Overlay --> To ROI Manager` command).\n\n[![launch ImageJ.JS](https://ij.imjoy.io/assets/badge/open-in-imagej-js-badge.svg)](https://ij.imjoy.io/?open=https://github.com/bioimagebook/practical-data/blob/main/images/Annotated_Cyclists_1.tif&open=https://github.com/bioimagebook/practical-data/blob/main/images/Annotated_Cyclists_2.tif)",
+    "solution": "Click the annotation while holding down the {kbd}`Alt` key, to bring it to life so it can be moved around again.\nThis only works if certain tools are selected, e.g. {guilabel}`Rectangle` or {guilabel}`Text`, because some other tools have more overriding functions, such as zooming in or scrolling."
+  },
+  {
+    "id": "1.3-p1",
+    "chapter": "1.3",
+    "track": "concept",
+    "prompt": "What impact would you expect bit-depth to have on the file size of a saved image?\n\nFor example, would you expect an 8-bit image to have a larger, smaller or (roughly) equivalent file size to a 16-bit image of the same scene?\nYou can assume the two images have the same number of pixels.",
+    "solution": "In general, the file size required to store an image is expected to be higher with a higher bit-depth.\n\nAssuming that the image isn't [compressed](sec_files_compression), a 16-bit image would require roughly twice as much storage space as a corresponding 8-bit image.\n\nIf you have a 1024 x 1024 pixel image that is 8-bit, that should take roughly 1 MB to store.\nThe corresponding 16-bit image would require approximately 2 MB."
+  },
+  {
+    "id": "1.3-p2",
+    "chapter": "1.3",
+    "track": "concept",
+    "prompt": "The pixels shown on the right all belong to different images.\n\nIn each case, identify what *possible* type an image could have in order to represent the value of the pixel.\nThere can be more than one possible type for each pixel.\n\nYour type options are:\n\n* Signed integer\n* Unsigned integer\n* Floating point",
+    "solution": "The possible image types, from left to right:\n\n1.  Signed integer or floating point\n2.  Unsigned integer, signed integer or floating point\n3.  Floating point\n\nNote that 'floating point' is an option in all cases: it's the most flexible representation."
+  },
+  {
+    "id": "1.3-p3",
+    "chapter": "1.3",
+    "track": "concept",
+    "prompt": "What is the maximum pixel value that can be stored in a *16-bit, unsigned integer* image?",
+    "solution": "The maximum value that can be stored in a 16-bit, unsigned integer image is 2<sup>16</sup>-1 = 65535."
+  },
+  {
+    "id": "1.3-p4",
+    "chapter": "1.3",
+    "track": "concept",
+    "prompt": "What would be the maximum pixel value that can be stored in a *16-bit, signed integer* image?",
+    "solution": "The maximum value that can be stored in a 16-bit, signed integer image is 2<sup>15</sup>-1 = 32767 (since one of the bits is used for the sign, we have 15 remaining)."
+  },
+  {
+    "id": "1.3-p5",
+    "chapter": "1.3",
+    "track": "concept",
+    "prompt": "When acquiring an 8-bit unsigned integer image, is it fair to say your data is fine so long as your minimum pixel value is 0 and your maximum value is 255?",
+    "solution": "No! At least, not really.\n\nYou *cannot* store pixels outside the range 0–255.\nIf your image contains pixels with either of those extreme values, *you cannot be certain whether or not clipping has occurred*.\nTherefore, you should ensure images you acquire do not contain any pixels with the most extreme values permitted by the image bit-depth.\nTo be confident your 8-bit data is not clipped, the maximum range would be 1–254."
+  },
+  {
+    "id": "1.3-p6",
+    "chapter": "1.3",
+    "track": "concept",
+    "prompt": "The bit-depth of an image is probably some multiple of 8, but the bit-depth that a [detector (e.g. CCD)](chap_microscope_types) can support might not be.\n\nFor example, what is the maximum value in a 16-bit image that was acquired using a camera with a 12-bit output?\n\nAnd what is the maximum value in a 8-bit image acquired using a camera with a 14-bit output?\n\nAssume unsigned integers are used in both cases.",
+    "solution": "The maximum value of a 16-bit image obtained using a 12-bit camera is 4095 (i.e. 2<sup>12</sup>-1).\n\nThe maximum value of an 8-bit image obtained using a 14-bit camera is 255 – the extra bits of the camera do not change this.\nBut if the image was saved in 16-bit instead, the maximum value would be 16383.\n\nSo be aware that the actual range of possible values depends upon the acquisition equipment as well as the bit-depth of the image itself.\nThe lower bit-depth will dominate."
+  },
+  {
+    "id": "1.3-p7",
+    "chapter": "1.3",
+    "track": "concept",
+    "prompt": "Although *more bits are better* is a simple rule of thumb we can share with those who do not know the subtleties of bit-depths, it should not be held completely rigorously.\n\nCan you think of any circumstances when more bits might *not* be better?",
+    "solution": "Reasons why a lower bit depth is *sometimes* preferable to a higher one include:\n\n* A higher bit-depth leads to larger file sizes, and potentially slower processing. For very large datasets, this might be a bigger issue that any loss of precision found in using fewer bits.\n* The amount of light detected per pixel might be so low that thousands of possible values are not required for its accurate storage, and 8-bits (or even fewer) would be enough. For the light-levels in biological fluorescence microscopy, going beyond 16-bits would seldom bring any benefit.\n\nBut with smallish datasets for which processing and storage costs are not a problem, it is safest to err on the side of more bits than we strictly need."
+  },
+  {
+    "id": "1.3-p1",
+    "chapter": "1.3",
+    "track": "imagej",
+    "prompt": "Does the image below show signs of having been clipped?\n\n\n![](assets/1.3/imagej-histogram-maybe.png)",
+    "solution": "Yes!\nThere is a small peak at the high end of the histogram, corresponding to pixel values of 4095.\nThis is itself a suspicious number because it would be the maximum possible value in a 12-bit unsigned integer image (i.e. 2<sup>12</sup> - 1) -- so my guess is that was the bit-depth of the acquisition device.\n\nAdmittedly, the image is not *very badly* clipped.\nWe could check the proportion of pixels with that value, and use this to estimate whether it is likely that the clipping will have a significant impact upon later analysis.\nBut it's better to avoid clipping altogether when possible."
+  },
+  {
+    "id": "1.3-p2",
+    "chapter": "1.3",
+    "track": "imagej",
+    "prompt": "Why is scaling usually a good thing when reducing the bit-depth, and why is a constant usually subtracted before applying this scaling?\n\n**Hint:** As an example, consider how a 16-bit image containing values in the range 4000–5000 might be converted to 8-bit first without scaling, and then alternatively by scaling with or without the initial constant subtraction.\nWhat constants for subtraction and division would usually minimize the amount of information lost when converting to 8-bit image, limiting the errors to rounding only and not clipping?",
+    "solution": "In the example given, converting to 8-bit without any scaling would result in all pixels simply becoming 255: all useful information in the image would be lost.\n\nWith scaling but without subtraction, it would make sense to divide all pixel values by the maximum in the image divided by the maximum in the new bit depth, i.e. by 5000/255.\nThis would then lead to an image in which pixels fall into the range 204–255. Much information has clearly been lost: 1000 potentially different values have now been squeezed into 52.\n\nHowever, if we first subtract the smallest of our 16-bit values (i.e. 4000), our initial range becomes 0–1000. Divide then by 1000/255 and the new values become scaled across the full range of an 8-bit image, i.e. 0–255. We have still lost information – but considerably less than if we had not subtracted the constant first."
+  },
+  {
+    "id": "1.3-p3",
+    "chapter": "1.3",
+    "track": "imagej",
+    "prompt": "Make sure that the {guilabel}`Scale When Converting` option is turned on (it should be by default).\nThen using a suitable 8-bit sample image, e.g. {menuselection}`File --> Open Samples --> Boats`, explore the effects of brightness/contrast settings when increasing or decreasing bit-depths.\n\nCan you destroy the image by simply 1) increasing the bit-depth, and then 2) decreasing the bit-depth to its original value?\n\n[![launch ImageJ.JS](https://ij.imjoy.io/assets/badge/open-in-imagej-js-badge.svg)](https://ij.imjoy.io/?run=https://gist.github.com/petebankhead/6f9f451fdc0116197501ae504a57d5e7)",
+    "solution": "It's generally a good idea to choose {guilabel}`Reset` in the {menuselection}`Brightness/Contrast...` window before reducing any bit-depths for 2D images (see {ref}`chap_multidimensional_processing` to read about special considerations related to *z*-stacks or time series).\n\nYou can destroy an image by increasing its bit-depth, adjusting the brightness/contrast and then decreasing the bit-depth to the original one again.\nThis may seem weird, because clearly the final bit-depth is *capable* of storing all the original pixel values.\nBut ImageJ does not know this and does not check, so it will simply do its normal bit-depth-reducing conversion based on contrast settings."
+  },
+  {
+    "id": "1.4-p1",
+    "chapter": "1.4",
+    "track": "imagej",
+    "prompt": "Explore several of the images under {menuselection}`File --> Open Samples -->` and identify which are treated by ImageJ as RGB, which as multichannel, and which have just a single channel.\nThere is only one correct answer per image.\n\n**Note 1:** Here, 'RGB' means that ImageJ treats the image has having the special 'RGB' image type.\nIt's possible for a multichannel image to have three channels with red, green and blue LUTs, but Imagej doesn't consider it to be RGB.\nYou should therefore use the rules given above to distinguish images RGB from multichannel.\n\n**Note 2:** At the time I write this, the sample images don't work for me properly in Fiji -- but they do work in ImageJ.\nHopefully the Fiji bug will be fixed before you read this.\n\n| Image                                    | RGB | Multichannel | Single channel |\n|------------------------------------------|:---:|:------------:|:--------------:|\n|{menuselection}`Leaf`                     |  ?  |      ?       |       ?        |\n|{menuselection}`Fluorescent Cells`        |  ?  |      ?       |       ?        |\n|{menuselection}`Cardio (RGB Dicom)`       |  ?  |      ?       |       ?        |\n|{menuselection}`HeLa Cells (48-bit RGB)`  |  ?  |      ?       |       ?        |\n|{menuselection}`Fly Brain`                |  ?  |      ?       |       ?        |\n|{menuselection}`Image with Overlay`       |  ?  |      ?       |       ?        |\n\n[![launch ImageJ.JS](https://ij.imjoy.io/assets/badge/launch-imagej-js-badge.svg)](https://ij.imjoy.io)",
+    "solution": "| Image                                    | RGB | Multichannel | Single channel |\n|------------------------------------------|:---:|:------------:|:--------------:|\n|{menuselection}`Leaf`                     |  X  |              |                |\n|{menuselection}`Fluorescent Cells`        |     |      X       |                |\n|{menuselection}`Cardio (RGB Dicom)`       |  X  |              |                |\n|{menuselection}`HeLa Cells (48-bit RGB)`  |     |      X       |                |\n|{menuselection}`Fly Brain`                |  X  |              |                |\n|{menuselection}`Image with Overlay`       |     |              |    X           |\n\n\nThere are several awkward images:\n\n* {menuselection}`HeLa Cells (48-bit RGB)` is *not* treated as having the RGB type... and ImageJ doesn't have a '48-bit' type either! Here, 48-bit RGB means that we actually have three 16-bit channels with red, green and blue LUTs. For ImageJ, that's not really an RGB image, it's a multichannel image. Don't expect too much consistency in naming: always check the types!\n* {menuselection}`Fly Brain` has a slider, but it doesn't have a {guilabel}`C` label. This is because the slider isn't for channels, but rather for *z*-slices. We will meet *z*-slices in the [next chapter](chap_dimensions).\n* {menuselection}`Image with Overlay` looks colorful, but the colors all come from the [overlay](sec_imagej_overlay) -- not from the image being RGB. Admittedly, the name helps here."
+  },
+  {
+    "id": "1.4-p2",
+    "chapter": "1.4",
+    "track": "imagej",
+    "prompt": "ImageJ has two different copying commands, {menuselection}`Edit --> Copy` and {menuselection}`Edit --> Copy to System`.\nWhy?\n\n**Note:** When investigating this, you should explore {menuselection}`Edit --> Paste`, alongside two commands in the {menuselection}`File --> New -->` submenu.\nBe on the lookout for any conversions.",
+    "solution": "{menuselection}`Edit --> Copy` allows you to copy part of an individual image slice (i.e. a 2D part of a particular color channel) and paste it into another image while exactly preserving the original image type and pixel values.\nYou can also use {menuselection}`File --> New --> Internal Clipboard` to get the copied region (but {menuselection}`Image --> Duplicate...` is usually a better option).\nHowever, this image type might well not be compatible with other software, therefore images copied in this way cannot be accessed outside ImageJ.\n\n{menuselection}`Edit --> Copy to System` is needed if you want to copy an image to the system clipboard so that it can be pasted into other software.\nHowever, be warned that this converts the image to RGB in the process.\nIf therefore preserves the image appearance, but not necessarily the pixel values."
+  },
+  {
+    "id": "1.4-p3",
+    "chapter": "1.4",
+    "track": "imagej",
+    "prompt": "Think of at least 2 ways in which converting a composite image to RGB can lose information.\n\nYou can explore this by comparing the images *Neuron-composite.tif* and\n*Neuron-RGB.tif*.\nThe {menuselection}`Image --> Color --> Split Channels` command should help.\n\n[![launch ImageJ.JS](https://ij.imjoy.io/assets/badge/open-in-imagej-js-badge.svg)](https://ij.imjoy.io/?open=https://github.com/bioimagebook/practical-data/blob/main/images/Neuron-composite.tif&open=https://github.com/bioimagebook/practical-data/blob/main/images/Neuron-RGB.tif)",
+    "solution": "+++\n\nOne way that converting an image to RGB can lose information is if the original data is 16-bit before conversion and 8-bit afterwards, causing rounding and/or clipping to occur (see {ref}`chap_bit_depths`).\n\nAnother is that during conversion the channels have been forced to be purely red, green and blue.\nBut perhaps they were not originally so, and separate channels have been merged into the same ones.\nIf you had started with more than three channels, this will definitely have occurred, but even if you had fewer channels you can have problems (like in the *Neuron_composite.tif* and *Neuron_RGB.tif* examples).\n\nThe trouble with _only_ having an RGB image is that it is no longer possible to know for sure what the original data looked like, to be able to figure out whether anything has been lost.\nFor example, perhaps you have managed to generate a magnificent image consisting of turquoise, yellow and dazzling pink channels.\nEach pixel is displayed on screen as a combination of those colors.\nHowever, precisely the same color for any pixel can also be represented -- rather more simply -- as a mixture of red, green and blue.\nSo no matter what channels and colors you began with, the final result after merging can be replicated using red, green and blue channels.\nBut if you _only_ have the RGB version, you might never be able to extract the original 3 channels again.\nTheir colors could be so mixed together that the original pixel values would be irretrievably lost.\n\nAnd so the good things about RGB images are that they look identical to the original image you had before conversion, and other software (e.g. webbrowsers or PowerPoint&reg;) can understand them effortlessly.\nBut the _potentially very bad_ thing about RGB images is that creating them requires conversion, and after this it might very well be _impossible_ to regain the original pixel values."
+  },
+  {
+    "id": "1.5-p1",
+    "chapter": "1.5",
+    "track": "concept",
+    "prompt": "Suppose we detect a structure and we count that it covers an area spanning 10 pixels.\nSuppose also that the pixel width = 2.0 µm and the pixel height is 2.0 µm.\n\nWhat is the **area** of the structure in µm<sup>2</sup>?",
+    "solution": "40 µm<sup>2</sub>\n\nAt least that's the answer I was looking for: 10 x 2µm x 2µm = 40µm<sup>2</sup>.\n\nIf you want to be pedantic about it, you might quibble about whether it makes sense to report 2D areas for 3D structures, or the possible impact of measurement error caused by the diffraction limit.\n\nBut let's not be pedantic for now."
+  },
+  {
+    "id": "1.5-p2",
+    "chapter": "1.5",
+    "track": "concept",
+    "prompt": "How many dimensions does the z-stack in {numref}`fig-dimensions_slices` have?\n\n*Remember: we count channels as a dimension here!*",
+    "solution": "The image is 4D: x, y, z, channels."
+  },
+  {
+    "id": "1.5-p1",
+    "chapter": "1.5",
+    "track": "imagej",
+    "prompt": "One way to check if the pixel size information is set for an image is to use {menuselection}`Image --> Properties...`\n\nHow else can you check this, even more easily?\n\n**Tip:** The answer should already be visible in {numref}`fig-properties_confocal` and {numref}`fig-properties_fluorescent`.",
+    "solution": "The size of the image is given at the top of each image window.\nIf the pixel size information is available, this is given in calibrated units.\nOtherwise, it is given only in pixels."
+  },
+  {
+    "id": "1.5-p2",
+    "chapter": "1.5",
+    "track": "imagej",
+    "prompt": "Something terrible has befallen the file *lost_dimensions.tif*, so that it's displayed as a 3D stack, when in reality it should have more dimensions.\n\nBy inspecting the file, identify how many channels, *z*-slices and time points it originally contained, and set these using {menuselection}`Image --> Hyperstack --> Stack to Hyperstack...` so that it displays properly.\nWhat are the correct dimensions?\n\n[![launch ImageJ.JS](https://ij.imjoy.io/assets/badge/open-in-imagej-js-badge.svg)](https://ij.imjoy.io/?open=https://github.com/bioimagebook/practical-data/blob/main/images/lost_dimensions.tif)",
+    "solution": "*lost_dimensions.tif* should contain 2 channels, 3 *z*-slices and 16 time points.\n\nThe dimensions are in the default order (*xyczt*)."
+  },
+  {
+    "id": "1.5-p3",
+    "chapter": "1.5",
+    "track": "imagej",
+    "prompt": "Create a profile plot from any image, by drawing a line ROI and pressing {kbd}`K`.\n\nAs far as ImageJ is concerned, the profile plot itself is an image -- albeit a strange one.\nThis means you can use {menuselection}`Image --> Properties...` to check the pixel size *of the profile plot*.\n\nWhat do you notice about the pixel sizes?\n\n[![launch ImageJ.JS](https://ij.imjoy.io/assets/badge/open-in-imagej-js-badge.svg)](https://ij.imjoy.io/?run=https://gist.github.com/petebankhead/a45e4eed3a90b6374ec7b272db090ec9)",
+    "solution": "You will probably see that the pixel width and height are different.\nIn fact, the pixel width depends upon the scaling of the x-axis and the pixel height depends upon the scaling of the y-axis.\n\nThis can be quite useful, because it means you can make measurements within the profile plot itself.\n\nIf you want to measure a distance along the x or y axis, you can use the line tool <img src=\"../../../images/imagej/icons/line.png\" /> while pressing {kbd}`Shift`.\nThis forces the line to be perfectly horizontal or perfectly vertical; without {kbd}`Shift` it would be easy to draw a line at a slight diagonal that could give incorrect results.\n\n\n![](assets/1.5/imagej-dimensions-profiles-plot.png)"
+  },
+  {
+    "id": "1.5-p4",
+    "chapter": "1.5",
+    "track": "imagej",
+    "prompt": "Imagine computing a sum and a maximum projection of a 10-slice stack containing a large, in-focus nucleus.\nHow might each of these projections be affected if your stack contained:\n\n* 4 additional, out-of-focus slices (with non-zero pixel values)\n* several very bright, isolated, randomly distributed outlier pixels – with values twice what they should be (due to noise)",
+    "solution": "Additional, out-of-focus planes will have an effect upon sum projections: increasing all the resulting pixel values.\nHowever, the extra planes would have minimal effects upon maximum projections, since they are unlikely to contain higher values than the in-focus planes.\n\nMaximum projections will, however, be very affected by bright outliers: these will almost certainly appear in the result with their values unchanged.\nSuch outliers would also influence a sum projection, but less drastically because each pixel would contain the sum of 9 reasonable values and only 1 large value (unless, by bad luck or a dubious detector, many outliers happen to overlap at the same _xy_ coordinate)."
+  },
+  {
+    "id": "1.5-p5",
+    "chapter": "1.5",
+    "track": "imagej",
+    "prompt": "What happens if you calculate a maximum projection *twice* for the 5D image {menuselection}`File --> Open samples --> Mitosis`?\n\nBy this I mean you run {menuselection}`Image --> Stacks --> Z Project...` on the original image, and then again on the output of the first projection.\n\n[![launch ImageJ.JS](https://ij.imjoy.io/assets/badge/open-in-imagej-js-badge.svg)](https://ij.imjoy.io/?run=https://gist.github.com/petebankhead/9dbe7657bb476ea457f14229e93c5862)",
+    "solution": "You should end up with a maximum *z*-projecton followed by a time projection!\n\nIf there is a time dimension but no *z* dimension, {menuselection}`Image --> Stacks --> Z Project...` will use time instead.\n\nIf there *is* a *z* dimension but you want a time projection anyway, you could try careful use of {menuselection}`Image --> Hyperstack --> Re-order Hyperstacks...` or {menuselection}`Image --> Hyperstack --> Stack to Hyperstack...` to temporarily switch the dimension names and trick ImageJ into doing what you want."
+  },
+  {
+    "id": "1.6-p1",
+    "chapter": "1.6",
+    "track": "concept",
+    "prompt": "It takes approximately 1 MB to store (1,000,000 bytes) an 8-bit uncompressed image with 1,000,000 pixels.\n\nHow much memory does it take to store a 16-bit image with the same number of pixels?\n\n*You can ignore the tiny bit of extra space needed to store any associated metadata.*",
+    "solution": "2 MB.\n\n8 bits corresponds to 1 byte, so 16 bits correspond to 2 bytes.\nWe multiply the number of bytes per pixel by the number of pixels to get the minimum size required to store the uncompressed image."
+  },
+  {
+    "id": "1.6-p2",
+    "chapter": "1.6",
+    "track": "concept",
+    "prompt": "Suppose you have an original image in TIFF format (no compression).\nFirst, you save it as JPEG (lossy compression) to reduce the file size, then close it and throw away the TIFF.\n\nUpon hearing JPEG is bad, you reopen the image and save it as TIFF  once more (no compression), throwing away the JPEG.\nHow does your final TIFF image look, and what is its file size?",
+    "solution": "The final image will look exactly like the JPEG version, *but with the same file size as the original TIFF!*\nAs such, it has 'the worst of both worlds'."
+  },
+  {
+    "id": "1.6-p1",
+    "chapter": "1.6",
+    "track": "imagej",
+    "prompt": "To get a feel for the importance of metadata, you can try opening an image in which it is completely absent.\nThis is quite tricky, and requires some detective work (or some luck).\n\nTry to open the file *Besenfreunde.ids* using Fiji -- it depicts an odd, and as yet unexplained, scene that I passed on my way to work soon after arriving in Heidelberg.\nThis file __only__ contains pixel values, and no metadata.\nIt can still be read using the {menuselection}`File --> Import --> Raw...` command, but to do so you will need to figure out the necessary metadata and input the appropriate values.\n\nThe following points may help:\n\n\n* The file contains only a single image, and a single channel.\n* The dimensions (width and height) of the image are each a multiple of 100 pixels.\n* The data is in 8, 16 or 32-bit format (signed or unsigned).\n* There are no offsets or gaps included.\n* The total size of the file is 400 000 bytes.\n\n__Note:__ The option {guilabel}`Little-endian byte order` relates to whether the bytes of 16 or 32-bit images are arranged from the least-to-most significant, or most-to-least significant.\nSome types of computer prefer one order, some prefer another, so this is something else the metadata should contain.\nThe difference is similar to how a perfectly respectable number like __twenty-three__ is (quite ludicrously, in my view) spoken as __three-and-twenty__ in German.",
+    "solution": "The file size gives you the $$ \\textrm{File size (in bytes)} = \\frac{\\textrm{width} \\times \\textrm{height} \\times \\textrm{bit-depth}}{8} $$ where the division by 8 converts the total number of bits to bytes (since 8 bits make 1 byte).\nThis can be used to make reasonable starting estimates for the width, height and bit-depth, but figuring out which are correct likely still requires some trial-and-error.\nIn the end, the settings you need are:\n\n\n* Image type: 16-bit unsigned\n* Width: 500 pixels\n* Height: 400 pixels\n* Little-endian byte order: False\n\nUsing these values in the import should result in a reasonable image.\n\nNow make sure never to lose your metadata, and you do not need to solve such puzzles often in real life.\n(Also, any explanations for what exactly was going on in that scene would be welcome.)"
+  },
+  {
+    "id": "2.2-p1",
+    "chapter": "2.2",
+    "track": "concept",
+    "prompt": "Suppose you add a constant to every pixel in the image.\nWhy might subtracting the same constant from the result not give you back the image you started with?",
+    "solution": "If you add a constant that pushes pixel values outside the range supported by the bit-depth (e.g. 0–255 for 8-bit), then the result cannot fit in the image.\nIt's likely to be clipped to the closest possible value instead.\nSubtracting the constant again does not restore the original value.\n\nFor example: 200 *(original value)* + 100 *(constant)* &rarr; 255 *(closest valid value)*. <br/>\nBut then 255 - 100 &rarr; 155."
+  },
+  {
+    "id": "2.2-p2",
+    "chapter": "2.2",
+    "track": "concept",
+    "prompt": "In the two 32-bit images shown here, white pixels have values of one and black pixels have values of zero (gray pixels have values somewhere in between).\n\n\n> 🖼️ *(generated figure)*\n\n\nWhat would be the result of multiplying the images together?\nAnd what would be the result of dividing the left image by the right image?",
+    "solution": "Multiplying the images effectively results in everything outside the white region in the right image being removed from the left image (i.e. set to zero).\n\n\n> 🖼️ *(generated figure)*\n\n\nDividing has a similar effect, except that instead of becoming zero the masked-out pixels will take one of three results, depending upon the original pixel's value in the left image:\n\n* if it was _positive_, the result is $+\\infty$ (shown here as yellow)\n* if it was _negative_, the result is $-\\infty$\n* if it was zero, the result is `NaN` ('not a number' -– indicating 0/0 is undefined; shown here as red)\n\nThese are special values that can be contained in floating point images, but not images with integer types."
+  },
+  {
+    "id": "2.2-p1",
+    "chapter": "2.2",
+    "track": "imagej",
+    "prompt": "Open the image *Spooked_16-bit.tif*, and apply *only* the following steps:\n\n* Measure the mean pixel value of the image\n* Subtract 600 from all pixel values\n* Add 600 to all pixel values\n* Measure the mean pixel value of the image\n\n*Mathematically*, you should get the same mean measurements.\nCan you explain the result?\n\n[![launch ImageJ.JS](https://ij.imjoy.io/assets/badge/launch-imagej-js-badge.svg)](https://ij.imjoy.io?open=https://github.com/bioimagebook/practical-data/blob/main/images/Spooked_16-bit.tif)",
+    "solution": "Firstly, the commands you need to run are:\n* {menuselection}`Analyze --> Measure`, or press {kbd}`M`\n* {menuselection}`Process --> Math --> Subtract...` with the value 600\n* {menuselection}`Process --> Math --> Add...` with the value 600\n* {menuselection}`Analyze --> Measure`, or press {kbd}`M`\n\nWhen I do this, I get the following results table:\n\n<img src=\"images/points-spooked-subtraction.png\" align=\"center\" />\n\nThe reason the mean values differ is because we have a 16-bit image.\nAfter subtraction, any values that were less than 600 become clipped to zero.\nAll these become 600 after the addition, pushing up the overall mean.\n\nIf you didn't see this effect, then I would guess you had the foresight to run {menuselection}`Image --> Type --> 32-bit`.\nIf you do this, the mean values match after all."
+  },
+  {
+    "id": "2.2-p2",
+    "chapter": "2.2",
+    "track": "imagej",
+    "prompt": "Explore the use of {menuselection}`Process --> Math --> Gamma...` for enhancing the contrast of *Spooked_16-bit.tif*.\n\nIf you want to see both the human and the ghost, should the gamma value be less than 1, equal to 1, or greater than 1?\n\n**Tip:** To get a feeling for how the values are changing, create a histogram of the image first and press the {guilabel}`Live` button on the histogram.\nThen run the gamma command, turn on the {guilabel}`Preview` option and adjust the slider.\nYou should now see a live update of how changing the gamma affects the pixel values.\n\n[![launch ImageJ.JS](https://ij.imjoy.io/assets/badge/launch-imagej-js-badge.svg)](https://ij.imjoy.io?open=https://github.com/bioimagebook/practical-data/blob/main/images/Spooked_16-bit.tif)",
+    "solution": "The gamma needs to be less than 1.\n\nWhen the gamma is equal to 1, it isn't doing anything at all.\nWhen it is greater than 1, it's applying a non-linear adjustment -- but not one that really helps in this case."
+  },
+  {
+    "id": "2.2-p3",
+    "chapter": "2.2",
+    "track": "imagej",
+    "prompt": "{menuselection}`Edit --> Invert` works differently when applied to different image types.\nLike in the 8-bit case, pixel values are always subtracted from some 'maximum'.\n\nHow this maximum is determined for 16 and 32-bit images in ImageJ?\n\n**Note:** the methods used for 16 and 32-bit images are different from one another!\n\n[![launch ImageJ.JS](https://ij.imjoy.io/assets/badge/open-in-imagej-js-badge.svg)](https://ij.imjoy.io/?open=https://github.com/bioimagebook/practical-data/blob/main/images/Spooked_16-bit.tif&open=https://github.com/bioimagebook/practical-data/blob/main/images/happy_cell.tif)",
+    "solution": "When I first wrote this question, to invert a 16-bit image pixel were subtracted from *the maximum value within the original image*.\nThis is also true for stacks: the maximum value in the entire stack is found.\n\nSince ImageJ v1.53k, the maximum value of 65535 is used... unless you happen to have a different {guilabel}`Unsigned 6-bit range` value specified via the {guilabel}`Set` button via the *Brightness & Contrast* dialog.\nI only know about this sneaky alternative option through the [ImageJ release notes](https://imagej.nih.gov/ij/notes.html).\n\nFor 32-bit image inversion, the pixels are subtracted from the *display maximum*, i.e. whatever maximum is set in the {menuselection}`Image --> Adjust --> Brightness/Contrast...` dialog box.\nConsequently, *inverting a 32-bit image can give different results each time it is applied if the contrast settings are not kept the same!*\n\nI personally dislike this unpredictable weirdness.\nI would happily apply {menuselection}`Edit --> Invert` to an 8-bit image.\nFor anything else, I'd generally rather convert to 32-bit and multiply by -1 -- so that I know the results should be repeatable, regardless of brightess & contrast settings."
+  },
+  {
+    "id": "2.2-p4",
+    "chapter": "2.2",
+    "track": "imagej",
+    "prompt": "{menuselection}`Process --> Image Calculator...` finally makes it possible for us to check whether the pixel values of two images are all identical -- without relying on summary measurements or histograms.\n\nUse it to determine which two of the images *Same_1.tif*, *Same_2.tif* and *Same_3.tif* are identical in terms of pixel values.\n\n[![launch ImageJ.JS](https://ij.imjoy.io/assets/badge/open-in-imagej-js-badge.svg)](https://ij.imjoy.io/?open=https://github.com/bioimagebook/practical-data/blob/main/images/Same_1.tif&open=https://github.com/bioimagebook/practical-data/blob/main/images/Same_2.tif&open=https://github.com/bioimagebook/practical-data/blob/main/images/Same_3.tif)",
+    "solution": "My preferred way to check this is to subtract the images from one another, making sure that the result is 32-bit (in case there are negative values). Doing this should reveal something hidden in the image *Same_2.tif*.\nNote that the contrast settings differ between *Same_1.tif* and *Same_3.tif*, so they may _look_ different.\n\n(Note that the calculator's {guilabel}`Difference` or {guilabel}`Divide` commands could also be used.\n{guilabel}`XOR` would work as well, but its output is harder to interpret since it involves comparing individual bits used to store each pixel value and gives an output where all matching bits are 0 and all non-matching bits are 1.\nWhen converted back into actual decimal values and then to colors for us to look at, this can appear strange.\nBut at least if the resulting image is not completely black then we know that the original input images were not identical.)"
+  },
+  {
+    "id": "2.3-p1",
+    "chapter": "2.3",
+    "track": "concept",
+    "prompt": "What do you suppose _6-connectivity_ and _26-connectivity_ refer to?",
+    "solution": "6-connectivity is similar to 4-connectivity, but in 3D.\nIf all 3D diagonals are considered, we end up with each pixel having 26 neighbors."
+  },
+  {
+    "id": "2.3-p1",
+    "chapter": "2.3",
+    "track": "imagej",
+    "prompt": "[Connectivity](sec_thresholds_connectivity) (4 or 8) is an important consideration when converting a binary image to objects, since it can have a major impact on the number and size of objects.\n\nWork out what kind of connectivity is used by\n* {menuselection}`Analyze --> Analyze Particles...`\n* the *Wand tool* <img src=\"../../../images/imagej/icons/wand.png\" />\n\n**Note:** You can investigate this by applying the commands/tools to a binary image that has some diagonally connected pixels.\nOne way to do this is by thresholding a suitable image, another is to use the *Brush tool* <img src=\"../../../images/imagej/icons/brush.png\" /> to draw your own pixels in the binary image.\n\n[![launch ImageJ.JS](https://ij.imjoy.io/assets/badge/open-in-imagej-js-badge.svg)](https://ij.imjoy.io/)",
+    "solution": "At the time of writing, {menuselection}`Analyze --> Analyze Particles...` uses 8-connectivity.\n\nFor the *Wand tool* the right answer will depend upon the setting you see if you double-click the tool.\nThere are three options: 4-connectivity, 8-connectivity and 'legacy' (where 'legacy' seems to behave a bit like 8-connectivity).\n\n\n![](assets/2.3/imagej-thresholds-wand-dialog.png)"
+  },
+  {
+    "id": "2.3-p2",
+    "chapter": "2.3",
+    "track": "imagej",
+    "prompt": "Create an image including NaN pixels, then measure some ROIs drawn on it.\nAre area measurements affected by whether NaNs are present or not?\n\n[![launch ImageJ.JS](https://ij.imjoy.io/assets/badge/open-in-imagej-js-badge.svg)](https://ij.imjoy.io/)",
+    "solution": "They are!\nIf you measure the area of an image containing NaNs, the result is less than if you measure the area of the same image converted to 8-bit -- since only the non-NaN parts are included.\nIf you measure a region containing NaNs only, the area is 0."
+  },
+  {
+    "id": "2.3-p3",
+    "chapter": "2.3",
+    "track": "imagej",
+    "prompt": "Through experiment or guesswork, what do you suppose happens to NaNs with a 32-bit image is converted to 8-bit or 16-bit?",
+    "solution": "Since NaN is not an integer, it cannot be stored in an 8-bit or 16-bit unsigned integer image.\nInstead, all NaNs simply become zero."
+  },
+  {
+    "id": "2.3-p4",
+    "chapter": "2.3",
+    "track": "imagej",
+    "prompt": "Explore setting thresholds with and without {guilabel}`Don't reset range` selected for the image {menuselection}`File --> Open Samples --> M51 Galaxy (16-bits)`, and pressing the {guilabel}`Auto` button to determine a threshold.\n\nKeep {menuselection}`Image --> Adjust --> Brightness/Contrast...` open as you explore, so you can make adjustments before calculating the thresholds.\n\n\n![](assets/2.3/imagej-m51.png)\n\n\n[![launch ImageJ.JS](https://ij.imjoy.io/assets/badge/open-in-imagej-js-badge.svg)](https://ij.imjoy.io/?run=https://gist.github.com/petebankhead/c5d2075777c458c70c69a1f2c8b37391)",
+    "solution": "This image shows a potential use of the {guilabel}`Don't reset range` option -- used cautiously.\n\n\n> 🖼️ **Figure (generated):** Thresholding a 16-bit image with and without 'Don't reset range' selected."
+  },
+  {
+    "id": "2.3-p5",
+    "chapter": "2.3",
+    "track": "imagej",
+    "prompt": "What are the implications of using a 256-bin histogram for thresholding a 32-bit image?\n\nIn particular, how might any outlier pixels affect the accuracy with which you can define a threshold -- automatically or manually?\n\nTo explore this, you can use the extreme example of *cell_outlier.tif* along with the {menuselection}`Image --> Adjust --> Threshold...` command.\n\nHow could you (manually) reduce the impact of any problems you find?\n\n**Note:** {menuselection}`Analyze --> Histogram` lets you investigate the image histogram with different numbers of bins -- but any changes you make here will not be reflected in the histogram actually used for thresholding.\n\n[![launch ImageJ.JS](https://ij.imjoy.io/assets/badge/launch-imagej-js-badge.svg)](https://ij.imjoy.io?open=https://github.com/bioimagebook/practical-data/blob/main/images/cell_outlier.tif)",
+    "solution": "First, a positive implication of using a 256-bit histogram for thresholding is that it can be fast: more bins add to the computations involved.\nAlso, creating too many bins has the result of making most of them zero -- potentially causing some automated threshold-determination algorithms to fail.\n\nA negative implication is that using 256 bins means that only 256 different thresholds are possible: that is, if your image range is 0–25500, then the thresholds you could get are 0, 100, 200, ... 25500.\nIf the optimal threshold is really 150, this will not be found.\nBut usually if your range of pixel values is this large, you do not need a very fine-grained threshold for acceptable results anyway.\n\nThis changes if you have outliers.\nA single extreme pixel -- which might occur when a pixel in a CCD camera is somehow 'broken' -- can cause most other pixels in the image to be squeezed into only a few bins.\nThen the histogram resolution might really be too small for reasonable thresholding.\n\nIt's a sufficiently obscure problem that hopefully it won't bother you.\nHowever, if you do experience the issue then two possible ways to overcome it are:\n\n1. Adjust the brightness/contrast sliders and ensure that {guilabel}`Don't reset range` **is** selected. This is the benefit of the option existing.\n2. Convert the image to 8-bit manually yourself. This allows you to effectively choose the range of the histogram bins (using {menuselection}`Brightness/Contrast...`; see {ref}`Types & bit-depths<sec_bit_depths_converting>`) Since the threshold is made using 256 bins, you are not really losing any information that was not going to be lost anyway."
+  },
+  {
+    "id": "2.4-p1",
+    "chapter": "2.4",
+    "track": "concept",
+    "prompt": "In ImageJ, creating a mean filter with *Radius = 6* results in a circular filter that replaces each pixel with the mean of 121 pixels.\nUsing a square\n11×11 filter would also replace each pixel with the mean of 121 pixels.\n\nCan you think of any advantages in using the circular filter rather than the square filter?",
+    "solution": "Circles are more 'compact'.\nEvery point on the perimeter of a circle is the same distance from the center.\nTherefore using a circular filter involves calculating the mean of all pixels a distance of $\\leq$ *Radius* pixels away from the center.\n\nFor a square filter, pixels that are further away in diagonal directions than horizontal or vertical directions are allowed to influence the results.\nIf a pixel is further away, it's more likely to have a very different value because it is part of some other structure.\nAveraging across structures can blur them into one another, so is best avoided."
+  },
+  {
+    "id": "2.4-p2",
+    "chapter": "2.4",
+    "track": "concept",
+    "prompt": "Suppose the mean pixel value of an image is 100.\nWhat will the mean value be after applying a horizontal gradient filter?",
+    "solution": "After applying a gradient filter, the image mean will be 0: every pixel is added once and subtracted once when calculating the result.\n\n(Note that the mean value of a *gradient magnitude* image will be ≥ 0, because all pixels have either positive values or are equal to zero.)"
+  },
+  {
+    "id": "2.4-p3",
+    "chapter": "2.4",
+    "track": "concept",
+    "prompt": "What would happen if you subtract a minimum filtered image (e.g.\n{numref}`fig-processing_filters_rank`C) from a maximum filtered image (Figure {numref}`fig-processing_filters_rank`B)?",
+    "solution": "Subtracting a minimum from a maximum filtered image would be another way to accent the edges:\n\n\n> 🖼️ *(generated figure)*"
+  },
+  {
+    "id": "2.4-p1",
+    "chapter": "2.4",
+    "track": "imagej",
+    "prompt": "When defining an _n_×_n_ filter kernel with {menuselection}`Convolve...`, ImageJ insists that __n__ is an odd number. Why?",
+    "solution": "If *n* is an odd number, the filter has a clear central pixel.\nThis makes it possible to center the filter kernel on a pixel on the image."
+  },
+  {
+    "id": "2.4-p2",
+    "chapter": "2.4",
+    "track": "imagej",
+    "prompt": "Predict what happens when you convolve an image using a filter that consists of a single coefficient with a value -1 in the following cases:\n\n1.  {guilabel}`Normalize Kernel` is checked\n2.  You have a 32-bit image, {guilabel}`Normalize Kernel` is unchecked\n3.  You have an 8-bit image, {guilabel}`Normalize Kernel` is unchecked",
+    "solution": "The results of convolving with a single -1 coefficient in different circumstances:\n1.  _{guilabel}`Normalize Kernel` is checked_: Nothing at all happens. The normalization makes the filter just a single 1... and convolving with a single 1 leaves the image unchanged.\n2.  _You have a 32-bit image ({guilabel}`Normalize Kernel` unchecked)_: The pixel values become negative, and the image looks inverted.\n3.  _You have an 8-bit image ({guilabel}`Normalize Kernel` unchecked)_: The pixel values would become negative, but then cannot be stored in an 8-bit unsigned integer form. Therefore, all pixels simply become clipped to zero."
+  },
+  {
+    "id": "2.4-p3",
+    "chapter": "2.4",
+    "track": "imagej",
+    "prompt": "Using any image, work out which of the methods for dealing with boundaries shown in {numref}`fig-filter_boundaries` is used by ImageJ's {menuselection}`Convolve...` command.\n\n**Note:** This requires a bit of creativity.\nIt will certainly help to use an image with some variation at the image boundary.\nI used {menuselection}`File --> Open Samples --> Blobs`.\n\n[![launch ImageJ.JS](https://ij.imjoy.io/assets/badge/launch-imagej-js-badge.svg)](https://ij.imjoy.io?run=https://gist.github.com/petebankhead/cbbb6f210d173c8488247799efc3b970)",
+    "solution": "Replication of boundary pixels is the default method used by {menuselection}`Process --> Filters --> Convolve...` in ImageJ (although other filtering plugins by different authors might use different methods).\n\nMy approach to test this involved using {menuselection}`Convolve...` with a filter that consisting of a 1 followed by a lot of zeros (e.g. `1 0 0 0 0 0 0 0 0 0 0 0 0...`).\nThis basically shifts the image to the right, bringing whatever is outside the image boundary into view.\n\n\n![](assets/2.4/imagej-filters-convolve-padding.png)"
+  },
+  {
+    "id": "2.4-p4",
+    "chapter": "2.4",
+    "track": "imagej",
+    "prompt": "Practice using the commands we've met so far by determining the **gradient magnitude** of an image, as described [here](sec_filters_gradient).\n\nYou will need to use\n* {menuselection}`Image --> Duplicate...`\n* {menuselection}`Process --> Filters --> Convolve...`\n* {menuselection}`Process --> Image Calculator...`\n* Several commands in the {menuselection}`Process --> Math` submenu\n* Something else we've used before... possibly\n\nIf you need a sample image, you can use {menuselection}`File --> Open samples --> Blobs (25K)`.\n_(Be sure to pay attention to the bit-depth!)_\n\n[![launch ImageJ.JS](https://ij.imjoy.io/assets/badge/launch-imagej-js-badge.svg)](https://ij.imjoy.io?run=https://gist.github.com/petebankhead/cbbb6f210d173c8488247799efc3b970)",
+    "solution": "The process to calculate the gradient magnitude is:\n\n1.  Convert the image to 32-bit (if it isn't already 32-bit)\n2.  Duplicate the image\n3.  Convolve one copy of the image with the horizontal gradient filter, and one with the vertical (i.e. coefficients `-1 0 1` arranged as a row or column)\n4.  Compute the square of both images ({menuselection}`Process --> Math --> Square`)\n5.  Use the image calculator to add the images together\n6.  Compute the square root of the resulting image ({menuselection}`Process --> Math --> Square Root`)\n\nHere's a macro that implements these steps:\n```java\nrun(\"32-bit\");\n\nid1 = getImageID()\nrun(\"Duplicate...\", \" \");\nid2 = getImageID();\n\nrun(\"Convolve...\", \"text1=[-1 0 1\\n] normalize\");\nrun(\"Square\");\n\nselectImage(id1);\nrun(\"Convolve...\", \"text1=-1\\n0\\n1\\n normalize\");\nrun(\"Square\");\n\nimageCalculator(\"Add create\", id1, id2);\nrun(\"Square Root\");\n```\n\nThe convolution results in negative values, which is why the 32-bit conversion is needed.\n\n**Note:** This is (almost) what is done by the command {menuselection}`Process --> Find Edges`, except the gradient filters are slightly different."
+  },
+  {
+    "id": "2.4-p5",
+    "chapter": "2.4",
+    "track": "imagej",
+    "prompt": "ImageJ has a LUT called **edges** under {menuselection}`Image --> Lookup Tables --> Edges`.\nApplied to {menuselection}`File --> Open samples --> Blobs (25K)`, it does a rather good job of highlighting edges -- without actually changing the pixels at all.\n\nHow does it work?\nDoes it apply a filter?\n\n[![launch ImageJ.JS](https://ij.imjoy.io/assets/badge/launch-imagej-js-badge.svg)](https://ij.imjoy.io?run=https://gist.github.com/petebankhead/cbbb6f210d173c8488247799efc3b970)",
+    "solution": "The {menuselection}`edges` LUT shows most low and high pixel values as black -- and uses lighter shades of gray only for a small range of values in between (see {menuselection}`Image --> Color --> Edit LUT...`).\nIn any image with a good separation of background and foreground pixels, but which still has a somewhat smooth transition between them, this means everything but the edges can appear black.\n\nAll this is achieved by a LUT: no pixels were harmed, there was no filtering applied."
+  },
+  {
+    "id": "2.5-p1",
+    "chapter": "2.5",
+    "track": "concept",
+    "prompt": "We don't always want to fill *all* the holes within a binary image, but rather only the smaller ones.\nCan you think of a way to fill *only holes smaller than 1000 px²*, using area opening?\n\nYou'll need at least one operation described in previous chapter.",
+    "solution": "One way to fill holes below a fixed size:\n\n* Invert the binary image\n* Perform area opening with an area threshold of 1000 px²\n* Invert the result"
+  },
+  {
+    "id": "2.5-p1",
+    "chapter": "2.5",
+    "track": "imagej",
+    "prompt": "The outline of an object in a binary image can also be determined by applying one other morphological operation to a duplicate of the image, and then using the {menuselection}`Image Calculator`.\nHow?",
+    "solution": "To outline the objects in a binary image, you can simply calculate the difference between the original image and an eroded (or dilated, if you want the pixels just beyond the objects) duplicate of the image."
+  },
+  {
+    "id": "2.6-p1",
+    "chapter": "2.6",
+    "track": "imagej",
+    "prompt": "Imagine you have created a binary image containing detected cells, but you are only interested in the region inside the cell that is close to the membrane, i.e. within 5 pixels of the edge of each detected object.\nAny pixels outside the objects or closer to their centers do not matter.\n\nHow would you go about finding these regions using ImageJ and the distance transform?\n\n**Note:** There other ways to do this using techniques we've discussed, although these don't necessarily give identical results.",
+    "solution": "This is the approach I was thinking of:\n1. Run {menuselection}`Edit --> Invert`\n2. Run {menuselection}`Process --> Binary --> Distance Map`\n3. Run {menuselection}`Image --> Adjust --> Threshold...`\n4. Choose {guilabel}`Set` and enter *Lower Threshold Level: 1* and *Higher Threshold Level: 5*.\n\nThere are more possible ways, such as applying a maximum filter and subtracting the original binary image -- but I think the distance transform is more elegant.\nThe distance transform is also likely to be much faster for large distances, and more precise (assuming you use a 32-bit output)."
+  },
+  {
+    "id": "2.7-p1",
+    "chapter": "2.7",
+    "track": "concept",
+    "prompt": "How would you expect {numref}`fig-multi_thresholds` to differ if the [triangle method](sec_thresholds_triangle) was used to determine the threshold, rather than [Otsu's method](sec_thresholds_otsu)?",
+    "solution": "Here, the triangle method performs well.\nIt sets the threshold appropriately at the foot of the background peak in both cases.\n\n\n> 🖼️ *(generated figure)*"
+  },
+  {
+    "id": "2.7-p1",
+    "chapter": "2.7",
+    "track": "imagej",
+    "prompt": "By default, the percentage of saturated pixels in {menuselection}`Enhance Contrast...` is set to 0.4.\nWhy might this be chosen instead of 0?",
+    "solution": "If the percentage of saturated pixels is 0, then the minimum and maximum pixel values throughout the image will be given the first and last LUT colors respectively, with all other colors devoted to values in between.\nThis is sensitive to outliers, and often results in images that have poor contrast.\nIt's usually better to accept some small amount of visual saturation, in order to give more LUT colors to the pixel values between the extremes."
+  },
+  {
+    "id": "2.7-p2",
+    "chapter": "2.7",
+    "track": "imagej",
+    "prompt": "When you threshold a stack, you have an option to choose {guilabel}`Stack Histogram`. Then, when you choose {guilabel}`Apply` you are asked if you want to {guilabel}`Calculate Threshold for Each Image`.\nWhat difference do you expect these two options to make, and what combinations would you use for:\n\n\n1.  a stack consisting of 2D images from different color channels\n2.  a __z__-stack\n3.  a time series\n\n_Note:_ Have a look at what happens when you click {guilabel}`Auto` while scrolling through one channel of the stack {menuselection}`File --> Open samples --> Mitosis (26 MB, 5D Stack)`, with and without {guilabel}`Stack Histogram` selected.\nYou will have to split the channels for this because ImageJ currently refuses to threshold multichannel images with extra dimensions (which helps avoid some confusion).\n{guilabel}`Dark Background` should always be selected here.",
+    "solution": "If {guilabel}`Stack Histogram` is checked, the thresholds are computed from a histogram of all the pixels in the entire image stack; otherwise, the histogram of only the currently-displayed image slice is used.\n\nBUT! If {guilabel}`Calculate Threshold for Each Image` is chosen, then this is ignored: the threshold is always determined by the selected automatic method using the histogram of the corresponding slice only.\n\nTherefore, the most sensible combinations of thresholding options to use depend upon the type of data.\n\n\n1.  _color channels_ – There is often no good reason to suppose the amount of fluorescence in different color channels will be similar, and so thresholds should be calculated from each channel independently.\n2.  _z-Stacks_ – It is normally a good idea to use the stack histogram with __z__-stacks.\nIf you do not, then your threshold will be affected by whatever slice you happen to be viewing at the time of thresholding – introducing a potentially weird source of variability in the results.\nIt is probably _not_ a good idea to calculate a new threshold for each slice, because this would lead to at least _something_ being detected on every slice.\nBut in the outer slices there may well only be blur and noise – in which case nothing _should_ be detected!\n3.  _Time series_ – In a time series, bleaching can sometimes cause the image to darken over time.\nIn such a case, using the stack histogram might cause fewer pixels to exceed the threshold at later time points simply for this reason, and recalculating the threshold for each image may be better.\nOn the other hand, if images were previously normalized somehow to compensate for bleaching [^fn_1], then the stack threshold might be preferable again.\nIt's tricky.\n\n[^fn_1]: See https://imagej.net/Bleach_Correction\n\n\nThere is one other implementation issue that needs attention.\nWhen {guilabel}`Dark Background` is checked and an automated threshold is computed, then it is only really the low threshold that matters – the high threshold is always set to the maximum in the histogram to ensure that all brighter pixels are designated 'foreground' in the result.\nHowever, if not using {guilabel}`Stack Histogram`, then for non-8-bit images the histograms are calculated using the minimum and maximum pixels on the slice, and consequently the high threshold cannot be higher than this maximum value (look at how the high threshold value changes in {menuselection}`Mitosis` as you compute auto thresholds for different slices).\nThis means that any brighter pixels will be _outside_ the threshold range (and therefore 'background') if they occur on a different slice.\nThis can cause holes to appear in the brightest parts of structures, and is probably not what you want.\nA similar situation occurs with the low threshold when {guilabel}`Dark Background` is unchecked."
+  },
+  {
+    "id": "2.7-p3",
+    "chapter": "2.7",
+    "track": "imagej",
+    "prompt": "Suppose you have a cell, nucleus or some other large 3D structure in a __z__-stack, and you want to draw the smallest 2D ROI that completely contains it on every slice.\nAn example is shown below for the green structure in the {menuselection}`Confocal Series` sample image.\n\nHow would you create such a ROI, and be confident that it is large enough for all slices?\n\n[![launch ImageJ.JS](https://ij.imjoy.io/assets/badge/launch-imagej-js-badge.svg)](https://ij.imjoy.io?run=https://gist.github.com/petebankhead/55b02288a529512fee0f321fee0da693)\n\n\n> 🖼️ *(generated figure)*",
+    "solution": "My strategy would be to create a z-projection (max intensity) and then draw the ROI on this – or, preferably, create the ROI by thresholding using {menuselection}`Image --> Adjust --> Threshold` and the {guilabel}`Wand` tool.\nThis ROI can then be transferred over to the original stack, either via the ROI Manager or {menuselection}`Edit --> Selection --> Restore Selection`."
+  },
+  {
+    "id": "2.7-p4",
+    "chapter": "2.7",
+    "track": "imagej",
+    "prompt": "How can you translate the total number of pixels in an object into its volume, e.g.\nin µm<sup>3</sup>? Give some thought to how accurate your method will be.",
+    "solution": "You could treat each pixel as a rectangular cuboid, with a volume equal to _pixel width_×_pixel height_×_voxel depth_ (as given in {menuselection}`Image --> Properties...`).\nThen multiply this by the number of pixels within the object.\nThis is what the {ref}`3D Objects Counter<sec_multidimensional_counter>`  plugin does when measuring volumes.\n\nWhenever you want to compare object sizes across images acquired with different pixel sizes, this is certainly better than just taking the raw pixel counts as measures of volume.\nHowever, it is unlikely to be very accurate – and volume measurements obtained this way should not be trusted too much, especially when dealing with very small sizes.\nThey are also likely to be quite sensitive to spacing."
+  },
+  {
+    "id": "3.2-p1",
+    "chapter": "3.2",
+    "track": "concept",
+    "prompt": "In focus, a light-emitting point looks like a small, bright blob.\nOut of focus, it's much less bright and extends over a wider area.\n\nHowever, how would you expect the _total amount_ of light to differ in a widefield image depending upon whether a plane is in-focus or not?\nIn other words, would you expect more or less light in the focal plane than in other planes above or below it?",
+    "solution": "In a widefield image, every plane we can record contains in-focus light along with _all_ the detectable light from _all_ other planes added together.\nTherefore we should expect approximately _the same total amount of light_ within each plane of a *z*-stack – just differently distributed.\nThat's potentially a lot of light in the 'wrong' place, especially if looking at a thick sample.\n\nAt least, this would be so for an infinitely-large detector, or a small, centered sample.\nIn practice, if the light originates from a location so out-of-focus that its light spills over the side of the detector then this plane would contain less light."
+  },
+  {
+    "id": "3.2-p2",
+    "chapter": "3.2",
+    "track": "concept",
+    "prompt": "According to Equation {eq}`eqn-res_lateral`, the equation for the Airy disk size, what are the two variables we _may_ be able to control that influence the amount of blur in our images?\nAnd how must they be changed (increased or decreased) for the images to have less blur?",
+    "solution": "If the wavelength $\\lambda$ is _lower_ or the objective NA is _higher_, $r_{airy}$ decreases and we have less blur."
+  },
+  {
+    "id": "3.2-p3",
+    "chapter": "3.2",
+    "track": "concept",
+    "prompt": "Does the NA have more influence on blur in the *xy* plane, or along the *z* axis?",
+    "solution": "Because of the squaring, the NA has a much greater influence on blur along the *z* axis than in *xy*.\nThis can be seen clearly in {numref}`fig-psf_na`."
+  },
+  {
+    "id": "3.2-p4",
+    "chapter": "3.2",
+    "track": "concept",
+    "prompt": "Convince yourself that $z_{min}$ will be considerably higher than $r_{airy}$ using one of the following methods:\n\n\n* Put an example refractive index (e.g. $\\eta = 1.34$ for water), and some reasonable values of $\\lambda$ and the NA into the equations for the lateral {eq}`eqn-res_lateral` and axial {eq}`eqn-res_axial` resolution, and compare the results\n* Calculate the ratio $z_{min} / r_{airy}$ and substitute in the equation for the NA.\nThis should reveal that the ratio is bigger than 1, i.e. that $z_{min}$ is larger.\n\nWhat is the main implication of this observation, in terms of how separated structures need to be along different dimensions for them still to be distinguishable?",
+    "solution": "The ratio is\n\n\n$$\n\\frac{z_{min}}{r_{airy}} = \\frac{2 \\lambda \\times \\eta}{\\textrm{NA}^2} \\times \\frac{\\textrm{NA}}{0.61 \\lambda} = \\frac{3.28\\eta}{\\textrm{NA}} = \\frac{3.28}{\\sin\\theta}\n$$\n\n\nTherefore, even as $\\sin\\theta$ becomes close to 1 (i.e.\na very high NA objective is used), the value of $z_{min}$ remains over 3 times larger than $r_{airy}$ -- the *z* resolution is much worse.\nWhen the NA is lower, the difference is even more.\n\nThe main practical implication is that it's more likely that you will be able to distinguish structures that are separated from one another by a short distance in *xy* than similarly separated in *z*.\nIf you really need information along the *z*-dimension more than anywhere else, maybe rotating your sample could help?"
+  },
+  {
+    "id": "3.2-p5",
+    "chapter": "3.2",
+    "track": "concept",
+    "prompt": "Suppose the diameter of the Airy disk is around 500 nm, and you are looking at an image containing separate, well-spaced structures that are 2 nm, 20 nm and 200 nm in size.\nAssuming that you have imaged all of these exactly in focus (after all, you are a brilliant microscopist), how will these structures appear in the image?\n\n_Note:_ This is a particularly important question! Think of both the size and brightness.",
+    "solution": "Because even an infinitesimally small point cannot appear smaller than the Airy disk in the recorded image, _potentially all 3 of these structures look the same!_ There may be _some_ increase in size visible with the 200 nm structure (because it is larger than a single point, this makes it like many different, slightly-shifted-but-mostly-overlapping Airy disks added together), but it will certainly not appear 10 or 100 times larger than the others.\n\n_However_, because smaller objects typically emit fewer photons, the smaller structures may well appear less bright -- if they are bright enough to be visible at all.\nTherefore, at this scale accurate measurements of size are impossible from (conventional, non-super-resolution) fluorescence microscopy images, but the actual size may have some relationship with brightness."
+  },
+  {
+    "id": "3.3-p1",
+    "chapter": "3.3",
+    "track": "concept",
+    "prompt": "Calculate the SNR in the following cases:\n\n\n* We detect an average of 10 photons, read noise standard deviation 1 photon\n* We detect an average of 100 photons, read noise standard deviation 10 photons\n* We detect an average of 1000 photons, read noise standard deviation 10 photons\n\nFor the purposes of this question, you should assume that read noise is the only noise present (ignore photon noise).",
+    "solution": "* We detect an average of 10 photons, read noise std. dev. 1 photon: _SNR = 10_\n* We detect an average of 100 photons, read noise std. dev. 10 photons: _SNR = 10_\n* We detect an average of 1000 photons, read noise std. dev. 10 photons: _SNR = 100_\n\nThe noise causes us a similar degree of uncertainty in the first two cases.\nIn the third case, the noise is likely to be less problematic: higher SNRs are good."
+  },
+  {
+    "id": "3.3-p2",
+    "chapter": "3.3",
+    "track": "concept",
+    "prompt": "The formula for the probability mass function of the Poisson distribution is:\n\n\n$$\n\\mathcal{P}(\\lambda) \\sim \\frac{e^{-\\lambda}\\lambda^{k}}{k!}\n$$\n\n\nwhere\n\n\n* $\\lambda$ is the mean rate of occurrence of the event (i.e.\nthe noise-free photon emission rate we want)\n* $k$ is an actual number of occurrences for which we want to compute the probability\n* $k!$ is the _factorial_ of $k$ (i.e. $k \\times (k-1) \\times (k-2) \\times ... \\times 1$)\n\nSo if you know that the rate of photon emission is 0.5, for example, you can put $\\lambda = 0.5$ into the equation and determine the probability of getting any particular (integer) value of $k$ photons.\nApplying this, the probability of not detecting any photons ($k = 0$) is 0.6065, while the probability of detecting a single photon ($k = 1$) is $0.3033$.\n\nWhat we know for sure is that we can't possibly detect 0.5 photons: we'll get an integer value, not 'part of a photon'.\n\nAssuming the mean rate of photon emission is 1, use Equation {eq}`eqn-poisson` to calculate the probability of actually detecting 5 (which, at 5 times the true rate, would be an extremely inaccurate result).\nHow common do you suppose it is to find pixels that are so noisy in the background region of a dark image?",
+    "solution": "The probability of detecting 5 photons is approximately 0.0031.\n\n\n$$\n\\frac{e^{-1}}{5!} = \\frac{1}{120e} = 0.0031\n$$\n\n\nAlthough this is a very low probability, images contain so many pixels that one should expect to see such noisy values often.\nFor example, in a rather dark and dull 512×512 pixel image in which the average photon emission rate is 1, we would expect 800 pixels to have a value of 5 -- and two pixels even to have a value of 8.\nThe presence of isolated bright or dark pixels therefore usually tells us very little indeed, and it is only by processing the image more carefully and looking at surrounding values that we can (sometimes) discount the possibility these are simply the result of noise."
+  },
+  {
+    "id": "3.3-p3",
+    "chapter": "3.3",
+    "track": "concept",
+    "prompt": "Open the images *mystery_noise_1.tif* and *mystery_noise_2.tif* in ImageJ.\n\nBoth are noisy, but in one the noise follows a Gaussian distribution (like read noise) and in the other it follows a Poisson distribution (like photon noise).\nWhich is which?\n\n[![launch ImageJ.JS](https://ij.imjoy.io/assets/badge/launch-imagej-js-badge.svg)](https://ij.imjoy.io?open=https://github.com/bioimagebook/practical-data/blob/main/images/mystery_noise_1.tif&open=https://github.com/bioimagebook/practical-data/blob/main/images/mystery_noise_2.tif)",
+    "solution": "The noise in *mystery_noise_1.tif* is Gaussian; the noise in *mystery_noise_2.tif* follows a Poisson distribution.\nSince there are reasonably flat regions within the cell and background, I would test this by drawing a ROI within each and measuring the standard deviations.\nWhere these are similar, the noise is Gaussian; if there is a big difference, the noise is likely to be Poisson.\n\nIf no flat regions were available, I would try applying a gradient filter with the coefficients `-1 1 0`, and inspecting the results. Alternatively, I might try plotting a fluorescence profile or subtracting a very slightly smoothed version of each image."
+  },
+  {
+    "id": "3.3-p4",
+    "chapter": "3.3",
+    "track": "concept",
+    "prompt": "Suppose you have an image that does not contain much light, but has some isolated bright pixels.\n\nWhich kind of filter could you use to remove them? And is it safe to assume they are due to dark noise or something similar, or might the pixels correspond to actual bright structures?",
+    "solution": "A median filter is a popular choice for removing isolated bright pixels, although when using ImageJ I sometimes prefer {menuselection}`Process --> Noise --> Remove Outliers...` because this only puts the median-filtered output in the image if the original value was really extreme (according to some user-defined threshold).\nThis then preserves the independence of the noise at all other pixels -- so it still behaves reliably and predictably like Poisson + Gaussian noise.\nWe can reduce the remaining noise with a Gaussian filter if necessary.\n\nAssuming that the size of a pixel is smaller than the PSF (which is usually the case in microscopy), it's a good idea to remove these outliers.\nThey _cannot_ be real structures, because any real structure would have to extend over a region at least as large as the PSF.\nHowever if the pixel size is very large, then we may not be able to rule out that the 'outliers' are caused by some real, bright structures."
+  },
+  {
+    "id": "3.4-p1",
+    "chapter": "3.4",
+    "track": "concept",
+    "prompt": "Why is it often recommended that the pinhole in LSCM be set to have the same size as one Airy disk? And why is it sometimes better not to strictly follow this recommendation?",
+    "solution": "As described in {ref}`chap_formation_spatial`, the vast majority of the light from the in-focus plane falls within the Airy disk.\nUsing a pinhole smaller than this can result in so little light being detected that the image becomes too noisy to be useful.\nOn the other hand, increasing the size of the pinhole will result in some more of the remaining light located in the outer rings of the Airy pattern, but _most_ extra photons will come from out-of-focus planes.\nThis causes a reduction in the effectiveness of the optical sectioning.\nTherefore, a pinhole diameter of approximately 1 Airy disk provides a reasonable balance between detecting most of the in-focus light and achieving good optical sectioning.\n\nNevertheless, sometimes a reduction in optical sectioning is a worthwhile cost -- such as when photons are very scarce, and some extra background is tolerable.\nAlso, when recording a multichannel image then you may well have to set the pinhole size according to the Airy disk for one channel.\nBut because the size of the disk depends upon the light wavelength (as described in Equation {eq}`eqn-res_lateral`), the pinhole diameter will differ in terms of Airy disk sizes for other channels."
+  },
+  {
+    "id": "3.4-p2",
+    "chapter": "3.4",
+    "track": "concept",
+    "prompt": "From a practical point of view, an EMCCD is rather like having a CCD with no read noise, but with half the QE.\nUnder what circumstances (i.e. high or low numbers of photons) is an EMCCD preferable to a CCD?",
+    "solution": "The gain register of EMCCDs offers benefits primarily when few photons are available (i.e. when read-noise is the main problem, such as in SDCM).\nCCDs are preferable when many photons are available (e.g. in widefield).\n\nIf you are skeptical about this, consider an image in which your read noise standard deviation is 10 electrons and you detect on average 9 electrons (originally photons).\nThe photon noise then has a standard deviation of 3.\nThe read noise is much larger and will completely dominate the image: nothing interesting will be visible.\nIt's then worth the cost of even more photon noise to be able to eliminate the read noise.\nThe final image will still look pretty bad, but at least interpreting it is not hopeless.\n\nBut suppose you happen to have 90000 detected photons instead, in which case the standard deviation of the photon noise is now 300.\nThe read noise of 10 is comparatively insignificant, and there is nothing to gain from electron multiplication and making the photon noise situation worse."
+  },
+  {
+    "id": "3.4-p3",
+    "chapter": "3.4",
+    "track": "concept",
+    "prompt": "Based upon the above descriptions, which detectors seem most appropriate (generally!) for (a) widefield microscopy, (b) SDCM and (c) LSCM?",
+    "solution": "The following are reasonable rules of thumb:\n\n\n* _Widefield microscopy:_ A CCD is suitable because of its ability to record many pixels simultaneously.\nThe large number of photons normally detected means that read noise is not usually a big issue, and an EMCCD can make the problem of noise worse instead of better.\n* _Spinning Disk Confocal Microscopy:_ A CCD may be used, but an EMCCD (or other CCD variant) is often preferable.\nThis is because SDCM usually gives lower photon counts (certainly lower than in a comparable widefield image), which can mean that read noise would dominate the result unless the photons are somehow amplified.\n* _Laser Scanning Confocal Microscopy:_ PMTs are suitable, since the image is built up one pixel at a time."
+  },
+  {
+    "id": "3.4-p4",
+    "chapter": "3.4",
+    "track": "concept",
+    "prompt": "Previously we explored how CCDs can use 2×2 binning to combine the electrons corresponding to multiple pixels together into a single pixel, which is then 'less noisy'.\nA similar effect can be achieved by just acquiring an image without binning and applying a 2×2 filter, in which all the coefficients have values of one.\nBoth techniques result in images that have roughly four times as many photons contributing to each pixel, and thus a better SNR.\n\nThink of one major advantage and one disadvantage of using filtering _after_ acquisition, rather than binning _during_ acquisition.",
+    "solution": "A 2×2 binned image contains 1/4 the number of pixels of the original image.\nThis represents a considerable loss of spatial information, and you would get a different result if you were to start binning at the first or second row or column, since different pixels would be combined in each case.\nOn the other hand, filtering has the advantage of giving you an image that is exactly the same size as the original.\nThis is like getting all four possible binned images for the price of one (i.e. all four different ways to split the image into 2×2 pixel blocks, instead of just one way), so less spatial information is lost.\nWith filtering you also have much more flexibility: you might choose a 3×3 filter instead, or a Gaussian filter, or a range of different filtering options to see which is best.\nWith binning, you need to choose one option during acquisition and stick with it.\n\n_However_, if _read noise_ is a major problem then filtering might not be such a good choice.\nThis is because read noise is added to every acquired pixel once, and it does not matter if you have a few photons or many -- its standard deviation remains the same.\nTherefore, if the electrons from four pixels are combined by binning during acquisition, then only one 'unit' of read noise appears in the image corresponding to those pixels.\nBut an unbinned image would have read noise added four times, and even after 2×2 filtering this is still more read noise than in a comparable binned image.\nSometimes this extra noise is too high a cost for the flexibility of filtering, and binning is better.\n(In this regard, remember that read noise is typically worse for CCD cameras, but not such a problem for EMCCDs or PMTs.)"
+  }
+]
