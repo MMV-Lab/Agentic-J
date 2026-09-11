@@ -12,6 +12,10 @@ floor for concepts at this time).
 
 Promoted from review on 2026-07-22: 99 entries.
 Added 2026-08-03: 2 entries (`lj-verify-per-subgroup`, `lj-nuclei-within-cell-mask`) — 101 total.
+Added 2026-09-07: 3 entries on border-object handling (`hab-border-object-exclusion`,
+`hab-border-count-correction`, `lj-border-paired-compartments`) — 104 total. This also
+admitted **haase** (*Bio-image Analysis Notebooks*) as a new source; both `hab-` citations
+were verified verbatim against the local corpus before promotion.
 
 ---
 
@@ -721,3 +725,24 @@ Added 2026-08-03: 2 entries (`lj-verify-per-subgroup`, `lj-nuclei-within-cell-ma
   **WHY**  each nucleus is then assigned to exactly one cell by construction; orphan nuclei outside any cell, double assignments and background false positives disappear, and the per-cell table needs no matching step
   **AVOID** segmenting nuclei globally and matching them to cells afterwards by overlap or centroid distance
   SRC: Lukas (internal domain expert) — see also [[sc-labels-to-rois-bridge]]
+
+<!--c:hab-border-object-exclusion status:approved src:haase chap:20h_segmentation_post_processing/remove_labels_on_image_edges modality:general task:measurement kw:border,edge,truncated,clipped,cells on the edge,cells at the image border,objects touching the border,border objects,edge objects,partially imaged cells,cut off cells,truncated objects,remove border objects,exclude edge cells,segment objects,measuring objects,nuclei at the image border,cellpose,stardist,nuclei segmentation,dataset of nuclei-->
+- **WHEN** measuring per-object properties (area, shape, intensity) from a label image, and some objects touch the image border
+  **DO**   decide the rule before measuring, and drop the objects that touch the border; if the removal leaves gaps in the label numbering, re-number sequentially — but re-numbering discards the original label identities, so either keep the forward mapping the re-numbering returns, or recover the identities by multiplying a mask of the survivors with the original label image, before joining back to any earlier per-object results
+  **WHY**  an object clipped by the field of view is only partly imaged, so its area, shape and integrated intensity are wrong by an unknown amount, and every per-object summary inherits that error
+  **AVOID** measuring a label image without ever checking for border contact — and avoid joining on the new numbers after a sequential re-numbering as if they were the old identities, which silently mismatches every earlier per-object result
+  SRC: haase · Haase et al., *Bio-image Analysis Notebooks*, doi:10.5281/zenodo.10465773 › "Remove labels on image edges" ("In case the size of the objects is relevant, one should exclude the object which were not fully imaged and thus, touch the image border") · re-numbering caveat from the same chapter's "Sequential object (re-)labeling" › "Reverting sequential labeling" ("we apply an operation to a label image that returns a new label image with less labels that are sequentially labeled but the label-identity is lost")
+
+<!--c:hab-border-count-correction status:approved src:haase chap:32_tiled_image_processing/tiled_nuclei_counting modality:general task:measurement kw:count,density,objects per area,counting bias,border correction,tile,tiling,tiled processing,double counting,edge correction,how many objects,nuclei count,count objects,density per mm2,counting nuclei,nuclei per field-->
+- **WHEN** the output is a **count or a density** (objects per field / per mm² / per tile), not per-object morphometry
+  **DO**   correct rather than simply exclude: count the objects, then count again after removing all border-touching objects, and report the average of the two — equivalently, credit half of each removed border object
+  **WHY**  dropping every border object systematically undercounts, while keeping them all double-counts an object that straddles the boundary between two adjacent tiles — it is counted once in each — so crediting half of it to each is the unbiased estimate
+  **AVOID** reusing the "exclude border objects" rule from morphometry when the answer is a count — the two goals need opposite handling (the source uses tile overlap for morphometry, and no overlap for counting). The correction assumes many objects per tile, so do not apply it to tiles holding only a few objects. Note also that the source derives it for adjacent tiles of one large image; for genuinely separate fields it remains a sensible edge-effect correction, but the source does not state it for that case
+  SRC: haase · Haase et al., *Bio-image Analysis Notebooks*, doi:10.5281/zenodo.10465773 › "Counting nuclei in tiles" ("We can then assume that half of the removed nuclei should be counted. Hence, we add the two counts, before and after edge-removal, and compute the average of these two measurements.") — the source adds a limiting condition ("not recommended … when each tile contains only few nuclei"); it is paraphrased in AVOID rather than quoted here, per the keyword budget in `README.md`
+
+<!--c:lj-border-paired-compartments status:approved src:lukas modality:fluorescence task:segmentation kw:paired,compartments,nucleus,cytoplasm,matched,border,edge,linked objects,nucleus to cytoplasm ratio,per object measurements,drop matched nuclei,compartment pairing,nucleus cytoplasm pair-->
+- **WHEN** two segmentations are paired per object (a nucleus inside its cytoplasm, or an object and its organelles) and border objects are being removed
+  **DO**   remove the border-touching object **and its matched partner in the other channel**, keyed on the shared object ID; flag rather than silently drop, and report how many pairs were lost
+  **WHY**  removing only the compartment that happens to touch the edge leaves orphaned partners and corrupts every ratio built from the pair (e.g. nucleus-to-cytoplasm area ratio); a large lost fraction means the field of view is too small for the objects
+  **AVOID** applying the border filter independently per channel
+  SRC: Lukas (internal domain expert)

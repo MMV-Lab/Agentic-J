@@ -179,4 +179,4 @@ def recall_concepts(query: str) -> str:
         return ""
     return ("RELEVANT ANALYSIS CONCEPTS (expert heuristics — follow the DO, heed the "
             "AVOID; strategic guidance, not verified code):\n\n"
-            + "\n\n".join(hits[:CONCEPT_K]))
+            + "\n\n".join(hits))
