@@ -98,9 +98,9 @@ Bio-Formats can write to a smaller set of formats:
 
 ---
 
-## Architecture: Three Automation Pathways
+## Architecture: Two Automation Pathways
 
-Bio-Formats supports three distinct automation pathways. The right one depends
+Bio-Formats supports two distinct automation pathways. The right one depends
 on where your code runs:
 
 ### Pathway 1 — Fiji Plugin (GUI + IJ Macro)
@@ -113,8 +113,8 @@ run("Bio-Formats Importer", "open=/path/to/file autoscale color_mode=Composite v
 ```
 
 This is the only pathway available from the **ImageJ Macro Language**. Note that
-Bio-Formats does **not** work in true `--headless` mode — use the ImageJ Launcher
-`-batch` flag instead.
+the Importer command does **not** work in true `--headless` mode. Use the ImageJ
+Launcher `-batch` flag instead, or the `BF` API (Pathway 2), which works headless.
 
 ### Pathway 2 — Groovy / Java Scripting Within Fiji
 
@@ -157,9 +157,10 @@ To verify the installed version: **Help › About Plugins › Bio-Formats Plugin
 
 ## Key Limitations
 
-- **No true headless mode**: When used as a Fiji macro, Bio-Formats requires a
-  display connection. Running with `--headless` produces a `VerifyError`. Use
-  the ImageJ Launcher with the `-batch` flag instead.
+- **Importer command has no true headless mode**: When used as a Fiji macro, the
+  Importer requires a display connection. Running with `--headless` produces a
+  `VerifyError`. Use the ImageJ Launcher with the `-batch` flag instead. The `BF`
+  scripting API works headless.
 - **Windowless Importer uses last-used settings**: If you call the Windowless
   Importer from a macro for a new format, it uses the last-saved settings for
   that format. Always run the format manually at least once first to set defaults.
