@@ -299,7 +299,7 @@ good enough on this data — not before; try the stock model first and look at t
 
 **"Learn from what I mark, then do the rest" — TWO different features. Pick by what the user wants:**
 - *Categorising objects that are already segmented* (live/dead, infected/uninfected, phenotype A/B)
-  → the object CLASSIFIER, **Pattern 3** below. A random forest on SAM features, trained in seconds,
+  → the object CLASSIFIER, **Pattern 3** above. A random forest on SAM features, trained in seconds,
   no GPU hours. This is the cheap one; prefer it whenever it fits.
 - *Producing better masks* (it misses cells, splits them, outlines debris) → **fine-tuning**,
   `FINETUNING.md`. ~20 min of the user's time + 10-20 min on a GPU.
@@ -328,7 +328,7 @@ tag, and whether this process actually sees a GPU. Cheaper than finding out 60 s
    decoder is a 397 MB outlier). **Never let that first call be an interactive one** — a download
    inside `annotator_2d` freezes the viewer with no progress indicator, and an interrupted one leaves
    a partial temp file that never resumes. Warm it from a `# imagentj-env: napari-mcp` script first
-   (see the WARNING under Backend B), then work on the verification image.
+   (see THE ONE RULE box under Backend B), then work on the verification image.
 3. **GPU vs CPU — pass `device=None` and let it auto-select** (`"cuda"` if a GPU is present, else
    `"cpu"`). GPU acceleration is available only in the **GPU image build** (`USE_GPU=true`, which ships
    a CUDA torch); the default CPU image runs micro_sam on CPU. Never hard-code `device="cuda"` — it
