@@ -495,12 +495,16 @@ imp.show()
 import fiji.plugin.trackmate.visualization.table.TrackTableView
 import fiji.plugin.trackmate.gui.displaysettings.DisplaySettings
 
-def sm = new SelectionModel(model)
 def ds = DisplaySettings.defaultStyle()   // NOT new DisplaySettings()
-def tableView = new TrackTableView(model, sm, ds)
-tableView.getSpotTable().exportToCsv(new File("/path/to/spots.csv"))
-tableView.getTrackTable().exportToCsv(new File("/path/to/tracks.csv"))
+TrackTableView.createSpotTable(model, ds).exportToCsv(new File("/path/to/spots.csv"))
+TrackTableView.createEdgeTable(model, ds).exportToCsv(new File("/path/to/edges.csv"))
+TrackTableView.createTrackTable(model, ds).exportToCsv(new File("/path/to/tracks.csv"))
 ```
+
+The static factories work headless and in the GUI. The only constructor is
+`new TrackTableView(model, selectionModel, ds, imagePath)`. It builds the table window, so it
+throws `HeadlessException` in headless runs. `imagePath` is the image file path. The window's
+"Export to CSV" button uses it to name the CSV files. There is no three-argument constructor.
 
 ---
 
