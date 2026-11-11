@@ -127,7 +127,7 @@ try {
 
 if (sourceImp == null) {
     try {
-        sourceImp = IJ.getImage()
+        sourceImp = WindowManager.getCurrentImage()   // IJ.getImage() exits headless Fiji when no image is open
     } catch (Exception ignored) {
         sourceImp = null
     }

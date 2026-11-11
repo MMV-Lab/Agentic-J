@@ -102,7 +102,7 @@ import fiji.plugin.trackmate.detection.MaskDetectorFactory
 import fiji.plugin.trackmate.detection.ThresholdDetectorFactory
 import fiji.plugin.trackmate.detection.LabelImageDetectorFactory
 
-// Trackers (core Fiji) — jaqaman package required in v8+ (sparselap package removed)
+// Trackers (core Fiji) — jaqaman package required (sparselap package removed)
 import fiji.plugin.trackmate.tracking.jaqaman.SimpleSparseLAPTrackerFactory
 import fiji.plugin.trackmate.tracking.jaqaman.SparseLAPTrackerFactory
 import fiji.plugin.trackmate.tracking.jaqaman.LAPUtils
@@ -524,14 +524,15 @@ tableView.getTrackTable().exportToCsv(new File("/path/to/tracks.csv"))
 
 5. **Z vs T axis.** If `imp.getNFrames() == 1`, TrackMate sees a single time point and
    will not track. Check `imp.getDimensions()` — the order is [x, y, c, z, t]. If z and t
-   are swapped, use `imp.setDimensions(nChannels, nSlices, nFrames)` to fix it.
+   are swapped, pass them swapped: `imp.setDimensions(c, t, z)`. For a sequence of n
+   planes loaded as Z, that is `imp.setDimensions(c, 1, n)`. This keeps the pixel calibration.
 
 6. **SparseLAPTracker default settings map.** When using `SparseLAPTrackerFactory`,
    always start with `settings.trackerFactory.getDefaultSettings()` and override only the
    keys you need. Do not build the settings map from scratch — it requires many internal
    keys (penalty structures, etc.) that the default map already contains correctly.
 
-7. **Tracker package changed in v8+.** All tracker classes moved from
+7. **Tracker package changed.** All tracker classes moved from
    `fiji.plugin.trackmate.tracking.sparselap` to `fiji.plugin.trackmate.tracking.jaqaman`.
    `SimpleSparseLAPTrackerFactory` still exists — it was moved, not removed.
 

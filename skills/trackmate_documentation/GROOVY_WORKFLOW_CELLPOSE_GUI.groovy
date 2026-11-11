@@ -1,5 +1,5 @@
 /*
- * 04_run_track_and_visualize_gui.groovy
+ * GROOVY_WORKFLOW_CELLPOSE_GUI.groovy
  *
  * PURPOSE
  * - Run a complete TrackMate + Cellpose tracking workflow in Fiji GUI mode on a time-lapse movie.

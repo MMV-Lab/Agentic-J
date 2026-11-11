@@ -1,5 +1,5 @@
 /**
- * GROOVY_WORKFLOW_CELLPOSE_WITH_LABEL_EXPORT.groovy
+ * GROOVY_WORKFLOW_CELLPOSE_GENERIC.groovy
  *
  * PURPOSE (biologist-friendly)
  *   One-click, end-to-end TrackMate + Cellpose workflow that:
@@ -121,7 +121,7 @@ try {
     }
     if (imp == null) {
         try {
-            imp = IJ.getImage()
+            imp = WindowManager.getCurrentImage()   // IJ.getImage() exits headless Fiji when no image is open
         } catch (Exception ignored) {
             imp = null
         }
