@@ -1,7 +1,8 @@
 # LUTs cannot be applied to RGB images
 
 **Symptom:**
-- `LUTs cannot be assigned to RGB Images.`
+- `LUTs cannot be assiged to RGB Images.` (ImageJ prints it with this typo.
+  Search logs for `assiged` as well as `assigned`.)
 - Macro / Groovy script aborts with `Macro canceled`.
 
 **Cause:** A LUT (look-up table — `Red`, `Green`, `Fire`, `glasbey`, …) is a
