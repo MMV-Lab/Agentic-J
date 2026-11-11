@@ -182,3 +182,7 @@ model loads and all I/O.
 | `WORKFLOW_BATCH_SEGMENTATION.py` | **Copy this for a folder, v3 models** (cyto3, nuclei, tissuenet_cp3, …). Model loaded once, `eval(list)`, per-image uint16 masks + summary CSV. Env `cellpose` |
 | `WORKFLOW_CPSAM_BATCH_SEGMENTATION.py` | **Copy this for a folder when the model is cpsam.** Same structure, but `CellposeModel`, no diameter, no channels, 3-tuple. Env `cellpose4` |
 | `SCRIPT_API.md` | `eval()` signature and returns, channel conventions, model list, threshold tuning, env details |
+| `FINETUNING.md` | Fine-tuning a Cellpose model on the user's corrected tiles: stages, environments, pitfalls, measured results |
+| `WORKFLOW_FINETUNE_CP_3_TRAIN.py` | Stage 3: train on the annotated tiles, then measure stock vs fine-tuned on held-out tiles and write `evaluation.json`. Env `cellpose4` |
+| `WORKFLOW_FINETUNE_CP_4_APPLY.py` | Stage 4: segment the folder with whichever model stage 3 measured as better. Env `cellpose4` |
+| `WORKFLOW_FINETUNE_CP_SEGMENT_WORKER.py` | Subprocess that micro_sam stage 1 (`SEGMENT_BACKEND="cellpose"`) calls to run Cellpose from the `napari-mcp` env. Env `cellpose4` |
