@@ -232,7 +232,7 @@ were verified verbatim against the local corpus before promotion.
 <!--c:bib-separable-and-split-channels status:approved src:bioimagebook chap:2-processing/7-multidimensional_processing modality:general task:3d kw:separable,performance,channels,time,split,combine,gpu,slow 3d processing,speed up filtering,separable filter,process channels separately,gpu acceleration,clij-->
 - **WHEN** an nD workflow is slow, or spans channels/time
   **DO**   prefer separable filters (e.g. Gaussian: three 1D passes, not one dense nD kernel), process each channel/timepoint separately then combine ROIs/measurements, and consider GPU (CLIJ/clEsperanto) for the heavy steps
-  **WHY**  the algorithm dominates cost — a separable 11³ filter is ~147 ops vs 1331; we rarely filter *across* channels/time anyway
+  **WHY**  the algorithm dominates cost — a separable 11³ filter is 33 ops (3 × 11) per pixel vs 1331; we rarely filter *across* channels/time anyway
   **AVOID** buying a bigger machine before making the algorithm efficient
   SRC: bioimagebook · Multidimensional processing › "Accelerating analysis" / "The most important performance consideration is the algorithm!"
 

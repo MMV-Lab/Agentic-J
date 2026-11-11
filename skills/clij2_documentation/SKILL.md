@@ -39,7 +39,7 @@ Measured here, 512×512×64 float32, gaussian σ=4: **CPU 1188 ms → GPU 62 ms 
 ### Rule 1 — Verify a GPU is actually there
 ```groovy
 import net.haesleinhuepf.clij.CLIJ
-println CLIJ.getAvailableDeviceNames()   // must contain an NVIDIA device
+println CLIJ.getAvailableDeviceNames()   // must contain a GPU device, not only a CPU
 ```
 CLIJ2 reaches the GPU through the **OpenCL ICD** (`/etc/OpenCL/vendors/*.icd`), which is
 independent of CUDA. If only `cpu-haswell-AMD EPYC …` is listed, every "GPU" call silently
@@ -97,7 +97,9 @@ clij2.gaussianBlur2D(input, output, 4, 4)                                     //
 ```
 Verified: the macro-extension route returns `[aborted]`, raises `Macro canceled` and opens a
 **blocking "Macro Error" dialog** — an agent run hangs there. Also avoid `#@` script
-parameters (they open a dialog) and prefer the Java API over `IJ.run(imp, "… on GPU", …)`,
+parameters when the script is started from the GUI without values (they open a dialog).
+With `--headless --run script.groovy 'key=value,...'` the values come from the command
+line and no dialog opens. Prefer the Java API over `IJ.run(imp, "… on GPU", …)`,
 whose result lands in a window with an unpredictable generated title.
 
 ---

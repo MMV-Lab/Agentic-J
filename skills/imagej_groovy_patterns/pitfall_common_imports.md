@@ -1,14 +1,16 @@
 # Other commonly-missed imports
 
-**Symptom:** `unable to resolve class <X>` at compile time.
+**Symptom:** `unable to resolve class <X>` at compile time, or
+`No such property: IJ for class: <script>` at run time.
 
 **Cause:** Groovy does not auto-import `ij.plugin.*` or `ij.measure.*`
-classes. Each used class needs its own `import` line.
+classes. Each used class needs its own `import` line. This includes `ij.IJ`.
 
 **Fix — add the matching import:**
 
 | Class | Import |
 |-------|--------|
+| `IJ` | `import ij.IJ` |
 | `Duplicator` | `import ij.plugin.Duplicator` |
 | `ChannelSplitter` | `import ij.plugin.ChannelSplitter` |
 | `RoiManager` | `import ij.plugin.frame.RoiManager` |

@@ -317,8 +317,9 @@ for (i = 0; i < list.length; i++) {
 | `virtual`                            | flag                     | Open as virtual stack                                              |
 | `concatenate`                        | flag                     | Concatenate compatible series                                      |
 
-> **Headless warning**: Bio-Formats does NOT work with Fiji's `--headless` option.
-> Running with `--headless` produces a `VerifyError`. Use the ImageJ Launcher with
+> **Headless warning**: the `Bio-Formats Importer` command does NOT work with Fiji's
+> `--headless` option. Running it with `--headless` produces a `VerifyError`.
+> `BF.openImagePlus` works headless. For macros, use the ImageJ Launcher with
 > `-batch` instead (no display required):
 > ```
 > ./ImageJ-linux64 -macro myMacro.ijm -batch
