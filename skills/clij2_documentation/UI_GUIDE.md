@@ -45,7 +45,7 @@ Also directly under **Plugins ▸ ImageJ on GPU (CLIJ2)**:
 ## Checking the GPU from the GUI
 
 **Plugins ▸ ImageJ on GPU (CLIJ2) ▸ Macro tools ▸ CLIJ2 ClInfo** prints the full OpenCL
-device list to the Log. If it shows only `cpu-haswell-AMD EPYC …` and no NVIDIA device, CLIJ2
+device list to the Log. If it shows only `cpu-haswell-AMD EPYC …` and no GPU device, CLIJ2
 is running on POCL (CPU) — see `OVERVIEW.md`, *GPU requirements*.
 
 **Plugins ▸ ImageJ on GPU (CLIJ2) ▸ GPU Memory Display** is the quickest way to spot a leak

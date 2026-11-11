@@ -43,7 +43,7 @@ Check at the top of any CLIJ2 script:
 
 ```groovy
 import net.haesleinhuepf.clij.CLIJ
-println CLIJ.getAvailableDeviceNames()   // must list an NVIDIA device, not just "cpu-haswell-…"
+println CLIJ.getAvailableDeviceNames()   // must list a GPU device, not just "cpu-haswell-…"
 ```
 
 Expected here: `[NVIDIA A100-SXM4-40GB ×8, cpu-haswell-AMD EPYC 7742 64-Core Processor]`.
