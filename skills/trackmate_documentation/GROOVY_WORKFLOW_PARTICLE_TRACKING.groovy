@@ -33,7 +33,8 @@
  *
  * PARAMETERS TO ADJUST (see section below):
  *   DETECTOR_RADIUS         — expected object radius in physical units (µm or px)
- *   QUALITY_THRESHOLD       — minimum quality to keep a detected spot
+ *   QUALITY_THRESHOLD       — minimum quality to keep a spot; Double.NaN (default) = derive it
+ *                             from the data (Otsu on the QUALITY histogram of a detection pre-pass)
  *   LINKING_MAX_DISTANCE    — max distance (physical) for frame-to-frame linking
  *   GAP_CLOSING             — enable/disable gap closing for missed detections
  *   GAP_MAX_DISTANCE        — max distance for gap-closing links
@@ -66,6 +67,7 @@ import fiji.plugin.trackmate.io.TmXmlWriter
 import fiji.plugin.trackmate.io.TmXmlReader
 import fiji.plugin.trackmate.visualization.table.TrackTableView
 import fiji.plugin.trackmate.gui.displaysettings.DisplaySettings
+import fiji.plugin.trackmate.util.TMUtils
 
 import ij.IJ
 import ij.ImagePlus
@@ -85,8 +87,11 @@ import java.io.PrintWriter
 int    TARGET_CHANNEL           = 1         // channel to detect on (1-based); use 1 for single-channel
 double DETECTOR_RADIUS          = 2.5       // expected object radius in physical units (µm or px if uncalibrated)
                                             // set this to match your object size — inspect image first
-double QUALITY_THRESHOLD        = 30.0      // spots below this quality are discarded
-                                            // set to 0 to keep all, then decide after seeing the distribution
+double QUALITY_THRESHOLD        = Double.NaN // NaN = AUTO (Otsu on the spot-quality histogram).
+                                            // LoG quality = filter response at the spot centre, so it scales with image intensity: so a fixed number
+                                            // (0, 1, 30 ...) is right only by luck: 0 keeps every noise
+                                            // maximum, a too-high constant deletes every spot. Set a number
+                                            // only after looking at the quality distribution.
 boolean DO_SUBPIXEL             = true      // sub-pixel localisation (recommended: true)
 boolean DO_MEDIAN               = false     // apply 3×3 median pre-filter (helps with speckle noise)
 
@@ -308,9 +313,9 @@ settings.detectorSettings = [
     'DO_MEDIAN_FILTERING'      : (DO_MEDIAN as boolean),
 ]
 
-// Set initial quality filter threshold — discards obvious noise before feature computation
-// This avoids computing features on thousands of trash spots (important for performance)
-settings.initialSpotFilterValue = (1.0d as double)           // discard spots below quality 1
+// Initial quality filter: keep 0.0. Any positive constant has the same data-scale problem as
+// QUALITY_THRESHOLD (on dim images every LoG quality can be < 1) and silently empties the model.
+settings.initialSpotFilterValue = (0.0d as double)
 
 // ── 4. Add feature analyzers ──────────────────────────────────────────────────
 // In scripting, analyzers must be added explicitly.
@@ -321,7 +326,8 @@ settings.addAllAnalyzers()
 // ── 5. Add spot quality filter ────────────────────────────────────────────────
 // FeatureFilter(featureKey, threshold, isAbove)
 // isAbove = true → keep spots where feature > threshold
-settings.addSpotFilter(new FeatureFilter('QUALITY', QUALITY_THRESHOLD, true))
+// (When QUALITY_THRESHOLD is NaN the filter is derived from the data in step 7b, below.)
+if (!Double.isNaN(QUALITY_THRESHOLD)) settings.addSpotFilter(new FeatureFilter('QUALITY', QUALITY_THRESHOLD as double, true))
 
 // ── 6. Configure the tracker ──────────────────────────────────────────────────
 if (ALLOW_SPLITS || ALLOW_MERGES) {
@@ -352,6 +358,23 @@ if (ALLOW_SPLITS || ALLOW_MERGES) {
 // Remove very short tracks (usually noise or false detections)
 settings.addTrackFilter(new FeatureFilter('NUMBER_SPOTS', MIN_TRACK_SPOTS as double, true))
 
+// ── 7b. Data-derived quality threshold (QUALITY_THRESHOLD = NaN) ──────────────
+// Detection-only pre-pass, then Otsu on the QUALITY values — the method TrackMate's GUI uses
+// for its 'Auto' filter threshold (TMUtils.otsuThreshold). LoG is fast, so detecting twice costs little.
+if (Double.isNaN(QUALITY_THRESHOLD)) {
+    def pre = new TrackMate(new Model(), settings)
+    if (!pre.checkInput() || !pre.execDetection() || !pre.execInitialSpotFiltering()) {
+        IJ.error('Detection pre-pass failed: ' + pre.getErrorMessage()); println('FAILURE: detection pre-pass.'); return
+    }
+    // SpotCollection is not a plain Groovy collection: iterate with iterable(false)
+    double[] q = pre.getModel().getSpots().iterable(false).collect { it.getFeature('QUALITY') } as double[]
+    if (q.length == 0) { println('FAILURE: LoG found no spots at all — check RADIUS (calibrated units) and channel.'); return }
+    double qThr = TMUtils.otsuThreshold(q)                  // TrackMate's own Otsu helper (its GUI 'Auto' button)
+    double qMin = q.min(), qMax = q.max()
+    IJ.log(String.format('[Detection] Auto quality threshold (Otsu) = %.4g  (quality range %.4g – %.4g, %d raw spots)', qThr, qMin, qMax, q.length))
+    settings.addSpotFilter(new FeatureFilter('QUALITY', qThr, true))
+}
+
 // ── 8. Run TrackMate ──────────────────────────────────────────────────────────
 IJ.log('[TrackMate] Running detection and tracking...')
 def trackmate = new TrackMate(model, settings)
@@ -371,6 +394,14 @@ if (!trackmate.process()) {
 }
 
 IJ.log('[TrackMate] Processing complete.')
+
+// DETECTION QC — tracking can only be as good as detection. Compare these numbers (and an
+// overlay of 2-3 frames) with the visible objects before trusting any track statistic.
+def perFrameCounts = (0..<imp.getNFrames()).collect { model.getSpots().getNSpots(it, true) }
+def sortedCounts = perFrameCounts.collect().sort()
+String detectionQc = 'DETECTION_QC spots_per_frame min/median/max = ' + sortedCounts[0] + '/' + sortedCounts[sortedCounts.size().intdiv(2)] + '/' + sortedCounts[-1] + '  first frames: ' + perFrameCounts.take(5)
+IJ.log('[QC] ' + detectionQc)
+println(detectionQc)
 
 // ── 9. Summary statistics ─────────────────────────────────────────────────────
 def tm = model.getTrackModel()

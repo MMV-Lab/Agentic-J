@@ -25,10 +25,43 @@ TrackMate is bundled with Fiji (core detectors and trackers). Cellpose and StarD
 | `SCRIPT_API.md` | Complete Groovy scripting reference: detector/tracker settings keys, feature access, CSV/XML export, all imports |
 | `GROOVY_WORKFLOW_PARTICLE_TRACKING.groovy` | Ready-to-run script: LoG detection → filtering → LAP tracking → CSV + XML + overlay |
 | `CELLPOSE_DETECTOR_API.md` | Cellpose **detector** integration for timelapses: all detector settings keys, available models (cyto3, nucleitorch_0, etc.), backend setup, pitfalls C0–C9 |
+| `GROOVY_WORKFLOW_CELLPOSE_SAM.groovy` | **First choice for cells/nuclei.** Ready-to-run Cellpose-SAM (`cpsam`) detector → tracking: no diameter needed, GPU auto-selected in the cellpose4 env, CSV + XML + label TIFF, prints a per-frame detection QC line |
 | `GROOVY_WORKFLOW_CELLPOSE_GENERIC.groovy` | Ready-to-run generic script: verifies the Cellpose backend, auto-selects a working CUDA device or CPU → segment → track → CSV + XML + label TIFF; works on any active image |
 | `GROOVY_WORKFLOW_CELLPOSE_GUI.groovy` | Ready-to-run project-specific script: opens a hardcoded file, verifies/auto-selects CUDA or CPU → tracking → CSV + XML + label TIFF + HyperStack overlay + TrackScheme GUI |
 | `UI_GUIDE.md` | GUI reference: every panel and control in the TrackMate wizard explained |
 | `UI_WORKFLOW_PARTICLE_TRACKING.md` | GUI walkthrough: step-by-step from open image to exported CSV |
+
+## Detection decides tracking quality — read before choosing a detector
+
+Every track statistic inherits the per-frame detection errors: a missed object breaks a track,
+a spurious one becomes a fragment track. Get detection right first, then link.
+
+1. **Strongest detector first.** Cellpose-SAM (`CellposeSAMDetectorFactory`, `cpsam`) needs no
+   diameter → `GROOVY_WORKFLOW_CELLPOSE_SAM.groovy`. Next: Cellpose 3 (`cyto3`/`nucleitorch_0`,
+   needs a diameter) or StarDist. LoG/DoG only for small spot-like objects or when no model works.
+2. **Validate detection before tracking the whole movie.** Run on 2–3 frames spread over the movie,
+   overlay the detections, compare count and size with the visible objects. The templates print
+   `DETECTION_QC spots_per_frame min/median/max` — check it against what you see.
+3. **Sizes and distances are in calibrated units** (`CELL_DIAMETER`, `RADIUS`, linking/gap
+   distances): value = pixels × `pixelWidth`. Log the value back in pixels before running, and
+   check automatic size estimates (e.g. Cellpose's size model) on an overlay — they can be off 2–3×.
+   The linking distance is the largest displacement allowed between frames; without a measured
+   displacement, `GROOVY_WORKFLOW_CELLPOSE_SAM.groovy` uses one median object diameter (logged in px).
+4. **LoG/DoG quality threshold comes from the data.** Quality is the LoG response at the spot centre, so it scales with image intensity:
+   `THRESHOLD 0` keeps every noise maximum, a fixed constant can delete every spot. Use the
+   Otsu-on-quality default (`QUALITY_THRESHOLD = Double.NaN` in
+   `GROOVY_WORKFLOW_PARTICLE_TRACKING.groovy`; snippet in `SCRIPT_API.md`). Never add absolute
+   intensity cut-offs (e.g. `MEAN_INTENSITY > 128`) that were not measured on the image.
+5. **Empty spots from Cellpose/SAM are not the initial filter.** Their QUALITY is the object area
+   (px), so `initialSpotFilterValue = 0.0` keeps everything; an empty collection means the detector
+   returned nothing — read its log (env, GPU, model, diameter units). TrackMate-Cellpose runs with
+   the installed Cellpose 3.1; `cpsam` is routed to the cellpose4 env automatically.
+
+Sources: tracking depends on segmentation — Ulman et al. 2017 *Nat Methods* 14:1141 (doi:10.1038/nmeth.4473),
+Ershov et al. 2022 *Nat Methods* 19:829 (doi:10.1038/s41592-022-01507-1); Cellpose-SAM needs no diameter —
+Pachitariu, Rariden & Stringer 2025 bioRxiv (doi:10.1101/2025.04.28.651001) and cellpose.readthedocs.io/en/latest/settings.html;
+calibrated units — imagej.net/plugins/trackmate/scripting/trackmate-detectors-trackers-keys; LoG quality,
+Otsu `TMUtils.otsuThreshold`, label-image quality = area (px) — TrackMate source (`DetectionUtils`, `FilterPanel`, `MaskUtils`).
 
 ## Critical pitfalls
 

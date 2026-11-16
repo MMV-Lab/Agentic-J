@@ -16,6 +16,9 @@ Added 2026-09-07: 3 entries on border-object handling (`hab-border-object-exclus
 `hab-border-count-correction`, `lj-border-paired-compartments`) — 104 total. This also
 admitted **haase** (*Bio-image Analysis Notebooks*) as a new source; both `hab-` citations
 were verified verbatim against the local corpus before promotion.
+Added 2026-11-11: 4 entries from the tracking failure analysis (`lj-tracking-starts-with-detection`,
+`lj-strongest-pretrained-model`, `lj-verify-object-size`, `lj-enhance-detection-copy`) — 108 total.
+Authored by **lukas**; validated in an A/B test of automatic tracking runs (4/4 vs 1/4 passing).
 
 ---
 
@@ -746,3 +749,31 @@ were verified verbatim against the local corpus before promotion.
   **WHY**  removing only the compartment that happens to touch the edge leaves orphaned partners and corrupts every ratio built from the pair (e.g. nucleus-to-cytoplasm area ratio); a large lost fraction means the field of view is too small for the objects
   **AVOID** applying the border filter independently per channel
   SRC: Lukas (internal domain expert)
+
+<!--c:lj-tracking-starts-with-detection status:approved src:lukas modality:general task:tracking kw:tracking,cell tracking,track cells,nuclei tracking,particle tracking,time lapse,timelapse,movie,trajectories,trackmate,linking,lap tracker,detection,segmentation,per-frame detection,detection quality,short tracks,fragmented tracks,track fragmentation,spots per frame,detect then link-->
+- **WHEN** tracking cells, nuclei or particles through a time-lapse
+  **DO**   treat per-frame detection/segmentation as the step that decides the result: run the detector on 2–3 frames spread over the movie first, overlay the detections and compare count and size with the objects you can see; only then process the whole movie and link; afterwards check that the per-frame count stays plausible over time
+  **WHY**  linking cannot recover a missed object and turns every spurious one into a short fragment track — track length, speed, MSD and lineage statistics inherit each detection error, so most bad tracking results are bad detection
+  **AVOID** tuning linking distance / gap closing to repair poor detections, or judging a tracking result only from trajectory plots
+  SRC: lukas · maintainer guidance; Ulman et al. 2017 Nat Methods doi:10.1038/nmeth.4473 ("tracking is contingent on segmentation"); Ershov et al. 2022 Nat Methods doi:10.1038/s41592-022-01507-1
+
+<!--c:lj-strongest-pretrained-model status:approved src:lukas modality:general task:segmentation kw:detector choice,which detector,segmentation model,segment nuclei,segment cells,nuclei per frame,cells per frame,time-lapse segmentation,pretrained model,deep learning,cellpose,cellpose-sam,cpsam,stardist,log detector,dog detector,threshold,classical segmentation,nuclei,cells,instance segmentation,detection,tracking,trackmate detector,quality threshold,intensity filter-->
+- **WHEN** segmenting or detecting cells/nuclei for counting, measuring or tracking, and several detectors are installed
+  **DO**   start with the strongest general pretrained instance-segmentation model available (e.g. Cellpose-SAM `cpsam`, which needs no object-size prior; then Cellpose 3 / StarDist), on GPU; fall back to classical LoG/threshold detection only if no model passes a visual check, and then derive its threshold from the data (e.g. Otsu on the quality or intensity histogram)
+  **WHY**  generalist models tolerate contrast, intensity and size differences and separate touching objects; classical and size-dependent detectors hinge on one or two hand-set numbers (blob diameter, quality threshold) whose scale depends on the image, so a guessed constant is easily off by 2× or more
+  **AVOID** choosing LoG/threshold because it is simpler, leaving a LoG quality threshold at 0, or adding absolute cut-offs (e.g. "mean intensity > 128") that were not measured on the image
+  SRC: lukas · maintainer guidance; Pachitariu, Rariden & Stringer 2025 bioRxiv doi:10.1101/2025.04.28.651001 (Cellpose-SAM, robust to cell size, no size model); Stringer et al. 2021 Nat Methods doi:10.1038/s41592-020-01018-x; Otsu 1979 doi:10.1109/TSMC.1979.4310076
+
+<!--c:lj-verify-object-size status:approved src:lukas modality:general task:segmentation kw:object size,cell diameter,nucleus diameter,diameter,cellpose diameter,estimated diameter,size estimate,auto diameter,size model,blob diameter,radius,calibrated units,microns,pixels,units,pixel size,unit conversion,trackmate radius-->
+- **WHEN** a detector needs an object size (Cellpose diameter, TrackMate blob diameter/radius, a filter scale)
+  **DO**   measure the size on the image itself (a few objects with the line tool, or the median equivalent diameter of a quick threshold) and confirm any automatic estimate on an overlay; enter it in the unit the tool expects — TrackMate uses calibrated units, so µm = px × pixel size
+  **WHY**  automatic size estimates (e.g. Cellpose's size model) can be off 2–3× on data unlike their training set, and a pixel value typed into a µm field is wrong by the pixel-size factor — both silently wreck detection
+  **AVOID** accepting an auto-estimated or default diameter without looking at an overlay, or mixing pixel and calibrated units
+  SRC: lukas · maintainer guidance; Cellpose v3 docs (settings: "if this estimate is incorrect please set the diameter by hand"); imagej.net/plugins/trackmate/detectors/trackmate-cellpose (diameter in physical units)
+
+<!--c:lj-enhance-detection-copy status:approved src:lukas modality:fluorescence task:preprocessing kw:contrast,contrast enhancement,clahe,local contrast,enhance contrast,low contrast,dim objects,dim cells,uneven brightness,preprocessing for segmentation,normalize,normalization,detection input,segmentation preprocessing-->
+- **WHEN** a pretrained model misses dim objects or splits/merges objects in a low-contrast or unevenly bright image
+  **DO**   try local contrast enhancement (CLAHE) on a duplicate used only as the detector input, keep it only if detection improves on a validation frame, and measure intensities on the original image
+  **WHY**  CLAHE equalizes local contrast so dim and bright objects look alike to the model and modestly helps weaker models; a linear contrast stretch changes nothing for models that normalize intensities themselves, and strong generalist models usually need no enhancement
+  **AVOID** enhancing by default, measuring on the enhanced image, or saving it over the raw data
+  SRC: lukas · maintainer guidance; Zuiderveld 1994 (CLAHE, Graphics Gems IV); Cellpose normalize99 (1st-99th percentile) in cellpose/transforms.py; see also bib-nonlinear-display-only and senft-pipeline-order
