@@ -248,15 +248,22 @@ from collections import defaultdict
 jars_dir = Path('/opt/Fiji.app/jars')
 groups = defaultdict(list)
 
+# A duplicate is the SAME artifact + classifier in the SAME folder with another version.
+# Grouping by artifact name alone deleted platform companions as \"older duplicates\":
+# jars/linux64/javafx-base-23.0.2-linux.jar vs jars/javafx-base-23.0.2.jar (Fiji then
+# fails with 'Module javafx.base not found'), ffmpeg/opencv/openblas -linux-x86_64,
+# flimlib -natives-linux_64, jffi -native. Versions are compared numerically
+# (a name sort keeps 2.9 over 2.10).
 for jar in jars_dir.rglob('*.jar'):
-    m = re.match(r'^(.+?)-(\d.*)\.jar\$', jar.name)
+    m = re.match(r'^(.+?)-(\d+(?:\.\d+)*)(.*)\.jar\$', jar.name)
     if m:
-        groups[m.group(1)].append(jar)
+        base, ver, rest = m.groups()
+        groups[(str(jar.parent), base, rest)].append((tuple(int(x) for x in ver.split('.')), jar))
 
 removed = 0
-for base, jars in groups.items():
+for (_, base, _), jars in groups.items():
     if len(jars) > 1:
-        jars_sorted = sorted(jars, key=lambda j: j.name)
+        jars_sorted = [j for _, j in sorted(jars, key=lambda vj: vj[0])]
         for old in jars_sorted[:-1]:
             print(f'[entrypoint] Removing older duplicate: {old.name}  (keeping {jars_sorted[-1].name})')
             old.unlink()
