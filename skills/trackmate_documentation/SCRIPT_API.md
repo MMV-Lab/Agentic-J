@@ -50,7 +50,8 @@ settings.detectorSettings = [
     'DO_SUBPIXEL_LOCALIZATION' : true,
     'RADIUS'                   : 2.5d,    // physical units (µm if calibrated)
     'TARGET_CHANNEL'           : (Integer) 1,
-    'THRESHOLD'                : 0.0d,    // 0 = keep all; filter below
+    'THRESHOLD'                : 0.0d,    // 0 = keep every maximum (incl. noise) — then filter on a
+                                          // data-derived QUALITY threshold, see § Choosing the LoG/DoG threshold
     'DO_MEDIAN_FILTERING'      : false,
 ]
 
@@ -152,8 +153,13 @@ It discards spots below this quality threshold before feature computation, which
 computing features on thousands of noise spots and dramatically speeds up processing.
 
 ```groovy
-settings.initialSpotFilterValue = 1.0   // recommended: 1.0 or slightly above noise level
+settings.initialSpotFilterValue = 0.0d  // safe default for any detector
 ```
+
+Do **not** use a fixed positive value with LoG/DoG: their QUALITY is in image-intensity units, so on
+a dim image every spot can have quality < 1 and a value like `1.0` silently empties the model.
+For Cellpose / Cellpose-SAM / label-image detectors QUALITY is the object **area** in pixels, so
+`0.0` keeps every spot — an empty spot collection there means the detector returned nothing.
 
 ---
 
@@ -167,7 +173,7 @@ Both detectors use the same keys:
 |-----|------------|-------------|
 | `TARGET_CHANNEL` | `int` | Channel index, 1-based |
 | `RADIUS` | `double` | Expected object radius in physical units (µm) |
-| `THRESHOLD` | `double` | Minimum quality; use 0 to detect everything |
+| `THRESHOLD` | `double` | Minimum quality (image-intensity units). `0` keeps every maximum incl. noise — derive the real cut-off from the data (next section) |
 | `DO_SUBPIXEL_LOCALIZATION` | `boolean` | Sub-pixel position refinement (recommended: `true`) |
 | `DO_MEDIAN_FILTERING` | `boolean` | Apply 3×3 median pre-filter; helps with speckle noise |
 
@@ -183,6 +189,29 @@ settings.detectorSettings = [
 ```
 
 > Use `DogDetectorFactory` as a drop-in replacement for larger images where speed matters.
+
+#### Choosing the LoG/DoG threshold — derive it from the data
+
+LoG/DoG QUALITY is the filter response at the spot centre, so it scales with image intensity, so no constant is right in general: `0` keeps every
+noise maximum (often many times more spots than objects) and a guessed constant (`1`, `30`, …) can
+remove every spot. Use Otsu on the QUALITY values of a detection pass (`TMUtils.otsuThreshold`, the method behind the
+GUI's "Auto" filter button; the GUI's *initial* quality filter itself defaults to 0), then check the
+per-frame count against the visible objects. (In our tests on a 2D+T fluorescence movie: threshold
+0 → ~7× too many spots; Otsu → count matched the ground truth.)
+
+```groovy
+import fiji.plugin.trackmate.util.TMUtils
+// settings: detector configured with THRESHOLD 0.0d, initialSpotFilterValue 0.0d, trackerFactory set (checkInput needs it)
+def pre = new TrackMate(new Model(), settings)
+if (!pre.checkInput() || !pre.execDetection() || !pre.execInitialSpotFiltering()) throw new RuntimeException(pre.getErrorMessage())
+// SpotCollection is NOT a plain Groovy collection — iterate with iterable(false) (all spots)
+double[] q = pre.getModel().getSpots().iterable(false).collect { it.getFeature('QUALITY') } as double[]
+double qThr = TMUtils.otsuThreshold(q)        // same helper as the GUI's "Auto" filter button
+settings.addSpotFilter(new FeatureFilter('QUALITY', qThr, true))   // then run trackmate.process() as usual
+```
+
+`GROOVY_WORKFLOW_PARTICLE_TRACKING.groovy` does this automatically when `QUALITY_THRESHOLD = Double.NaN` (its default).
+Never replace it with an absolute intensity filter (e.g. `MEAN_INTENSITY > 128`) that was not measured on the image.
 
 ### Threshold Detector (`ThresholdDetectorFactory`)
 

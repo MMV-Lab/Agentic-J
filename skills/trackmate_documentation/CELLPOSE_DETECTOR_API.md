@@ -193,6 +193,8 @@ These use style-transfer from the original Cellpose2 training sets. Generally su
 ### Model selection guide
 
 ```
+Cells or nuclei, FIRST TRY               →  cpsam (CellposeSAMDetectorFactory — no diameter;
+                                            template GROOVY_WORKFLOW_CELLPOSE_SAM.groovy)
 Mammalian cells, fluorescence cytoplasm  →  cyto3
 Nuclei / DAPI stain                      →  nucleitorch_0
 Phase-contrast cell lines (e.g. HeLa)   →  livecell_cp3
@@ -355,6 +357,20 @@ etc.).
 ### Pitfall C2 — Cell diameter is in physical units
 Like all TrackMate detectors, `CELL_DIAMETER` uses calibrated units (µm).
 For an uncalibrated image (1 px = 1 unit), enter the diameter in pixels.
+Convert and check before running — a pixel value typed into this µm field is wrong by
+1/pixelWidth (e.g. 30 px entered as 30 µm at 0.25 µm/px becomes a 120 px diameter, and
+Cellpose then fails or crawls):
+
+```groovy
+def cal = imp.getCalibration()
+double diameterPx = 30.0d                                  // measured on the image (line tool / overlay)
+double diameterCal = diameterPx * cal.pixelWidth           // value for CELL_DIAMETER
+IJ.log("CELL_DIAMETER = " + diameterCal + " " + cal.getUnit() + " = " + (diameterCal / cal.pixelWidth) + " px")
+```
+
+Do not take the diameter from Cellpose's automatic size model without checking an overlay —
+it can be off 2–3× on data unlike its training set. Cellpose-SAM (`cpsam`) avoids the
+diameter entirely.
 
 ### Pitfall C3 — RGB images are rejected
 Cellpose cannot accept single-channel RGB images. Convert first:
@@ -516,3 +532,9 @@ so the script degrades to the pixel-iteration fallback when the class is absent.
 ### Pitfall C6 — `initialSpotFilterValue` must be set
 Same requirement as all TrackMate detectors: set `settings.initialSpotFilterValue`
 before calling `process()`, even if `0.0`.
+For Cellpose and Cellpose-SAM spots, QUALITY is the object **area in pixels** (verified:
+hundreds to thousands), so `0.0` keeps every detected object. If the spot collection is
+empty, the detector itself returned no masks — read the backend log (conda env, GPU, model
+name, diameter units); the initial filter is not the cause. TrackMate-Cellpose works with
+the installed Cellpose 3.1 (`cyto3`, `nucleitorch_0`); only `cpsam` needs Cellpose 4, and the
+micromamba shim routes it to the `cellpose4` env automatically.

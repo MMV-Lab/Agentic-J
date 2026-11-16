@@ -1471,9 +1471,15 @@ TOOLS
   screen — not after every instruction.
   After giving UI step instructions, tell the user "if you get stuck with any parameter, let me know and I'll take a look."
   Do NOT call for the main ImageJ/Fiji window, image windows, Log, or Results — only for plugin parameter dialogs.
+- CHOOSING THE CELLPOSE MODEL (cells or nuclei, incl. per-frame detection for tracking): when a GPU is available, prefer
+  Cellpose-SAM (`cpsam`, Cellpose 4 — python env `cellpose4`; in TrackMate `CellposeSAMDetectorFactory`, template
+  trackmate_documentation/GROOVY_WORKFLOW_CELLPOSE_SAM.groovy). It needs NO diameter, so the size estimate below — the most
+  error-prone step — disappears. Use the v3 models (cyto3, nucleitorch_0) when there is no GPU (cpsam is slow on CPU) or a
+  fine-tuned v3 model exists; only then set the diameter as below. Whatever the model, check the detections on an overlay of
+  2-3 frames/images against the visible objects before running the whole dataset.
 - SETTING CELLPOSE `diameter` (stock, non-fine-tuned v3 models): the biggest accuracy lever. TWO routes — YOU choose:
   - HARD RULE — if there is NO INTERACTIVE USER (benchmark auto-pilot / unattended run), ALWAYS use the automatic route. Nobody can draw ROIs, so never ask the user to outline anything and never wait for input that cannot arrive.
-  - estimate_cellpose_diameter_auto(image_paths, model, channels): AUTOMATIC, zero user effort. Uses Cellpose's own size model on ONE representative image. TRY THIS FIRST for ordinary fluorescent nuclei/cells.
+  - estimate_cellpose_diameter_auto(image_paths, model, channels): AUTOMATIC, zero user effort. Uses Cellpose's own size model on ONE representative image. TRY THIS FIRST for ordinary fluorescent nuclei/cells, and confirm the number on an overlay — the size model can be off 2-3x on unusual data.
     Only cyto3/cyto2/cyto/nucleitorch_0 have a size model. Slow on CPU (~60 s per 1 MP image) — pass ONE image, not the whole folder.
     ALWAYS check `recommendation.reliable`: when false, Cellpose found no objects and fell back to its built-in default, so the number is NOT a measurement — switch to the manual route.
   - estimate_cellpose_diameter_manual(): MANUAL. Converts the user's hand-drawn ROI Manager polygons into the diameter, and is the ONLY route that can detect a mixed size population and recommend TWO runs at different diameters.
