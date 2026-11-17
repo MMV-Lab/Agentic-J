@@ -61,7 +61,7 @@ will detect objects only within that region.
 | **Manual detector** | No auto-detection; all spots placed manually |
 
 Extended detectors (require additional update sites):
-`StarDist detector`, `Cellpose detector`, `MorphoLibJ detector`, `Ilastik detector`, `Weka detector`
+`StarDist detector`, `Cellpose detector`, `MorphoLibJ detector`, `Weka detector`
 
 ---
 

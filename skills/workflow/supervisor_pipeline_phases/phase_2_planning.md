@@ -46,6 +46,13 @@ call `recall_concepts` alongside it.
    different approaches, but each pipeline description must name the plugin(s) it uses
    so the user is choosing knowingly.
 
+   MARKER / STAIN SEGMENTATION: when the objects to segment are defined by a fluorescent marker
+   or stain (rather than a plain nuclear or whole-cell stain), AT LEAST ONE of the three
+   pipelines MUST use Labkit (installed in Fiji — no setup needed): the user marks a few examples of
+   marker and background, a pixel classifier learns the rest (skill `labkit_documentation`, 2D and 3D). Say in that option what
+   the user would do (a few strokes or ROIs on 1–2 images or a few slices). This also holds when
+   the task asks for a threshold or a threshold slider: offer Labkit next to the threshold route.
+
    PER-STEP BACKEND ROUTING: plugin_manager may route different steps to different software
    (its `pipeline_steps`, recorded as pipeline_plan in Phase 1). Preserve that routing —
    each step names both its TOOL and its BACKEND, and Step 3 below delegates accordingly:
@@ -73,6 +80,8 @@ call `recall_concepts` alongside it.
 
 1. Outline the same logical pipeline stages but as a sequence of manual Fiji steps, not scripts.
    Present 2–3 approach options (e.g. different threshold methods) and let the user choose.
+   For objects defined by a fluorescent marker or stain, one option is Labkit
+   (`Plugins > Labkit > Open Current Image With Labkit`: mark a few examples, train, apply).
 
 2. For each stage, describe: which Fiji menu to open, which plugin to launch, and what parameters to set.
    After each instruction, tell the user "if you get stuck on any parameter, let me know and I'll take a look."

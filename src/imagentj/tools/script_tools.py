@@ -1033,6 +1033,86 @@ def run_groovy_script(script: str, ij, purpose: str = "", live_sink=None,
         _run_groovy_script(script, ij, purpose, live_sink, unattended))
 
 
+_LOGGING_NOISE_RE = re.compile(
+    r"^(\d\d:\d\d:\d\d,\d+ \|-(INFO|WARN) in ch\.qos\.logback.*"
+    r"|SLF4J\([A-Z]\):.*)$",
+    re.MULTILINE,
+)
+
+
+def _strip_logging_noise(text: str) -> str:
+    """Remove logback/SLF4J initialisation lines; keep everything else verbatim."""
+    if "logback" not in text and "SLF4J" not in text:
+        return text
+    cleaned = _LOGGING_NOISE_RE.sub("", text)
+    return re.sub(r"\n{2,}", "\n", cleaned).strip("\n") + ("\n" if cleaned.strip() else "")
+
+
+def _script_error_collector(ij):
+    """
+    Record the script's own exceptions from SciJava's log, independent of System.err.
+
+    SciJava's ScriptModule does not rethrow a script's exception: it logs it, and
+    the Future completes normally. Detection used to rely on that log line landing
+    in the redirected System.err — but some libraries replace System.err while the
+    script runs (CLIJ's OpenCL device query does), after which the exception went
+    nowhere and a crashed script was reported as SUCCESS. A LogListener sees the
+    message whatever happened to System.err. Only messages that point at the
+    script itself (script.groovy in the text or stack) count, so unrelated
+    background log errors cannot flip a run to ERROR.
+
+    Returns (messages_list, detach_callable).
+    """
+    messages: list[str] = []
+    try:
+        log_service = ij.log()
+        error_level = int(jpype.JClass("org.scijava.log.LogLevel").ERROR)
+    except Exception:
+        return messages, (lambda: None)
+
+    def _describe(msg) -> Optional[str]:
+        text = str(msg.text() or "")
+        thr = msg.throwable()
+        parts = [text] if text and text != "null" else []
+        mentions_script = "script.groovy" in text
+        if thr is not None:
+            parts.append(str(thr.toString()))
+            cause = thr.getCause()
+            if cause is not None:
+                parts.append("Caused by: " + str(cause.toString()))
+            frames = [str(f.toString()) for f in thr.getStackTrace()]
+            script_frames = [f for f in frames if "script.groovy" in f]
+            mentions_script = mentions_script or bool(script_frames) or "script.groovy" in str(thr.toString())
+            parts.extend("\tat " + f for f in (script_frames or frames)[:5])
+        return "\n".join(parts) if mentions_script else None
+
+    @JImplements("org.scijava.log.LogListener")
+    class _Collector:
+        @JOverride
+        def messageLogged(self, msg):
+            try:
+                if int(msg.level()) <= error_level:
+                    described = _describe(msg)
+                    if described:
+                        messages.append(described)
+            except Exception:
+                pass
+
+    collector = _Collector()
+    try:
+        log_service.addLogListener(collector)
+    except Exception:
+        return messages, (lambda: None)
+
+    def _detach():
+        try:
+            log_service.removeLogListener(collector)
+        except Exception:
+            pass
+
+    return messages, _detach
+
+
 def _run_groovy_script(script: str, ij, purpose: str = "", live_sink=None,
                        unattended: Optional[bool] = None) -> str:
     System                = jpype.JClass("java.lang.System")
@@ -1054,6 +1134,7 @@ def _run_groovy_script(script: str, ij, purpose: str = "", live_sink=None,
 
     _reset_imagej_escape()
     _redirect_ij_errors(unattended)
+    script_errors, detach_error_collector = _script_error_collector(ij)
     runner = _GroovyRunner(script=script, ij=ij).start()
 
     # The redirected System.out buffer is readable while the script runs, so the
@@ -1094,8 +1175,16 @@ def _run_groovy_script(script: str, ij, purpose: str = "", live_sink=None,
             return _stopped_report(handle, out_stream, ij_log_before, monitor, detached)
 
         result = runner.result()
-        stdout = str(out_stream.toString())
-        stderr = str(err_stream.toString())
+        # Drop logging-framework start-up chatter (logback status lines, SLF4J
+        # provider warnings) — triggered by e.g. CLIJ, it filled the whole STDOUT
+        # budget and hid the script's own println output.
+        stdout = _strip_logging_noise(str(out_stream.toString()))
+        stderr = _strip_logging_noise(str(err_stream.toString()))
+        # The script's exception, seen by the log listener even when System.err was
+        # swapped out mid-run (then it is missing from `stderr`). Put it first so
+        # the summary line names it.
+        if script_errors and not any(e.splitlines()[0] in stderr for e in script_errors if e):
+            stderr = "[ERROR] " + "\n[ERROR] ".join(script_errors) + ("\n" + stderr if stderr.strip() else "")
 
         ij_log_new = get_new_ij_log_entries(ij_log_before)
 
@@ -1196,6 +1285,7 @@ def _run_groovy_script(script: str, ij, purpose: str = "", live_sink=None,
         return "\n".join(parts)
 
     finally:
+        detach_error_collector()
         System.setOut(original_out)
         System.setErr(original_err)
         handle.mark_finished()

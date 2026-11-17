@@ -64,10 +64,19 @@ Documented actions in the official UI docs:
 - `Create a label layer from a segmented class` converts a segmented class into
   a new label layer for curation.
 
+## 3D stacks
+
+- Labkit shows a 3D stack slice by slice; scroll through z and label on a few slices spread through
+  the stack (positives of different brightness + the background next to them). The target button
+  of a label layer jumps to its most-labeled slice.
+- The classifier works in 3D automatically for a z-stack and uses the image calibration as voxel
+  size — check the z-step (Image > Properties) before opening Labkit.
+- Classifier settings (gear icon) offer the dimensions (2D/3D), the sigmas and the filters, plus an
+  experimental GPU option. Leave GPU off in the window unless several GB of GPU memory are free:
+  Labkit has no CPU fallback (see `GROOVY_API.md`).
+
 ## Scope Boundary
 
-- This guide does not document a macro or Groovy command for launching the
-  interactive Labkit window.
-- This guide does not document a scripted training API.
-- For batch application of a saved classifier, use `GROOVY_API.md` and
-  `GROOVY_WORKFLOW_BATCH_SEGMENTATION.groovy`.
+- Training without the window: `GROOVY_WORKFLOW_TRAIN_FROM_LABELS.groovy` (label image or ROI set).
+- Applying a saved classifier to images/folders: `GROOVY_WORKFLOW_BATCH_SEGMENTATION.groovy`.
+- Objects and measurements from the marker class: `GROOVY_WORKFLOW_MARKER_OBJECTS.groovy`.

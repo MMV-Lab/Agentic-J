@@ -312,6 +312,24 @@ def check_environment(query: str = "", section: str = "") -> str:
     if out_and:
         return out_and
 
+    # --- Section given but nothing there: look everywhere before giving up ---
+    # A plugin whose jars live in jars/ (e.g. Labkit) is not in the "Fiji plugins"
+    # table; restricting to that section used to end in "No match ... in any
+    # section", and the agent concluded an installed tool might be missing.
+    if sec_filter:
+        everywhere = [s for s in sections if s != "preamble"]
+        out_all = _format_hits(
+            sections, everywhere,
+            predicate=lambda row: _row_score(row, tokens) == n_tokens,
+            header=None,
+        )
+        if out_all:
+            return (
+                f"Not in section '{section}', but listed in other sections "
+                f"(it IS in the snapshot):\n{out_all}"
+            )
+        target = everywhere  # widen the partial-match fallback below as well
+
     # --- Pass 2: OR fallback, ranked by token overlap -----------------------
     candidates: List[Tuple[str, str, int]] = []
     for s in target:

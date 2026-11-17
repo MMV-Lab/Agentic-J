@@ -38,6 +38,12 @@ substring search finds them.
 | **wget** | 1.25.0 |
 | **curl** | 8.14.1 |
 
+## Interactive pixel classification (Labkit)
+
+| Alias | Where it lives | Notes |
+|-------|----------------|-------|
+| Labkit / labkit pixel classifier / trainable segmentation / random forest pixel classification / segment fluorescent marker or stain | Fiji plugin (`Plugins > Labkit`), jars `labkit-ui`, `labkit-pixel-classification` | Pixel classifier trained from a few user-marked examples (strokes or ROIs). Offer it whenever objects are defined by a fluorescent marker or stain, especially with noisy channels, textured background or an uncertain threshold. 2D and 3D. See the `labkit_documentation` skill. |
+
 ## Python environments
 
 
@@ -631,7 +637,6 @@ env can do; it exists for the atlas tooling only.
 | ToAST_ | 25.0.2 |
 | TrackMate | 8.1.6 |
 | TrackMate-Cellpose | 1.0.1 |
-| TrackMate-Ilastik | 2.0.0 |
 | TrackMate-MorphoLibJ | 2.0.0 |
 | TrackMate-StarDist | 2.0.0 |
 | Trainable_Segmentation (Weka) | 4.0.0 |

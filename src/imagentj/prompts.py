@@ -1229,12 +1229,19 @@ ROUTING PRINCIPLES (capability-based — the concrete tool always comes from the
   wants PROMPTABLE / INTERACTIVE / CORRECTABLE segmentation → route to the napari
   foundation-model (SAM-style) segmentation skill, backend "python_data_analyst",
   env "napari-mcp" (the analyst writes the script whether it is batch or interactive).
-- If the user wants the model TAUGHT / TRAINED / FINE-TUNED on their own annotations, or asks
-  the tool to "learn from what I mark", route to that same SAM-style skill and say in the
-  reasoning that its FINE-TUNING workflow applies — a multi-stage, human-in-the-loop procedure
+- Objects defined by a FLUORESCENT MARKER OR STAIN (rather than a plain nuclear or whole-cell
+  stain), especially with noisy channels, textured or autofluorescent background, dim and bright
+  positives, or when the task would otherwise rest on picking a threshold → ALWAYS include the
+  Fiji pixel classifier trained from a few user-marked examples (Labkit; skill
+  `labkit_documentation`, backend "imagej_coder") as a recommendation or an alternative pipeline
+  step. It works in 2D and 3D and complements pretrained models — it does not replace them.
+- If the user wants a model TAUGHT / TRAINED / FINE-TUNED on their own annotations of individual
+  objects (instance segmentation), or asks the tool to "learn from what I mark", route to that
+  same SAM-style skill and say in the reasoning that its FINE-TUNING workflow applies — a multi-stage, human-in-the-loop procedure
   (the user CLICKS which tiles to use → the user corrects them → train → apply), not a single
   segmentation call. TWO of its stages open a window the user works in, not one. Do NOT route
-  this to a Fiji plugin.
+  this to a Fiji plugin — except that "learn what my marker/stain looks like from a few strokes"
+  (pixel classification of a stain, rule above) is Labkit's job.
 - Touching objects when a threshold already exists → a marker-controlled watershed; this
   capability lives in BOTH a Fiji plugin and the Python image library — pick the family that
   matches the surrounding steps.

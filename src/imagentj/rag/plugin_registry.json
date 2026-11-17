@@ -206,7 +206,7 @@
     "update_site_url": "https://sites.imagej.net/Labkit/",
     "requires_restart": true,
     "documentation_url": "https://imagej.net/plugins/labkit",
-    "description": "Labkit is a Fiji plugin for manual and random-forest-based pixel classification segmentation of 2D/3D microscopy images and timelapse movies, designed to work efficiently on very large datasets with optional GPU/HPC acceleration.",
+    "description": "Labkit is a Fiji plugin (installed) for random-forest pixel classification trained from a few user strokes: the go-to tool for segmenting objects defined by a fluorescent marker or stain on noisy, textured or autofluorescent background in 2D and 3D, where thresholds and pretrained models fail. Skill labkit_documentation has verified workflows: train from labels/ROIs, apply to images or folders, and convert the marker class into filtered, measured 2D/3D objects.",
     "category": "segmentation",
     "tags": [
       "segmentation",
@@ -220,14 +220,14 @@
     ],
     "input_data": "Single- and multi-channel microscopy images and timelapse movies in 2D or 3D, including very large (terabyte-scale) datasets.",
     "output_data": "Segmentation results (pixel-wise label/segmentation image), ground-truth annotations, and a reusable trained pixel-classification model.",
-    "use_when": "Use when you need interactive manual annotation and/or random-forest pixel classification to segment 2D/3D or time-lapse microscopy data, especially at very large scale.",
-    "do_not_use_when": "Do not use when you need instance segmentation of individual objects or when a simple non-ML method (e.g., thresholding) is sufficient.",
+    "use_when": "Use when a fluorescent marker/stain must be segmented and a threshold picks up background texture or misses dim positives, no pretrained model fits the marker, and the user can mark a few examples (strokes or ROIs) of marker vs background; 2D images, 3D z-stacks or large datasets.",
+    "do_not_use_when": "Do not use for ordinary nuclei/whole cells where Cellpose or StarDist work out of the box, for diffraction-limited spots (use spot detection), or when a simple threshold already separates the signal. Labkit gives pixel classes, not instances: follow with the objects workflow (connected components + size filter) or watershed for touching objects.",
     "typical_use_cases": [
-      "Training a random-forest pixel classifier from sparse manual annotations",
-      "Segmenting multi-channel 2D microscopy images via pixel classification",
-      "Segmenting 3D microscopy volumes and curating the results",
-      "Processing very large timelapse datasets with GPU acceleration",
-      "Running distributed segmentation of huge datasets on an HPC cluster"
+      "Segmenting and counting objects defined by a fluorescent marker in 2D images or 3D stacks",
+      "Detecting stained objects in noisy channels and separating them from textured background and debris",
+      "Training a random-forest pixel classifier from a few strokes or Fiji ROIs and applying it to a folder of images",
+      "Producing probability maps of a stain for downstream thresholding or watershed",
+      "Segmenting large 2D/3D or time-lapse datasets block-wise"
     ]
   },
   {
@@ -1526,33 +1526,6 @@
     ]
   },
   {
-    "name": "ilastik",
-    "update_site_name": "Ilastik",
-    "update_site_url": "https://sites.imagej.net/Ilastik/",
-    "requires_restart": true,
-    "documentation_url": "https://imagej.net/plugins/ilastik",
-    "description": "Machine learning-based image segmentation, classification, and analysis. Provides interactive pixel classification, object classification, counting, and tracking through a user-friendly graphical interface backed by random forest and other ML models.",
-    "category": "segmentation",
-    "tags": [
-      "machine-learning",
-      "pixel-classification",
-      "random-forest",
-      "interactive",
-      "segmentation",
-      "object-classification"
-    ],
-    "input_data": "2D or 3D grayscale or multi-channel fluorescence images where a few manual annotations (painting) can teach the classifier",
-    "output_data": "Probability maps, segmentation label images, object counts, classification results, exported HDF5 datasets",
-    "use_when": "You want interactive machine learning segmentation by painting labels, need pixel or object classification, or want to combine multiple image features automatically",
-    "do_not_use_when": "Images have very consistent, threshold-able intensity (use Auto Threshold); you need deep learning (use StarDist or DeepImageJ); you need a purely scriptable batch pipeline",
-    "typical_use_cases": [
-      "Segmenting cells in complex fluorescence images by painting foreground/background examples",
-      "Classifying tissue regions in histology images",
-      "Counting objects with overlapping intensities that defeat simple thresholding",
-      "Tracking dividing cells across time-lapse datasets"
-    ]
-  },
-  {
     "name": "DeepImageJ",
     "update_site_name": "DeepImageJ",
     "update_site_url": "https://sites.imagej.net/DeepImageJ/",
@@ -1571,7 +1544,7 @@
     "input_data": "2D or 3D images compatible with the selected pre-trained model (varies by model: fluorescence, brightfield, EM, etc.)",
     "output_data": "Model-specific outputs: segmentation masks, probability maps, denoised images, feature maps",
     "use_when": "You want to apply a published deep learning model to your images without writing code, or want to deploy your own model for others to use via the BioImage Model Zoo",
-    "do_not_use_when": "No suitable pre-trained model exists for your image type; you need to train a model (use ilastik or external tools); images don't match the model's expected format",
+    "do_not_use_when": "No suitable pre-trained model exists for your image type; you need to train a model (use Labkit for pixel classification, or external tools); images don't match the model's expected format",
     "typical_use_cases": [
       "Running a published nuclei segmentation model from BioImage Model Zoo",
       "Applying a domain-specific denoising model to fluorescence images",
@@ -1908,34 +1881,6 @@
       "Tracking focal adhesions at the cell periphery in fluorescence time-lapse microscopy",
       "Detecting and tracking objects with high intensity variability using a pixel-classifier-based detector",
       "Running TrackMate tracking after Weka-based segmentation in 2D or 3D time series"
-    ]
-  },
-  {
-    "name": "TrackMate-Ilastik",
-    "update_site_name": "TrackMate-Ilastik",
-    "update_site_url": "https://sites.imagej.net/TrackMate-Ilastik",
-    "requires_restart": true,
-    "documentation_url": "https://imagej.net/plugins/trackmate/detectors/trackmate-ilastik",
-    "description": "TrackMate detector module that runs an ilastik pixel-classification project to segment objects in 2D or 3D images for subsequent tracking in TrackMate.",
-    "category": "tracking",
-    "tags": [
-      "trackmate",
-      "ilastik",
-      "detector",
-      "segmentation",
-      "pixel-classification",
-      "time-lapse",
-      "3d"
-    ],
-    "input_data": "2D or 3D images/stacks including time-lapse movies opened in Fiji (e.g., TIFF); an ilastik project file (.ilp); requires ilastik installed plus the ilastik Fiji import/export plugin.",
-    "output_data": "TrackMate spot detections from ilastik segmentation, TrackMate tracks, and spot/track feature tables; exportable results such as tracks, lineage and segmentation.",
-    "use_when": "Use when you have a trained ilastik pixel-classifier (.ilp) and want to use its segmentation as the detection step inside TrackMate for tracking.",
-    "do_not_use_when": "Do not use when ilastik (and its Fiji import/export plugin) cannot be installed/configured or you do not have a suitable .ilp model for your data.",
-    "typical_use_cases": [
-      "Tracking Neisseria meningitidis growth in a 2D time-lapse using a pre-trained .ilp detector",
-      "Detecting and tracking objects in 3D stacks using ilastik-based segmentation in TrackMate",
-      "Previewing and tuning probability threshold and number of classes before running TrackMate tracking",
-      "Exporting TrackMate results (tracks, lineage, segmentation) after ilastik-based detection"
     ]
   },
   {

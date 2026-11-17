@@ -20,10 +20,12 @@ and save the classifier for batch reuse.
 
 ## Step 2 — Label Foreground and Background
 
-1. Select `foreground`.
-2. Select the pencil tool and draw on foreground pixels.
+1. Select `foreground` (rename it to the marker, e.g. `marker`; double-click the name).
+2. Select the pencil tool and draw short strokes inside positives — include dim ones.
 3. Select `background`.
-4. Mark background pixels with the pencil tool.
+4. Mark background pixels with the pencil tool, especially the texture right next to positives.
+5. Optional: `Add label` for bright things that must not count (`debris`, small specks) and mark a few.
+6. In a z-stack: do this on 3–5 slices spread through the stack, not on every slice.
 
 Notes:
 
@@ -48,5 +50,6 @@ Notes:
 
 1. In Labkit, open `Segmentation > Save Classifier...`.
 2. Save the classifier to a known location for reuse in batch workflows.
-3. Reuse that saved `.classifier` file with the batch command in
-   `GROOVY_API.md`.
+3. Reuse that saved `.classifier` file with `GROOVY_WORKFLOW_BATCH_SEGMENTATION.groovy`
+   (one image or a folder), then `GROOVY_WORKFLOW_MARKER_OBJECTS.groovy` for objects and
+   measurements.
