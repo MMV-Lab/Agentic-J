@@ -13,7 +13,7 @@ def ic = new ImageCalculator()
 def diff = ic.run("Subtract create", impA, impB)
 ```
 
-**Fix B — use the no-import string form:**
+**Fix B — use the no-import string form (GUI sessions only):**
 
 ```groovy
 IJ.run(impA, "Image Calculator...",
@@ -22,3 +22,8 @@ IJ.run(impA, "Image Calculator...",
        " create")
 def diff = IJ.getImage()
 ```
+
+Fix B depends on window titles and on the result becoming the active image.
+It does not work headless. With images that were never shown it fails with
+`Macro canceled`. After `show()` on both inputs, `IJ.getImage()` returns an
+input image, not the result. Use Fix A in scripts.

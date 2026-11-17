@@ -30,14 +30,16 @@ Zeiss, Nikon, Leica, Olympus, Olympus, PerkinElmer, and many others in Fiji/Imag
 
 ---
 
-## Three Automation Pathways — Choose the Right One
+## Two Automation Pathways — Choose the Right One
 
 | Pathway | When to use | Language |
 |---------|-------------|----------|
 | **IJ Macro** (`IJ.run`) | Simple scripts inside Fiji; recording macros | ImageJ Macro |
 | **Groovy API** (`BF.openImagePlus`) | Complex scripts inside Fiji; series selection; virtual stacks | Groovy / Java |
 
-> **Headless warning**: Bio-Formats does NOT work with Fiji's `--headless` flag.
+> **Headless warning**: the `Bio-Formats Importer` command (`run(...)` in a macro,
+> `IJ.run(...)` in Groovy) fails with Fiji's `--headless` flag (`VerifyError`).
+> `BF.openImagePlus` works headless.
 > Use ImageJ Launcher with `-batch` flag for macro-based headless execution.
 
 ---
@@ -101,8 +103,9 @@ Virtual stack: `opts.setVirtual(true)`
 
 ## Critical Pitfalls
 
-1. **`--headless` does not work with Fiji macros** — produces `VerifyError`.
-   Use ImageJ Launcher `-batch` flag instead.
+1. **The Importer command does not work with `--headless`**. It produces `VerifyError`.
+   In headless scripts, open files with `BF.openImagePlus(...)`, which works headless.
+   For macros, use ImageJ Launcher `-batch` flag instead.
 
 2. **`BF.openImagePlus()` returns `ImagePlus[]`** — always an array, never a
    single `ImagePlus`. Must iterate: `imps.each { it.show() }`.

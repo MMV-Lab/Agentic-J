@@ -84,7 +84,7 @@ MODEL_TYPE = None      # None = auto (vit_b_lm on GPU, vit_t_lm on CPU). This is
                        # reads it from the manifest, so set it once, here.
 SEGMENT_BACKEND = "micro_sam"   # WHICH MODEL the user is shown and will end up training.
                        # "micro_sam" -> stages 3/4 are skills/napari/micro_sam/WORKFLOW_FINETUNE_3,4
-                       # "cellpose"  -> stages 3/4 are skills/cellpose_documentation/
+                       # "cellpose"  -> stages 3/4 are skills/python/cellpose/
                        #                WORKFLOW_FINETUNE_CP_3,4 (cpsam). Stages 1 and 2 are
                        # SHARED either way: the picker and the SAM-assisted annotator do not care
                        # what gets trained, and SAM-assisted clicking is the fastest way to
