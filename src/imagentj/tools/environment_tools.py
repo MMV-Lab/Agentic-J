@@ -328,7 +328,8 @@ def check_environment(query: str = "", section: str = "") -> str:
                 f"Not in section '{section}', but listed in other sections "
                 f"(it IS in the snapshot):\n{out_all}"
             )
-        target = everywhere  # widen the partial-match fallback below as well
+        # Partial matches stay within the requested section: widening them pulled in
+        # unrelated rows from other sections (A/B-tested against main, 2026-11-17).
 
     # --- Pass 2: OR fallback, ranked by token overlap -----------------------
     candidates: List[Tuple[str, str, int]] = []
