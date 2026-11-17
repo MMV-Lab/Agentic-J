@@ -92,6 +92,39 @@ masks, flows, styles = model.eval(imgs)     # 3-tuple; imgs may be a LIST (batch
   `WORKFLOW_BATCH_SEGMENTATION.py` carries over — swap the class, drop `diameter`/`channels`,
   and take a 3-tuple instead of 4.
 
+### cpsam in 3D (z-stacks) — verified on cellpose 4.1.1
+
+Use `WORKFLOW_CPSAM_3D_SEGMENTATION.py`; these are the facts it is built on.
+
+```python
+# imagentj-env: cellpose4
+masks = model.eval(stack_zyx, z_axis=0, do_3D=True,
+                   anisotropy=z_step / xy_pixel, resample=False,
+                   batch_size=32)[0]
+# masks come back with int(Z * anisotropy) planes — map them back to the Z input planes
+```
+
+- **`z_axis` is required** for any 3D array (`ValueError: z_axis must be specified when
+  segmenting 3D images of ndim=3`). A 4D array also needs `channel_axis`. Up to 3 channels are used.
+- **`do_3D`** (capital D) runs the net on XY, ZY and ZX planes and integrates a 3D flow field.
+  `stitch_threshold>0` with `do_3D=False` is the plane-by-plane alternative — worse in every test.
+- **`anisotropy`** upsamples z by that factor before the net runs. With the default
+  **`resample=True`** the flows are then resized back to the original z grid by linear
+  interpolation **without rescaling the z flow component**, and `follow_flows(dP/5)` integrates in
+  voxel steps — z motion is over-scaled by the anisotropy factor. Measured: F1@0.5 1.00 / 0.84 /
+  0.51 / 0.32 at z-step 1× / 2× / 3× / 4×. With **`resample=False`** the dynamics run on the
+  upsampled grid: 1.00 at every step. The masks then have `int(Z*anisotropy)` planes; take plane
+  `round((i + 0.5) * Z_up / Z - 0.5)` for input plane `i`.
+- **`flow_threshold` is ignored when `do_3D=True`** (the flow-error QC runs only in 2D).
+- `min_size` (default 15 voxels) is far below a real 3D object; filter by volume afterwards.
+- `diameter` rescales X, Y **and** Z in 3D (`image_scaling = 30/diameter`). Leave it unset.
+- `batch_size=32` was ~20% faster than the default 8 on an A100 (planes per GPU batch).
+- A list of volumes is evaluated one volume at a time (no cross-volume batching), so for 3D the
+  list form brings nothing — load one stack, eval, write, free.
+- Logs `Resizing is deprecated in v4.0.1+` when anisotropy ≠ 1 — harmless.
+- **The `cellpose4` env has no scikit-image and no pandas** (numpy, scipy, tifffile, cv2, PIL
+  only) — measure with `numpy.bincount` / `scipy.ndimage`, write CSV with the `csv` module.
+
 ## `eval()`
 
 ```python

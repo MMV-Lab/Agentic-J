@@ -30,8 +30,18 @@ The **direct** Cellpose path: the BIOP wrapper (`ch.epfl.biop.wrappers.cellpose`
 > If you do end up here with several images anyway, batch them into one T-stack — see
 > *"Batch (many images)"* below. Never loop `cp.run()` per image.
 
+> ## ⛔ Segmenting a 3D Z-STACK? Use `python/cellpose` → `WORKFLOW_CPSAM_3D_SEGMENTATION.py`.
+>
+> That workflow runs true 3D cpsam (env `cellpose4`) with the voxel anisotropy handled correctly
+> and writes a calibrated 3D label stack you can open back in Fiji. Running this wrapper on a
+> stack without 3D flags segments every plane separately, which is not a 3D segmentation. And
+> the cellpose CLI it calls defaults to resampling (only `--no_resample` turns it off), which
+> with `--anisotropy` splits and merges objects in z on anisotropic stacks. The wrapper's own
+> 3D path is not verified on this install — use the Python workflow.
+
 **When to use this vs. alternatives**
 - **Cellpose (this skill)** — cytoplasm / whole cells / bright-field / irregular (non-star-convex) 2D objects, **single image**.
+- **`python/cellpose` 3D workflow** — cells or nuclei in a **z-stack / volume**.
 - **`python/cellpose`** — the same models over a **folder**; model loaded once, far faster (see above).
 - **StarDist** — star-convex **nuclei** (fluorescence / H&E); faster, no conda subprocess.
 - **TrackMate-Cellpose** — only to **link objects across time** (tracking), not for a still image.

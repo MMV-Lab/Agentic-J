@@ -14,6 +14,7 @@ substring search finds them.
 | Cellpose 3 | env `cellpose` (Python 3.10, cellpose 3.1.1.2) | Includes Omnipose. |
 | Cellpose models: cyto / cyto2 / cyto3 / nuclei / livecell / tissuenet | bundled with the cellpose package (envs `cellpose` and `cellpose4`) | Weights download to `~/.cellpose` on first use. |
 | Omnipose | env `cellpose` (omnipose 1.1.4, with cellpose 3) | Not present in the `cellpose4` env. |
+| Cellpose 3D / cellpose z-stack / 3D cell segmentation / 3D nuclei segmentation / volumetric segmentation / do_3D / cellpose anisotropy | env `cellpose4` (cpsam), skill `python/cellpose` → `WORKFLOW_CPSAM_3D_SEGMENTATION.py` | Copy the workflow; do not hand-write. Needs the voxel size (fails fast if the file is uncalibrated — ask the user, never guess). Gotchas it handles: `do_3D` capital D; `z_axis` mandatory; `anisotropy` needs `resample=False` or objects split/merge in z; `flow_threshold` ignored in 3D; 2D-sized `min_size`. Plane-by-plane segmentation or `stitch_threshold` is not a substitute. The `cellpose4` env has no scikit-image/pandas. |
 | Cellpose (BIOP) Fiji plugin / direct cellpose / cellpose segmentation in Fiji / Cellpose command / CellposeSAM command | Fiji jar `ijl-utilities-wrappers` 0.12.1 (BIOP wrapper); shells to env `cellpose` (cyto3/nuclei) or env `cellpose4` (cpsam) | Direct single-image Cellpose segmentation in Fiji, NO TrackMate. Returns the label image in-process. See the `cellpose_documentation` skill. Use for still images; TrackMate-Cellpose is only for tracking over time. |
 
 ---

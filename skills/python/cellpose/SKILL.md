@@ -1,16 +1,16 @@
 ---
 name: cellpose
 description: >-
-  Cellpose deep-learning instance segmentation of cells and nuclei via the PYTHON API, in the
-  `cellpose` conda env (v3.1.1.2 + CUDA). THIS IS THE ROUTE FOR A FOLDER OF IMAGES — the model
-  loads ONCE and stays resident, while the Fiji/BIOP wrapper respawns bash+conda+python and
-  reloads it every call. Send batch segmentation to Python and leave only single still images
-  or in-GUI work to the Fiji cellpose skill. COPY WORKFLOW_BATCH_SEGMENTATION.py and edit its
-  CONFIG block — do NOT hand-write your own loop. Scripts MUST start with
-  `# imagentj-env: cellpose` or they run in the main env, where cellpose is absent.
-  Build models.Cellpose() ONCE outside the loop, and PASS eval() A LIST of images so it
-  batches on the GPU — never call eval() once per image. Models are pre-downloaded (cyto3,
-  nuclei, cyto2, tissuenet_cp3, livecell_cp3, bact_*); cpsam needs the `cellpose4` env. See
+  Cellpose instance segmentation of cells and nuclei via the PYTHON API. THE ROUTE FOR A FOLDER
+  OF IMAGES (model loads once; the Fiji/BIOP wrapper reloads it every call — leave it only single
+  still images or in-GUI work) AND FOR 3D Z-STACKS: cells or nuclei in a volume → copy
+  WORKFLOW_CPSAM_3D_SEGMENTATION.py (env cellpose4) — true 3D cpsam with the voxel anisotropy
+  handled, calibrated label stack, per-object volume CSV, orthogonal QC PNG. Never segment a
+  z-stack plane by plane. 2D folders: copy WORKFLOW_BATCH_SEGMENTATION.py (v3 models, env
+  cellpose) or WORKFLOW_CPSAM_BATCH_SEGMENTATION.py (cpsam, env cellpose4) and edit the CONFIG
+  block — do NOT hand-write a loop. Scripts MUST start with `# imagentj-env: <env>` or they run in
+  the main env, where cellpose is absent. Build the model ONCE and pass eval() a LIST of images.
+  Pre-downloaded: cyto3, nuclei, cyto2, tissuenet_cp3, livecell_cp3, bact_*, cpsam. See
   SCRIPT_API.md for eval(), channels, thresholds and pitfalls.
 ---
 
@@ -93,6 +93,52 @@ channel-agnostic. It is *not* ignored if you pass one, though: the default behav
 is the cpsam twin of `WORKFLOW_BATCH_SEGMENTATION.py` (same CONFIG-block structure, same
 guards, already on the v4 API). Details → `SCRIPT_API.md`.
 
+## 3D z-stacks — `WORKFLOW_CPSAM_3D_SEGMENTATION.py`
+
+For cells or nuclei in a **volume** (confocal / light-sheet / two-photon z-stack), copy
+`WORKFLOW_CPSAM_3D_SEGMENTATION.py` and edit its CONFIG block. Env `cellpose4`. Folder of stacks
+in → per stack: a calibrated uint16 3D label stack (opens in Fiji with the right voxel size), a
+per-object CSV (volume in voxels and µm³, centroid, z-extent, border flags) and a `_QC.png` with
+XY / XZ / YZ views at true z scale. **Look at the QC PNG before reporting numbers.**
+
+What the workflow gets right that a hand-written script will not (all measured on this install):
+
+1. **True 3D, not plane-by-plane.** `do_3D=True` runs cpsam on the XY, ZY and ZX planes and
+   follows one 3D flow field. Segmenting each plane in 2D and linking through z
+   (`stitch_threshold`) fragmented objects into thin caps and single-plane pieces and scored
+   worse in every controlled test (F1@0.5 0.70–0.90 vs 0.92–1.00). `MODE="stitch"` exists only
+   for objects thinner than ~3 planes.
+2. **Anisotropy from the calibration, with `resample=False`.** `anisotropy` = z-step / xy pixel
+   size. With cellpose's default `resample=True` the anisotropy correction is *harmful*: the flow
+   field is shrunk back to the coarse z grid without rescaling its z component, so objects
+   split/merge in z. Measured on the same volume sampled ever more coarsely in z: F1 1.00 → 0.84 →
+   0.51 → 0.32 (default) vs 1.00 at every step (`resample=False`). The workflow handles this and
+   maps the labels back to the original planes.
+3. **Refuses to guess the voxel size.** Uncalibrated files (no z-step, 1 px = 1 unit, 72-dpi
+   "inch" defaults) stop with `VERIFICATION FAILED` before the model loads. Ask the user for the
+   voxel size and set `VOXEL_SIZE_ZYX = (z, y, x)` — never invent one.
+4. **Removes 3D debris.** Cellpose's `min_size=15` voxels is a 2D-sized default; 3D output carries
+   small fragments next to the real objects. `MIN_VOLUME="auto"` drops objects under 10% of the
+   volume-weighted median object volume and reports how many it removed.
+5. **`flow_threshold` does nothing in 3D** (cellpose skips that check when `do_3D=True`). Tune
+   `cellprob_threshold` instead: lower (−1, −2) if dim objects are missed.
+6. **Checks RAM before loading the model.** Running out does not raise an error — the kernel
+   OOM-kills the process, and in the agent container (12 GB limit by default) that can take the
+   container down. A stack that will not fit stops with `VERIFICATION FAILED` and the numbers;
+   then crop it to the region of interest or split it into XY blocks — never fall back to 2D.
+
+Channels: `CHANNELS=None` for a single-channel stack; for **whole cells** give the
+membrane/cytoplasm channel first and the nuclear channel second, e.g. `CHANNELS=[1, 0]` (cpsam
+takes up to three channels together); for nuclei give only the nuclear channel. No `diameter` —
+cpsam handled objects ~25–70 px across without one, and in 3D a diameter rescales z as well.
+
+Speed: one stack at a time, model loaded once. Measured on an A100: ~25 s for 60×256×256;
+9.5 min and 13.7 GB RAM for 84×1000×1000 at anisotropy 3.1. Cost grows with
+Z × anisotropy × Y × X (~55 bytes RAM per upsampled voxel). Keep it on the GPU — 3D on CPU takes hours.
+
+The resulting label stack feeds `3d_imagej_suite_documentation` / MorphoLibJ for further 3D
+measurement, or straight into Python via the per-object CSV.
+
 ### Picking the class in this env (v3)
 
 `models.Cellpose` bundles a size model for auto-diameter, but **only `cyto`, `cyto2`, `cyto3`
@@ -174,6 +220,10 @@ model loads and all I/O.
   `nucleitorch_0` weights plus its size model. Do **not** pass `"nucleitorch_0"`; that is an
   internal weight filename and raises `FileNotFoundError: size model not found`.
 - Cellpose expects objects **brighter** than background. Invert bright-field before segmenting.
+- **A z-stack segmented plane by plane is not a 3D segmentation.** Each plane gets its own
+  labels, so one cell becomes 20–60 unrelated objects. Use `WORKFLOW_CPSAM_3D_SEGMENTATION.py`.
+- **`do_3D` has a capital D** in cellpose 4, and **`z_axis` is mandatory** for a 3D array
+  (`ValueError: z_axis must be specified ...`) — also for `stitch_threshold`.
 
 ## Files
 
@@ -181,6 +231,7 @@ model loads and all I/O.
 |------|---------------|
 | `WORKFLOW_BATCH_SEGMENTATION.py` | **Copy this for a folder, v3 models** (cyto3, nuclei, tissuenet_cp3, …). Model loaded once, `eval(list)`, per-image uint16 masks + summary CSV. Env `cellpose` |
 | `WORKFLOW_CPSAM_BATCH_SEGMENTATION.py` | **Copy this for a folder when the model is cpsam.** Same structure, but `CellposeModel`, no diameter, no channels, 3-tuple. Env `cellpose4` |
+| `WORKFLOW_CPSAM_3D_SEGMENTATION.py` | **Copy this for 3D z-stacks** (cells or nuclei in a volume). True 3D cpsam, anisotropy from the calibration with `resample=False`, debris filter, calibrated label stack + per-object volume CSV + orthogonal QC PNG. Env `cellpose4` |
 | `SCRIPT_API.md` | `eval()` signature and returns, channel conventions, model list, threshold tuning, env details |
 | `FINETUNING.md` | Fine-tuning a Cellpose model on the user's corrected tiles: stages, environments, pitfalls, measured results |
 | `WORKFLOW_FINETUNE_CP_3_TRAIN.py` | Stage 3: train on the annotated tiles, then measure stock vs fine-tuned on held-out tiles and write `evaluation.json`. Env `cellpose4` |
