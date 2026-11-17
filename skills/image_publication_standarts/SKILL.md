@@ -40,8 +40,10 @@ MULTI-CHANNEL IMAGES:
     ```
 
 5. COLOR-BLIND ACCESSIBILITY:
-  - For merged multi-channel images, use green/magenta or cyan/red/yellow.
-  - AVOID red/green combinations alone.
+  - For merged multi-channel images, use green/magenta for two channels and
+    cyan/magenta/yellow for three. Also show each channel as a grayscale panel.
+  - AVOID red/green combinations alone. Also avoid red with yellow, which is hard
+    to separate for red-green colorblind readers.
   - If creating pseudocolored images, ALSO save a grayscale version.
 
 ANNOTATIONS:

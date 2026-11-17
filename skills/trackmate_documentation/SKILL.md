@@ -44,14 +44,14 @@ TrackMate is bundled with Fiji (core detectors and trackers). Cellpose and StarD
   was loaded with planes in Z instead of T (typical when an image sequence
   was imported via `File › Import › Image Sequence`). TrackMate-Cellpose,
   TrackMate-StarDist, and any 2D+T detector reject this. Fix with
-  `IJ.run(imp, "Properties...", "channels=1 slices=1 frames=N ...")` BEFORE
-  building `Settings`. Full pattern with Bio-Formats prevention:
+  `imp.setDimensions(c, 1, n)` (channels, slices, frames) BEFORE
+  building `Settings`. It keeps the pixel calibration. Full pattern with Bio-Formats prevention:
   [`/app/skills/imagej_groovy_patterns/pitfall_z_vs_t_dimensions.md`](../imagej_groovy_patterns/pitfall_z_vs_t_dimensions.md).
 
 - **`The tracker factory is null.`** / **`unable to resolve class SparseLAPTrackerFactory`** /
   **`unable to resolve class ManualTrackerFactory`** — TrackMate requires
   `settings.trackerFactory` even for detection-only pipelines, AND the tracker
-  package was renamed (`tracking.sparselap.*` → `tracking.jaqaman.*`) in v8+.
+  package was renamed (`tracking.sparselap.*` → `tracking.jaqaman.*`).
   Use the reflection-based loader pattern in `CELLPOSE_DETECTOR_API.md` § Pitfall C5
   rather than hardcoded imports — it tries multiple class names at runtime and
   survives future renames.
@@ -72,7 +72,7 @@ TrackMate is bundled with Fiji (core detectors and trackers). Cellpose and StarD
   is installed. Use plain pixel iteration for label-image measurements
   (no MorphoLibJ import required). See `CELLPOSE_DETECTOR_API.md` § Pitfall C9.
 
-- **`uknown selection 'nuclei' for parameter 'Pretrained model'`** — the deployed
+- **`Unknown selection 'nuclei' for parameter 'Pretrained model'`** — the deployed
   nuclei model is named **`nucleitorch_0`**, not `nuclei`. Set
   `CELLPOSE_MODEL`/the model string to `"nucleitorch_0"`.
 

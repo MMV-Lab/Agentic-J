@@ -102,7 +102,7 @@ import fiji.plugin.trackmate.detection.MaskDetectorFactory
 import fiji.plugin.trackmate.detection.ThresholdDetectorFactory
 import fiji.plugin.trackmate.detection.LabelImageDetectorFactory
 
-// Trackers (core Fiji) — jaqaman package required in v8+ (sparselap package removed)
+// Trackers (core Fiji) — jaqaman package required (sparselap package removed)
 import fiji.plugin.trackmate.tracking.jaqaman.SimpleSparseLAPTrackerFactory
 import fiji.plugin.trackmate.tracking.jaqaman.SparseLAPTrackerFactory
 import fiji.plugin.trackmate.tracking.jaqaman.LAPUtils
@@ -495,12 +495,16 @@ imp.show()
 import fiji.plugin.trackmate.visualization.table.TrackTableView
 import fiji.plugin.trackmate.gui.displaysettings.DisplaySettings
 
-def sm = new SelectionModel(model)
 def ds = DisplaySettings.defaultStyle()   // NOT new DisplaySettings()
-def tableView = new TrackTableView(model, sm, ds)
-tableView.getSpotTable().exportToCsv(new File("/path/to/spots.csv"))
-tableView.getTrackTable().exportToCsv(new File("/path/to/tracks.csv"))
+TrackTableView.createSpotTable(model, ds).exportToCsv(new File("/path/to/spots.csv"))
+TrackTableView.createEdgeTable(model, ds).exportToCsv(new File("/path/to/edges.csv"))
+TrackTableView.createTrackTable(model, ds).exportToCsv(new File("/path/to/tracks.csv"))
 ```
+
+The static factories work headless and in the GUI. The only constructor is
+`new TrackTableView(model, selectionModel, ds, imagePath)`. It builds the table window, so it
+throws `HeadlessException` in headless runs. `imagePath` is the image file path. The window's
+"Export to CSV" button uses it to name the CSV files. There is no three-argument constructor.
 
 ---
 
@@ -524,14 +528,15 @@ tableView.getTrackTable().exportToCsv(new File("/path/to/tracks.csv"))
 
 5. **Z vs T axis.** If `imp.getNFrames() == 1`, TrackMate sees a single time point and
    will not track. Check `imp.getDimensions()` — the order is [x, y, c, z, t]. If z and t
-   are swapped, use `imp.setDimensions(nChannels, nSlices, nFrames)` to fix it.
+   are swapped, pass them swapped: `imp.setDimensions(c, t, z)`. For a sequence of n
+   planes loaded as Z, that is `imp.setDimensions(c, 1, n)`. This keeps the pixel calibration.
 
 6. **SparseLAPTracker default settings map.** When using `SparseLAPTrackerFactory`,
    always start with `settings.trackerFactory.getDefaultSettings()` and override only the
    keys you need. Do not build the settings map from scratch — it requires many internal
    keys (penalty structures, etc.) that the default map already contains correctly.
 
-7. **Tracker package changed in v8+.** All tracker classes moved from
+7. **Tracker package changed.** All tracker classes moved from
    `fiji.plugin.trackmate.tracking.sparselap` to `fiji.plugin.trackmate.tracking.jaqaman`.
    `SimpleSparseLAPTrackerFactory` still exists — it was moved, not removed.
 

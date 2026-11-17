@@ -168,7 +168,7 @@ operates on the shared XML project file.
    a broken output. Always run optimize → (ICP) → fuse in order.
 8. **ICP requires sufficient shared signal** — if tiles share little overlap
    content, affine ICP will diverge. Use translation model as fallback.
-6. **`org.janelia.saalfeldlab.n5.N5Exception: Can't make a dataset on existing dataset`
+9. **`org.janelia.saalfeldlab.n5.N5Exception: Can't make a dataset on existing dataset`
    — a leftover output from a PREVIOUS attempt, not a bug in your parameters.**
    BigStitcher's re-save writes N5/Zarr/HDF5, and those are **directories**, not
    files. A retry that only cleans files leaves them behind, and the next run finds
@@ -185,7 +185,7 @@ operates on the shared XML project file.
    with the same N5Exception. If you hit this, delete the stale `*.zarr` / `*.n5` /
    `*.h5` **directory** before re-running — re-running unchanged cannot succeed.
    Keep the re-save target OUT of the input folder as well (see pitfall 3).
-7. **"Missing stage coordinates" on a Zeiss LSM mosaic — the positions ARE there,
+10. **"Missing stage coordinates" on a Zeiss LSM mosaic — the positions ARE there,
    you are reading the wrong place.** Bio-Formats leaves OME `StageLabel` null for
    LSM, so `Image.getStageLabel()` returns null for every series and a script that
    trusts it concludes the file has no tile positions. A real run then reported

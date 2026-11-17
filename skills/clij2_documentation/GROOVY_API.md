@@ -35,7 +35,9 @@ clij2.clear()
 2. Every op writes into a **destination you allocate first**; ops do not return images.
    They return `boolean` (or a number / `ResultsTable` for measurements).
 3. Everything you `push()` or `create()` must be `release()`d. `clij2.clear()` frees the lot.
-4. Do **not** use `#@` SciJava script parameters — they open a dialog that blocks the run.
+4. Do **not** use `#@` SciJava script parameters in a script started from the GUI. They open a
+   dialog that blocks the run. Headless runs with all values passed on the command line do not
+   show a dialog.
 
 ## 2. Allocating destinations
 
@@ -64,9 +66,9 @@ image with no warning).
 
 ### A `ClearCLBuffer` is not an `ImagePlus`
 
-The buffer exposes only these accessors — `getWidth()`, `getHeight()`, `getNSlices()`,
+The buffer has no `ImagePlus` methods. `getWidth()`, `getHeight()`, `getNSlices()`,
 `getBitDepth()`, `getProcessor()`, `getStatistics()` **do not exist** and throw
-`groovy.lang.MissingMethodException: No signature of method`:
+`groovy.lang.MissingMethodException: No signature of method`. It exposes only these accessors:
 
 ```groovy
 long[] dims = buf.getDimensions()   // [x, y] for 2D, [x, y, z] for 3D

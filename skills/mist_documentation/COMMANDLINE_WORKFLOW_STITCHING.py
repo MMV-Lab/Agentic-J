@@ -1,5 +1,5 @@
 """
-MIST_WORKFLOW_TILE_STITCHING.py
+COMMANDLINE_WORKFLOW_STITCHING.py
 Microscopy Image Stitching Tool — Batch Stitching Workflow
 
 PURPOSE:
@@ -8,7 +8,7 @@ PURPOSE:
 
 USAGE:
     Edit the PARAMETERS block below, then run:
-        python MIST_WORKFLOW_TILE_STITCHING.py
+        python COMMANDLINE_WORKFLOW_STITCHING.py
 
 REQUIREMENTS:
     - Python 3.6+

@@ -127,7 +127,7 @@ try {
 
 if (sourceImp == null) {
     try {
-        sourceImp = IJ.getImage()
+        sourceImp = WindowManager.getCurrentImage()   // IJ.getImage() exits headless Fiji when no image is open
     } catch (Exception ignored) {
         sourceImp = null
     }
@@ -399,18 +399,23 @@ IJ.log('────────────────────────
 IJ.log('[Export] Writing CSV files...')
 boolean exportedTrackCsv = false
 try {
-    def sm = new SelectionModel(model)
+    // The TrackTableView constructor builds a JFrame and throws HeadlessException
+    // in headless runs. Its static factories build the same tables without a window.
     def ds = DisplaySettings.defaultStyle()
-    def tableView = new TrackTableView(model, sm, ds)
 
     // Spot table: one row per detected spot
     def spotsFile = new File(saveDir + title + '-spots.csv')
-    tableView.getSpotTable().exportToCsv(spotsFile)
+    TrackTableView.createSpotTable(model, ds).exportToCsv(spotsFile)
     IJ.log('[Export] Spots: ' + spotsFile.getAbsolutePath())
+
+    // Edge table: one row per link between two spots
+    def edgesFile = new File(saveDir + title + '-edges.csv')
+    TrackTableView.createEdgeTable(model, ds).exportToCsv(edgesFile)
+    IJ.log('[Export] Edges: ' + edgesFile.getAbsolutePath())
 
     // Track table: one row per track
     def tracksFile = new File(saveDir + title + '-tracks.csv')
-    tableView.getTrackTable().exportToCsv(tracksFile)
+    TrackTableView.createTrackTable(model, ds).exportToCsv(tracksFile)
     IJ.log('[Export] Tracks: ' + tracksFile.getAbsolutePath())
     exportedTrackCsv = tracksFile.exists()
 
