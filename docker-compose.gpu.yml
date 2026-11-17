@@ -22,6 +22,14 @@ services:
       args:
         USE_GPU: "true"
         CUDA_TAG: ${CUDA_TAG:-cu126}
+    environment:
+      # Labkit sizes its GPU pool as (OpenCL global memory / 500 MB) contexts. On a
+      # unified-memory GPU (GB10 / DGX Spark) OpenCL reports all of system RAM — 130 GB,
+      # 261 contexts — and the parallel preview in the Labkit window opens them until the
+      # driver fails with CL_OUT_OF_HOST_MEMORY ("Too many contexts have been created and
+      # not released"). "<count> <name>" caps the pool; the name is a substring match,
+      # so "NVIDIA" fits any NVIDIA card.
+      - LABKIT_OPENCL_DEVICES=${LABKIT_OPENCL_DEVICES:-2 NVIDIA}
     # Use the plain OCI runtime and let CDI inject the GPU — this is what makes the
     # file portable to hosts that have no named 'nvidia' runtime. On a host whose
     # default runtime is 'nvidia', this also avoids double-injection.
