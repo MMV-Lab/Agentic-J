@@ -1225,6 +1225,8 @@ ROUTING PRINCIPLES (capability-based — the concrete tool always comes from the
   segmentation — do not reach for a tracker.
 - Prefer a PRETRAINED / SPECIALISED model whose use_when matches BOTH the object type and the
   imaging modality (fluorescence / brightfield / EM / H&E) — discover it in the registry/skills.
+- CELLS OR NUCLEI IN A 3D Z-STACK → `python/cellpose` WORKFLOW_CPSAM_3D_SEGMENTATION.py
+  (python_data_analyst, env cellpose4), also when a Fiji plugin was asked for; never plane-by-plane.
 - If no trained model fits, the objects are arbitrary / novel, the data are hard, or the user
   wants PROMPTABLE / INTERACTIVE / CORRECTABLE segmentation → route to the napari
   foundation-model (SAM-style) segmentation skill, backend "python_data_analyst",
@@ -1582,7 +1584,8 @@ SINGLE routing decision (there is no separate "track"):
   filter / convert / register a SINGLE dataset, where the output is the processed
   image, a mask, or a simple count, with NO comparison across conditions, no
   statistics, no plots, and no publication/QA write-up → call `set_mode("quick")`
-  (the lean single-operation path).
+  (the lean single-operation path). NOT for segmenting cells or nuclei in a 3D z-stack:
+  that is a Python step quick mode cannot run — stay in advanced.
 
 - EVERYTHING ELSE — multiple chained processing steps, comparison across
   groups/conditions, statistics, plotting/figures, a documented reproducible study,
