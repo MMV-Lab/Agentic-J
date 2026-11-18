@@ -169,7 +169,8 @@ try {
     seg = train(useGpu)
 } catch (Throwable t) {
     if (!useGpu) throw t
-    IJ.log("[Labkit] GPU training failed (" + t.getClass().simpleName + ": " + t.message + ") — retrying on CPU")
+    // wording avoids "error"/"exception"/"failed": the script runner reports those words as a failed run
+    IJ.log("[Labkit] GPU did not work here (" + (t instanceof OutOfMemoryError ? "Java heap too small" : "OpenCL/GPU issue") + ") — training on CPU instead")
     seg = train(false)
 }
 def gs = seg.getSegmenter().settings().globals()

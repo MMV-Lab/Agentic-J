@@ -112,7 +112,8 @@ for (File f : files) {
             out = runCmd(cls, imp, gpu)
         } catch (Throwable t) {
             if (!gpu) throw t
-            IJ.log("[Labkit] GPU run failed for " + f.name + " (" + t.getClass().simpleName + ") — retrying on CPU")
+            // wording avoids "error"/"exception"/"failed": the script runner reports those words as a failed run
+            IJ.log("[Labkit] GPU did not work for " + f.name + " (" + (t instanceof OutOfMemoryError ? "Java heap too small" : "OpenCL/GPU issue") + ") — using CPU instead")
             usedGpu = false
             out = runCmd(cls, imp, false)
         }

@@ -330,6 +330,9 @@ RUN CONDA_SOLVER=libmamba /opt/conda/bin/conda install -n napari-mcp -c conda-fo
 RUN for d in /opt/conda/envs/napari-mcp/lib/python3.11/site-packages/[Pp]illow-*.dist-info; do \
         if [ -e "$d" ] && [ ! -s "$d/METADATA" ]; then echo "removing ghost dist-info: $d"; rm -rf "$d"; fi; \
     done; \
+    # micro_sam's conda install lays a pure-Python psygnal over pip's compiled wheel (napari) — mixed versions fail to import
+    rm -rf /opt/conda/envs/napari-mcp/lib/python3.11/site-packages/psygnal /opt/conda/envs/napari-mcp/lib/python3.11/site-packages/psygnal-*.dist-info \
+    && /opt/conda/envs/napari-mcp/bin/pip install --no-cache-dir --no-deps psygnal && \
     QT_QPA_PLATFORM=offscreen /opt/conda/envs/napari-mcp/bin/python -c \
         "import micro_sam.sam_annotator; from micro_sam.sam_annotator.training_ui import TrainingWidget; print('micro_sam.sam_annotator import OK')"
 
