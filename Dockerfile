@@ -307,6 +307,9 @@ RUN /opt/conda/envs/napari-mcp/bin/python /tmp/patch_qt_helpers.py && rm /tmp/pa
 # host may have none). Validated: torch 2.11.0+cu126 + torchvision 0.26.0+cu126 import
 # cleanly and micro_sam still imports afterwards.
 RUN CONDA_SOLVER=libmamba /opt/conda/bin/conda install -n napari-mcp -c conda-forge micro_sam -y \
+    && SP=/opt/conda/envs/napari-mcp/lib/python3.11/site-packages \
+    && rm -rf $SP/numpy $SP/numpy-*.dist-info $SP/numpy.libs \
+    && /opt/conda/envs/napari-mcp/bin/pip install --no-cache-dir --no-deps "numpy==2.4.6" \
     && /opt/conda/envs/napari-mcp/bin/pip install --no-cache-dir \
         "git+https://github.com/ChaoningZhang/MobileSAM.git" \
     && if [ "$USE_GPU" = "true" ] && [ "$TARGETARCH" != "arm64" ]; then \
