@@ -7,8 +7,6 @@ it, label connected 3D objects, and measure both volume and intensity.
 
 - Confirm `Plugins > 3DSuite` is present in Fiji.
 - Open a 3D grayscale stack with bright objects on a dark background.
-- If you want to reproduce the validation workflow from this repo, first export
-  `data/ilastik_validation/core/3d1c.h5` to a TIFF stack outside this workflow.
 
 ## Step 1 — Open The 3D Stack
 

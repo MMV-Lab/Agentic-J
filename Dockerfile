@@ -42,7 +42,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     pocl-opencl-icd ocl-icd-libopencl1 ocl-icd-opencl-dev \
     # Utilities
     wget unzip procps curl build-essential cmake ninja-build\
-    # Locale support — ilastik4ij sets LC_ALL=en_US.UTF-8 in the subprocess
+    # Locale support — some Fiji plugins start subprocesses with LC_ALL=en_US.UTF-8
     # environment; without this the locale warning is printed to every log line
     locales \
     && locale-gen en_US.UTF-8 \
@@ -97,7 +97,6 @@ RUN printf '%s\n' \
     'Neuroanatomy https://sites.imagej.net/Neuroanatomy/' \
     'TrackMate-StarDist https://sites.imagej.net/TrackMate-StarDist/' \
     'TrackMate-MorphoLibJ https://sites.imagej.net/TrackMate-MorphoLibJ/' \
-    'TrackMate-Ilastik https://sites.imagej.net/TrackMate-Ilastik/' \
     'TrackMate-Cellpose https://sites.imagej.net/TrackMate-Cellpose/' \
     'ImageScience https://sites.imagej.net/ImageScience/' \
     '3D_ImageJ_Suite https://sites.imagej.net/Tboudier/' \
@@ -331,6 +330,9 @@ RUN CONDA_SOLVER=libmamba /opt/conda/bin/conda install -n napari-mcp -c conda-fo
 RUN for d in /opt/conda/envs/napari-mcp/lib/python3.11/site-packages/[Pp]illow-*.dist-info; do \
         if [ -e "$d" ] && [ ! -s "$d/METADATA" ]; then echo "removing ghost dist-info: $d"; rm -rf "$d"; fi; \
     done; \
+    # micro_sam's conda install lays a pure-Python psygnal over pip's compiled wheel (napari) — mixed versions fail to import
+    rm -rf /opt/conda/envs/napari-mcp/lib/python3.11/site-packages/psygnal /opt/conda/envs/napari-mcp/lib/python3.11/site-packages/psygnal-*.dist-info \
+    && /opt/conda/envs/napari-mcp/bin/pip install --no-cache-dir --no-deps psygnal && \
     QT_QPA_PLATFORM=offscreen /opt/conda/envs/napari-mcp/bin/python -c \
         "import micro_sam.sam_annotator; from micro_sam.sam_annotator.training_ui import TrainingWidget; print('micro_sam.sam_annotator import OK')"
 
