@@ -319,16 +319,18 @@ tag, and whether this process actually sees a GPU. Cheaper than finding out 60 s
 1. **`vit_t` / `vit_t_lm` (tiny) needs `mobile_sam`.** Without it: `RuntimeError: 'mobile_sam' is
    required for the vit-tiny`. It is installed in this env; if a rebuild drops it, `vit_b_lm` is the
    safe default. Tiny is the **fastest on CPU** — prefer it there once mobile_sam is present.
-2. **Two models are PRE-BAKED into the image; everything else downloads on first use.**
-   Baked (no download, works offline): **`vit_t_lm`** and **`vit_t_em_organelles`**, each with its AIS
-   decoder — the tiny tier, ~162 MB, in `$MICROSAM_CACHEDIR` (`/home/imagentj/.cache/micro_sam`).
-   These run on GPU too, so the same cache serves the CPU and GPU builds.
+2. **Three models are PRE-BAKED into the image; everything else downloads on first use.**
+   Baked (no download, works offline), each with its AIS decoder, in `$MICROSAM_CACHEDIR`
+   (`/home/imagentj/.cache/micro_sam`), in both the CPU and GPU builds:
+   - **`vit_t_lm`** and **`vit_t_em_organelles`** — the tiny tier (~170 MB), fastest on CPU, runs on GPU too.
+   - **`vit_b_lm`** (~410 MB) — the GPU default.
 
-   Any OTHER model downloads on first use (`vit_b_*` ≈ 375 MB + decoder; `vit_b_medical_imaging`'s
-   decoder is a 397 MB outlier). **Never let that first call be an interactive one** — a download
-   inside `annotator_2d` freezes the viewer with no progress indicator, and an interrupted one leaves
-   a partial temp file that never resumes. Warm it from a `# imagentj-env: napari-mcp` script first
-   (see THE ONE RULE box under Backend B), then work on the verification image.
+   Any OTHER model downloads on first use (e.g. `vit_b_em_organelles`, `vit_l_*`;
+   `vit_b_medical_imaging`'s decoder is a 397 MB outlier). **Never let that first call be an
+   interactive one** — a download inside `annotator_2d` freezes the viewer with no progress
+   indicator, and an interrupted one leaves a partial temp file that never resumes. Warm it from a
+   `# imagentj-env: napari-mcp` script first (see THE ONE RULE box under Backend B), then work on the
+   verification image.
 3. **GPU vs CPU — pass `device=None` and let it auto-select** (`"cuda"` if a GPU is present, else
    `"cpu"`). GPU acceleration is available only in the **GPU image build** (`USE_GPU=true`, which ships
    a CUDA torch); the default CPU image runs micro_sam on CPU. Never hard-code `device="cuda"` — it

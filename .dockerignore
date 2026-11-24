@@ -22,3 +22,5 @@ src/config/keys.py
 # Models are bind-mounted at runtime — do not send to build context
 models/
 models.zip
+cp_models.zip
+micro_sam_models*.zip

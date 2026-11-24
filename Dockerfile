@@ -292,7 +292,8 @@ RUN /opt/conda/envs/napari-mcp/bin/python /tmp/patch_qt_helpers.py && rm /tmp/pa
 # batch route (python_data_analyst, `# imagentj-env: napari-mcp`). Pulls torch +
 # segment-anything + torch_em + elf via conda-forge. mobile_sam (pip, from git) is
 # only needed for the tiny `vit_t*` backbones — the fastest option on CPU; the
-# base default `vit_b_lm` works without it.
+# base default `vit_b_lm` works without it. Checkpoints for vit_t_lm,
+# vit_t_em_organelles and vit_b_lm are baked in further down (see below).
 #
 # GPU: conda-forge's micro_sam pulls a CPU-ONLY torch, so on a GPU build we swap it
 # for the CUDA wheels (same torch/torchvision pin + CUDA_TAG as the cellpose envs) so
@@ -543,11 +544,11 @@ RUN mkdir -p /app/qdrant_data /home/imagentj/.cellpose /home/imagentj/.cache \
 # so models are available on first container start without any host files.
 RUN mkdir -p /home/imagentj/.cellpose/models \
     && echo "[cellpose] Downloading model bundle..." \
-    && curl -fsSL "https://owncloud.ut.ee/owncloud/s/HyXebMNEPd7niMa/download" -o /tmp/models.zip \
+    && curl -fsSL "https://owncloud.ut.ee/owncloud/s/HyXebMNEPd7niMa/download" -o /tmp/cp_models.zip \
     && echo "[cellpose] Extracting models..." \
-    && unzip -q /tmp/models.zip -d /tmp/models_extracted \
-    && cp -a /tmp/models_extracted/models/. /home/imagentj/.cellpose/models/ \
-    && rm -rf /tmp/models.zip /tmp/models_extracted \
+    && unzip -q /tmp/cp_models.zip -d /tmp/cp_models_extracted \
+    && cp -a /tmp/cp_models_extracted/models/. /home/imagentj/.cellpose/models/ \
+    && rm -rf /tmp/cp_models.zip /tmp/cp_models_extracted \
     && echo "[cellpose] Baked in $(ls /home/imagentj/.cellpose/models | wc -l) model files" \
     && chown -R imagentj:imagentj /home/imagentj/.cellpose
 
@@ -557,20 +558,37 @@ RUN mkdir -p /home/imagentj/.cellpose/models \
 # thread (annotator_2d / execute_code). That blocks the event loop, so the viewer
 # and the whole VNC desktop appear frozen with no progress bar, and an interrupted
 # download leaves a partial temp file that never completes or resumes.
-# Scope: the vit_t (tiny) tier for the two microscopy modalities this tool
-# actually serves — light microscopy and EM organelles — each with its AIS
-# decoder. ~170 MB total.
-#   * tiny is NOT CPU-only; it runs on GPU too, so one baked tier covers both the
-#     CPU and GPU image builds and needs no USE_GPU branching here.
-#   * the decoder is what enables segmentation_mode="ais" (one decoder pass per
-#     image). Without it micro_sam silently falls back to "amg", which runs the
-#     mask decoder over a dense prompt grid — orders of magnitude slower.
+#
+# Checkpoints come from the project's cloud storage (not micro_sam's upstream
+# hosts), as two bundles that each unzip to `models/<name>` — exactly micro_sam's
+# own `$MICROSAM_CACHEDIR/models/` layout:
+#   * micro_sam_models.zip         (~170 MB) vit_t_lm, vit_t_em_organelles + decoders
+#                                  — tiny tier, fastest on CPU, runs on GPU too
+#   * micro_sam_models_vit_b_lm.zip (~410 MB) vit_b_lm + decoder — the GPU default
+# Every encoder ships with its AIS decoder: the decoder is what enables
+# segmentation_mode="ais" (one decoder pass per image). Without it micro_sam
+# silently falls back to "amg", which runs the mask decoder over a dense prompt
+# grid — orders of magnitude slower.
+#
+# The build then checks every file against micro_sam's OWN xxh128 registry. This
+# matters: if a bundled file ever drifts from the installed micro_sam version,
+# pooch would treat it as stale and silently re-download it at first use — the
+# exact frozen-viewer failure above. A mismatch fails the build instead.
 ENV MICROSAM_CACHEDIR=/home/imagentj/.cache/micro_sam
-RUN echo "[micro_sam] Pre-fetching SAM checkpoints into $MICROSAM_CACHEDIR ..." \
-    && /opt/conda/envs/napari-mcp/bin/python -c \
-        "from micro_sam.automatic_segmentation import get_predictor_and_segmenter as g; \
-         [g(model_type=m, device='cpu', segmentation_mode='ais') \
-          for m in ('vit_t_lm', 'vit_t_em_organelles')]" \
+COPY patch_micro_sam/verify_micro_sam_models.py /tmp/verify_micro_sam_models.py
+RUN mkdir -p "$MICROSAM_CACHEDIR/models" \
+    && echo "[micro_sam] Downloading checkpoint bundles..." \
+    && curl -fsSL "https://owncloud.ut.ee/owncloud/s/B9K3iSDfK7gyTLD/download" -o /tmp/micro_sam_models.zip \
+    && curl -fsSL "https://owncloud.ut.ee/owncloud/s/Zrr3HYAx75sbJQY/download" -o /tmp/micro_sam_models_vit_b_lm.zip \
+    && echo "[micro_sam] Extracting checkpoints..." \
+    && mkdir -p /tmp/micro_sam_extracted \
+    && unzip -q -o /tmp/micro_sam_models.zip -d /tmp/micro_sam_extracted \
+    && unzip -q -o /tmp/micro_sam_models_vit_b_lm.zip -d /tmp/micro_sam_extracted \
+    && cp -a /tmp/micro_sam_extracted/models/. "$MICROSAM_CACHEDIR/models/" \
+    && rm -rf /tmp/micro_sam_models.zip /tmp/micro_sam_models_vit_b_lm.zip /tmp/micro_sam_extracted \
+    && /opt/conda/envs/napari-mcp/bin/python /tmp/verify_micro_sam_models.py \
+        vit_t_lm vit_t_em_organelles vit_b_lm \
+    && rm /tmp/verify_micro_sam_models.py \
     && echo "[micro_sam] Baked in: $(ls $MICROSAM_CACHEDIR/models | tr '\n' ' ')" \
     && du -sh $MICROSAM_CACHEDIR \
     && chown -R imagentj:imagentj /home/imagentj/.cache
