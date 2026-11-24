@@ -306,7 +306,9 @@ RUN /opt/conda/envs/napari-mcp/bin/python /tmp/patch_qt_helpers.py && rm /tmp/pa
 # build-time check asserts it is a CUDA *build*, not that a GPU is present (the build
 # host may have none). Validated: torch 2.11.0+cu126 + torchvision 0.26.0+cu126 import
 # cleanly and micro_sam still imports afterwards.
-RUN CONDA_SOLVER=libmamba /opt/conda/bin/conda install -n napari-mcp -c conda-forge micro_sam -y \
+# micro_sam is PINNED: 2.0 removed micro_sam.sam_annotator.training_ui (the import check
+# below fails), and the baked checkpoint bundles are verified against 1.8.2's registry.
+RUN CONDA_SOLVER=libmamba /opt/conda/bin/conda install -n napari-mcp -c conda-forge "micro_sam=1.8.2" -y \
     && /opt/conda/envs/napari-mcp/bin/pip install --no-cache-dir \
         "git+https://github.com/ChaoningZhang/MobileSAM.git" \
     && if [ "$USE_GPU" = "true" ] && [ "$TARGETARCH" != "arm64" ]; then \
