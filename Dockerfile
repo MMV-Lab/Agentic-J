@@ -1,4 +1,5 @@
-FROM continuumio/miniconda3:latest AS base-cpu
+# Pinned by digest (multi-arch index; conda 26.7.1 on Debian 13) so a new upstream image cannot change the build.
+FROM continuumio/miniconda3@sha256:eca594d684f495c1a02beff33a9fab53aec8c5830eaf431bb149912dc6c9e4c1 AS base-cpu
 ENV DEBIAN_FRONTEND=noninteractive
 FROM base-cpu AS cpu
 ARG TARGETARCH
@@ -245,8 +246,13 @@ RUN set -e; \
 ENV FIJI_PATH=/opt/Fiji.app
 
 # ── Conda environment (heaviest layer - keep stable) ─────────────────────────
+# Every conda and pip install below is held to the versions in constraints/ (the set of a
+# built and tested image), so a new upstream release cannot break or change a rebuild.
+# Upgrade deliberately: see constraints/freeze.sh.
+COPY constraints/ /tmp/constraints/
 COPY environment.yml /tmp/environment.yml
-RUN conda env create -f /tmp/environment.yml \
+RUN export CONDARC=/tmp/constraints/local_imagent_J.conda.yml PIP_CONSTRAINT=/tmp/constraints/local_imagent_J.txt \
+    && conda env create -f /tmp/environment.yml \
     && conda clean -afy \
     && rm /tmp/environment.yml
 
@@ -259,7 +265,7 @@ ENV CONDA_DEFAULT_ENV=local_imagent_J
 # (stdio/HTTP) to configured servers via `from fastmcp import Client`. It needs
 # the fastmcp *client* here; the napari *server* gets its own fastmcp in the
 # isolated env below. Separate RUN keeps the heavy env-create layer cache-stable.
-RUN /opt/conda/envs/local_imagent_J/bin/pip install --no-cache-dir "fastmcp>=2.10.3,<3" \
+RUN PIP_CONSTRAINT=/tmp/constraints/local_imagent_J.txt /opt/conda/envs/local_imagent_J/bin/pip install --no-cache-dir "fastmcp>=2.10.3,<3" \
     && /opt/conda/bin/conda clean -afy
 
 # ── Conda env: napari-mcp  (in-container MCP visualisation server) ────────────
@@ -268,7 +274,8 @@ RUN /opt/conda/envs/local_imagent_J/bin/pip install --no-cache-dir "fastmcp>=2.1
 # stdio server (entry point napari_mcp.server:main) creates its napari Viewer
 # LAZILY via ensure_viewer() — only when a napari tool is first called — so this
 # env stays idle (no window) until the agent actually uses napari.
-RUN /opt/conda/bin/conda create -n napari-mcp python=3.11 -y \
+RUN export PIP_CONSTRAINT=/tmp/constraints/napari-mcp.txt \
+    && /opt/conda/bin/conda create -n napari-mcp python=3.11.18 -y \
     && /opt/conda/envs/napari-mcp/bin/pip install --no-cache-dir \
         "napari[pyqt6]" \
         "napari-mcp" \
@@ -308,11 +315,13 @@ RUN /opt/conda/envs/napari-mcp/bin/python /tmp/patch_qt_helpers.py && rm /tmp/pa
 # cleanly and micro_sam still imports afterwards.
 # micro_sam is PINNED: 2.0 removed micro_sam.sam_annotator.training_ui (the import check
 # below fails), and the baked checkpoint bundles are verified against 1.8.2's registry.
-RUN CONDA_SOLVER=libmamba /opt/conda/bin/conda install -n napari-mcp -c conda-forge "micro_sam=1.8.2" -y \
+RUN export PIP_CONSTRAINT=/tmp/constraints/napari-mcp.txt CONDARC=/tmp/constraints/napari-mcp.conda.yml \
+    && CONDA_SOLVER=libmamba /opt/conda/bin/conda install -n napari-mcp -c conda-forge "micro_sam=1.8.2" -y \
     && /opt/conda/envs/napari-mcp/bin/pip install --no-cache-dir \
-        "git+https://github.com/ChaoningZhang/MobileSAM.git" \
+        "git+https://github.com/ChaoningZhang/MobileSAM.git@f706ad9c4eb7f219c00d9050e46328518ffb65d2" \
     && if [ "$USE_GPU" = "true" ] && [ "$TARGETARCH" != "arm64" ]; then \
-           /opt/conda/envs/napari-mcp/bin/pip install --no-cache-dir --force-reinstall \
+           # own pin file: this step reinstalls torch's dependencies from the torch index, whose versions differ from the CPU set
+           PIP_CONSTRAINT=/tmp/constraints/napari-mcp-gpu.txt /opt/conda/envs/napari-mcp/bin/pip install --no-cache-dir --force-reinstall \
                'torch==2.11.0' 'torchvision==0.26.0' \
                --index-url https://download.pytorch.org/whl/${CUDA_TAG} \
            && /opt/conda/envs/napari-mcp/bin/python -c \
@@ -330,14 +339,24 @@ RUN CONDA_SOLVER=libmamba /opt/conda/bin/conda install -n napari-mcp -c conda-fo
 # at RUNTIME, not build (the top-level `import micro_sam` above doesn't exercise it).
 # Delete any Pillow dist-info without a METADATA file, then assert the annotator (the
 # part that crashed for users) actually imports, so a regression fails the build here.
-RUN for d in /opt/conda/envs/napari-mcp/lib/python3.11/site-packages/[Pp]illow-*.dist-info; do \
+RUN export PIP_CONSTRAINT=/tmp/constraints/napari-mcp.txt; \
+    for d in /opt/conda/envs/napari-mcp/lib/python3.11/site-packages/[Pp]illow-*.dist-info; do \
         if [ -e "$d" ] && [ ! -s "$d/METADATA" ]; then echo "removing ghost dist-info: $d"; rm -rf "$d"; fi; \
     done; \
     # micro_sam's conda install lays a pure-Python psygnal over pip's compiled wheel (napari) — mixed versions fail to import
     rm -rf /opt/conda/envs/napari-mcp/lib/python3.11/site-packages/psygnal /opt/conda/envs/napari-mcp/lib/python3.11/site-packages/psygnal-*.dist-info \
-    && /opt/conda/envs/napari-mcp/bin/pip install --no-cache-dir --no-deps psygnal && \
+    && /opt/conda/envs/napari-mcp/bin/pip install --no-cache-dir --no-deps psygnal \
+    # same overlap for numpy: conda's copy lies over pip's. Delete before reinstalling — pip installing over a conda
+    # numpy 1.x leaves its binaries in numpy/core/, which load as a SECOND numpy at runtime (zarr then rejects every
+    # dtype: "No Zarr data type found that matches dtype('float32')" on tiled embeddings)
+    && rm -rf /opt/conda/envs/napari-mcp/lib/python3.11/site-packages/numpy /opt/conda/envs/napari-mcp/lib/python3.11/site-packages/numpy-*.dist-info /opt/conda/envs/napari-mcp/lib/python3.11/site-packages/numpy.libs \
+    && /opt/conda/envs/napari-mcp/bin/pip install --no-cache-dir --no-deps "numpy>=2" \
+    # z5py (optional n5 backend of elf, unused here) is the one conda package built for numpy 1.x only: it is what
+    # loaded the stale binary, and under numpy 2 it prints an _ARRAY_API traceback on every micro_sam import
+    && rm -rf /opt/conda/envs/napari-mcp/lib/python3.11/site-packages/z5py && \
     QT_QPA_PLATFORM=offscreen /opt/conda/envs/napari-mcp/bin/python -c \
-        "import micro_sam.sam_annotator; from micro_sam.sam_annotator.training_ui import TrainingWidget; print('micro_sam.sam_annotator import OK')"
+        "import numpy.core._multiarray_umath as m; assert m.__file__.endswith('.py'), 'stale numpy 1.x binary: ' + m.__file__; \
+         import micro_sam.sam_annotator; from micro_sam.sam_annotator.training_ui import TrainingWidget; print('micro_sam.sam_annotator import OK')"
 
 # napari/vispy fall back to llvmpipe software GL under headless Xvfb (no GPU).
 ENV LIBGL_ALWAYS_SOFTWARE=1
@@ -352,7 +371,8 @@ ENV LIBGL_ALWAYS_SOFTWARE=1
 # wrapper feeds cellpose an ImageJ-written TIFF, so without the bump cellpose
 # crashes on read. Done as a separate pip call so the resolver doesn't fight
 # aicsimageio's stale <2023.3.15 pin (aicsimageio is not on the cellpose read path).
-RUN /opt/conda/bin/conda create -n cellpose python=3.10 -y \
+RUN export PIP_CONSTRAINT=/tmp/constraints/cellpose.txt \
+    && /opt/conda/bin/conda create -n cellpose python=3.10.22 -y \
     && if [ "$TARGETARCH" = "arm64" ]; then \
         /opt/conda/envs/cellpose/bin/pip install --no-cache-dir \
             'torch==2.11.0' 'torchvision==0.26.0'; \
@@ -383,7 +403,8 @@ RUN /opt/conda/bin/conda create -n cellpose python=3.10 -y \
 # selects 'cellpose4' in the Cellpose-SAM detector panel.
 # The micromamba shim routes '-n cellpose4' → /opt/conda/envs/cellpose4.
 # Snapshot (2026-04-30): Python 3.11.15, cellpose 4.1.1, segment-anything 1.0, torch 2.11.0+cpu|cu124
-RUN /opt/conda/bin/conda create -n cellpose4 python=3.11 -y \
+RUN export PIP_CONSTRAINT=/tmp/constraints/cellpose4.txt \
+    && /opt/conda/bin/conda create -n cellpose4 python=3.11.18 -y \
     && if [ "$TARGETARCH" = "arm64" ]; then \
         /opt/conda/envs/cellpose4/bin/pip install --no-cache-dir \
             'torch==2.11.0' 'torchvision==0.26.0'; \
@@ -422,7 +443,8 @@ RUN if [ "$TARGETARCH" = "arm64" ]; then \
     else \
         TF_PACKAGE='tensorflow-cpu==2.15.1'; \
     fi \
-    && /opt/conda/bin/conda create -n stardist python=3.11 -y \
+    && export PIP_CONSTRAINT=/tmp/constraints/stardist.txt \
+    && /opt/conda/bin/conda create -n stardist python=3.11.18 -y \
     && /opt/conda/envs/stardist/bin/pip install --no-cache-dir \
         "$TF_PACKAGE" \
         "csbdeep==0.8.2" \
@@ -449,7 +471,8 @@ ENV SCIJAVA_PYTHON=/opt/conda/envs/stardist/bin/python
 # The python_coder selects this env with a first-line magic comment:
 #     # imagentj-env: brainglobe
 # See _CONDA_ENVS in src/imagentj/tools/analyst_tools.py.
-RUN /opt/conda/bin/conda create -n brainglobe python=3.12 -y \
+RUN export PIP_CONSTRAINT=/tmp/constraints/brainglobe.txt \
+    && /opt/conda/bin/conda create -n brainglobe python=3.12.16 -y \
     && /opt/conda/envs/brainglobe/bin/pip install --no-cache-dir \
         brainglobe-atlasapi \
         brainglobe-space \
@@ -546,11 +569,15 @@ RUN mkdir -p /app/qdrant_data /home/imagentj/.cellpose /home/imagentj/.cache \
 # so models are available on first container start without any host files.
 RUN mkdir -p /home/imagentj/.cellpose/models \
     && echo "[cellpose] Downloading model bundle..." \
-    && curl -fsSL "https://owncloud.ut.ee/owncloud/s/HyXebMNEPd7niMa/download" -o /tmp/cp_models.zip \
+    # 2.6 GB from owncloud: the server drops long transfers (curl 56), so resume (-C -) until complete
+    && for i in 1 2 3 4 5 6 7 8 9 10; do \
+           curl -fsSL -C - "https://owncloud.ut.ee/owncloud/s/HyXebMNEPd7niMa/download" -o /tmp/models.zip && break; \
+           echo "[cellpose] download interrupted (try $i), resuming..."; sleep 5; \
+       done \
     && echo "[cellpose] Extracting models..." \
-    && unzip -q /tmp/cp_models.zip -d /tmp/cp_models_extracted \
-    && cp -a /tmp/cp_models_extracted/models/. /home/imagentj/.cellpose/models/ \
-    && rm -rf /tmp/cp_models.zip /tmp/cp_models_extracted \
+    # 2.6 GB zip: extract in place (no temp copy) so peak disk is zip + models, not 3x
+    && unzip -q /tmp/models.zip 'models/*' -d /home/imagentj/.cellpose \
+    && rm -f /tmp/models.zip \
     && echo "[cellpose] Baked in $(ls /home/imagentj/.cellpose/models | wc -l) model files" \
     && chown -R imagentj:imagentj /home/imagentj/.cellpose
 
