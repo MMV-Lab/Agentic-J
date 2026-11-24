@@ -93,14 +93,15 @@ services:
     # script_tools._batch_env a quarter for the batch worker), so raising it
     # raises them and lowering it lowers them — no separate tuning needed.
     #   8G  -> 4 g app + 2 g batch   (was OOM-killing the container at 6 g + 2 g)
-    #  12G  -> 6 g app + 3 g batch   <- current: fits a 4-channel 8x8 mosaic stitch
+    #  12G  -> 6 g app + 3 g batch   (fits a 4-channel 8x8 mosaic stitch)
+    #  64G  -> 32 g app + 16 g batch <- current
     # Keep headroom on the host: this is a limit, not a reservation, but the
     # kernel will OOM-kill the container if the host itself runs out.
     deploy:
       resources:
         limits:
           cpus: '4'
-          memory: 12G
+          memory: 64G
         reservations:
           memory: 2G
 
