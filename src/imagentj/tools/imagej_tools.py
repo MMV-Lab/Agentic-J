@@ -8,7 +8,9 @@ from typing import Optional
 from langchain.tools import tool
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
-from imagentj.imagej_context import get_ij, needs_bioformats, open_image_windowless
+from imagentj.imagej_context import (
+    get_ij, imagej_openable_path, needs_bioformats, open_image_windowless,
+)
 from .metadata_tools import extract_file_metadata
 
 _SKILLS_DIR = Path(os.environ.get("SKILLS_DIR", "/app/skills"))
@@ -256,12 +258,15 @@ def open_in_imagej_gui(path: str, title: str | None = None) -> str:
     if not os.path.isfile(abs_path):
         return f"Could not open file: not a regular file -> {abs_path}"
 
+    note = None
     try:
         get_ij()  # ensure JVM/Fiji is up
         from scyjava import jimport
         IJ = jimport('ij.IJ')
         # Bio-Formats formats must NOT go through IJ.open: that builds a modal
         # importer dialog which hangs/throws under Xvfb (see imagej_context).
+        # A 64-bit integer TIFF reaches that same dialog from a plain .tif, so
+        # it is narrowed to a readable copy first.
         if needs_bioformats(abs_path):
             imps = open_image_windowless(abs_path, show=True)
             if not imps:
@@ -276,7 +281,10 @@ def open_in_imagej_gui(path: str, title: str | None = None) -> str:
         else:
             # Images plus the IJ1 types Opener handles natively (.roi, .zip ROI
             # sets, .lut, .avi), none of which reach openInEditor.
-            IJ.open(abs_path)
+            open_path, note = imagej_openable_path(abs_path)
+            IJ.open(open_path)
+            if note and not title:
+                title = os.path.basename(abs_path)  # not the cache copy's name
         if title:
             try:
                 WindowManager = jimport('ij.WindowManager')
@@ -288,6 +296,8 @@ def open_in_imagej_gui(path: str, title: str | None = None) -> str:
     except Exception as e:
         return f"Could not open file in ImageJ GUI ({abs_path}): {e!s}"
 
+    if note:
+        return f"Opened in ImageJ GUI: {abs_path} ({note})"
     return f"Opened in ImageJ GUI: {abs_path}"
 
 
