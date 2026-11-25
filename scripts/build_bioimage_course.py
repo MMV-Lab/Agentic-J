@@ -359,7 +359,7 @@ class ChapterContext:
         cls = options.get("class", "")
         rel = self.copy_asset(inline) if inline else None
         caption = self._caption(body)
-        label = (options.get("name") or "").replace("_", "-") or None
+        label = (options.get("name") or "").replace("_", "-").strip("\"'") or None
         self.add_figure(caption=caption, file=rel, generated=False, ref=inline, label=label)
         if "only-dark" in cls:                         # skip dark duplicate of a light figure
             return ""
@@ -372,7 +372,7 @@ class ChapterContext:
 
     def _h_glue(self, name, inline, options, body):
         caption = self._caption(body)
-        label = (options.get("name") or "").replace("_", "-") or None
+        label = (options.get("name") or "").replace("_", "-").strip("\"'") or None
         self.add_figure(caption=caption, file=None, generated=True, ref=inline.strip(), label=label)
         return f"> 🖼️ **Figure (generated):** {caption}" if caption else \
                "> 🖼️ *(generated figure)*"
