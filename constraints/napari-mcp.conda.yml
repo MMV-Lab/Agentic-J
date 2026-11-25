@@ -400,7 +400,7 @@ pinned_packages:
   - xorg-xorgproto==2025.1
   - xxhash==0.8.3
   - xz==5.8.4
-  - yaml==0.2.6
+  - yaml==0.2.5
   - z5py==2.0.18
   - zarr==3.1.5
   - zeromq==4.3.5
