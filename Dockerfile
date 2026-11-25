@@ -315,13 +315,19 @@ RUN /opt/conda/envs/napari-mcp/bin/python /tmp/patch_qt_helpers.py && rm /tmp/pa
 # cleanly and micro_sam still imports afterwards.
 # micro_sam is PINNED: 2.0 removed micro_sam.sam_annotator.training_ui (the import check
 # below fails), and the baked checkpoint bundles are verified against 1.8.2's registry.
-RUN export PIP_CONSTRAINT=/tmp/constraints/napari-mcp.txt CONDARC=/tmp/constraints/napari-mcp.conda.yml \
+RUN export PIP_CONSTRAINT=/tmp/constraints/napari-mcp.txt \
+    # the conda pins are frozen from an x86 image and do not solve on arm64 (conda-forge's aarch64 python 3.11.18
+    # needs libffi>=3.7 against the pinned 3.4.8, and the libtorch/torchvision pins disagree); arm64 keeps micro_sam's own pin
+    && if [ "$TARGETARCH" != "arm64" ]; then export CONDARC=/tmp/constraints/napari-mcp.conda.yml; fi \
     && CONDA_SOLVER=libmamba /opt/conda/bin/conda install -n napari-mcp -c conda-forge "micro_sam=1.8.2" -y \
     && /opt/conda/envs/napari-mcp/bin/pip install --no-cache-dir \
         "git+https://github.com/ChaoningZhang/MobileSAM.git@f706ad9c4eb7f219c00d9050e46328518ffb65d2" \
     && if [ "$USE_GPU" = "true" ] && [ "$TARGETARCH" != "arm64" ]; then \
-           # own pin file: this step reinstalls torch's dependencies from the torch index, whose versions differ from the CPU set
-           PIP_CONSTRAINT=/tmp/constraints/napari-mcp-gpu.txt /opt/conda/envs/napari-mcp/bin/pip install --no-cache-dir --force-reinstall \
+           # own pin file: this step reinstalls torch's dependencies from the torch index, whose versions differ from the CPU set.
+           # It is frozen from a cu126 build; any other CUDA_TAG (cu128, cu130) pulls a different dependency set that
+           # neither pin file can satisfy, so those builds rely on the exact torch/torchvision pins alone.
+           GPU_PINS=/tmp/constraints/napari-mcp-gpu.txt; [ "$CUDA_TAG" = "cu126" ] || GPU_PINS=/dev/null; \
+           PIP_CONSTRAINT=$GPU_PINS /opt/conda/envs/napari-mcp/bin/pip install --no-cache-dir --force-reinstall \
                'torch==2.11.0' 'torchvision==0.26.0' \
                --index-url https://download.pytorch.org/whl/${CUDA_TAG} \
            && /opt/conda/envs/napari-mcp/bin/python -c \
