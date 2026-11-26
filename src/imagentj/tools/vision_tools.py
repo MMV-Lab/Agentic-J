@@ -32,7 +32,9 @@ from PIL import Image, ImageDraw, ImageFont
 from langchain_core.tools import tool
 from langchain_core.messages import HumanMessage
 
-from imagentj.imagej_context import needs_bioformats, open_image_windowless
+from imagentj.imagej_context import (
+    imagej_openable_path, needs_bioformats, open_image_windowless,
+)
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
@@ -400,7 +402,8 @@ def capture_image_file_via_fiji(image_path: str) -> str:
                         f"Bio-Formats returned no image for '{source}'."
                     )
             else:
-                _ij_open_blocking(IJ, resolved)
+                # a 64-bit integer TIFF would reach the same importer dialog
+                _ij_open_blocking(IJ, imagej_openable_path(resolved)[0])
 
         try:
             _fiji_open_pool.submit(_open).result(timeout=_FIJI_OPEN_TIMEOUT_S)
@@ -413,7 +416,7 @@ def capture_image_file_via_fiji(image_path: str) -> str:
                 "waiting on an import dialog or the format may be unsupported. "
                 "Skip the visual check for this source, or pass a PNG/JPG preview."
             )
-        except RuntimeError as exc:
+        except (RuntimeError, ValueError) as exc:   # ValueError: unconvertible 64-bit TIFF
             return f"ERROR: {exc}"
         new_ids = _image_window_ids(WindowManager) - before_ids
         if not new_ids:

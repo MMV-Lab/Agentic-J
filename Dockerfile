@@ -1,4 +1,5 @@
-FROM continuumio/miniconda3:latest AS base-cpu
+# Pinned by digest (multi-arch index; conda 26.7.1 on Debian 13) so a new upstream image cannot change the build.
+FROM continuumio/miniconda3@sha256:eca594d684f495c1a02beff33a9fab53aec8c5830eaf431bb149912dc6c9e4c1 AS base-cpu
 ENV DEBIAN_FRONTEND=noninteractive
 FROM base-cpu AS cpu
 ARG TARGETARCH
@@ -245,8 +246,13 @@ RUN set -e; \
 ENV FIJI_PATH=/opt/Fiji.app
 
 # ── Conda environment (heaviest layer - keep stable) ─────────────────────────
+# Every conda and pip install below is held to the versions in constraints/ (the set of a
+# built and tested image), so a new upstream release cannot break or change a rebuild.
+# Upgrade deliberately: see constraints/freeze.sh.
+COPY constraints/ /tmp/constraints/
 COPY environment.yml /tmp/environment.yml
-RUN conda env create -f /tmp/environment.yml \
+RUN export CONDARC=/tmp/constraints/local_imagent_J.conda.yml PIP_CONSTRAINT=/tmp/constraints/local_imagent_J.txt \
+    && conda env create -f /tmp/environment.yml \
     && conda clean -afy \
     && rm /tmp/environment.yml
 
@@ -259,7 +265,7 @@ ENV CONDA_DEFAULT_ENV=local_imagent_J
 # (stdio/HTTP) to configured servers via `from fastmcp import Client`. It needs
 # the fastmcp *client* here; the napari *server* gets its own fastmcp in the
 # isolated env below. Separate RUN keeps the heavy env-create layer cache-stable.
-RUN /opt/conda/envs/local_imagent_J/bin/pip install --no-cache-dir "fastmcp>=2.10.3,<3" \
+RUN PIP_CONSTRAINT=/tmp/constraints/local_imagent_J.txt /opt/conda/envs/local_imagent_J/bin/pip install --no-cache-dir "fastmcp>=2.10.3,<3" \
     && /opt/conda/bin/conda clean -afy
 
 # ── Conda env: napari-mcp  (in-container MCP visualisation server) ────────────
@@ -268,7 +274,8 @@ RUN /opt/conda/envs/local_imagent_J/bin/pip install --no-cache-dir "fastmcp>=2.1
 # stdio server (entry point napari_mcp.server:main) creates its napari Viewer
 # LAZILY via ensure_viewer() — only when a napari tool is first called — so this
 # env stays idle (no window) until the agent actually uses napari.
-RUN /opt/conda/bin/conda create -n napari-mcp python=3.11 -y \
+RUN export PIP_CONSTRAINT=/tmp/constraints/napari-mcp.txt \
+    && /opt/conda/bin/conda create -n napari-mcp python=3.11.18 -y \
     && /opt/conda/envs/napari-mcp/bin/pip install --no-cache-dir \
         "napari[pyqt6]" \
         "napari-mcp" \
@@ -292,7 +299,8 @@ RUN /opt/conda/envs/napari-mcp/bin/python /tmp/patch_qt_helpers.py && rm /tmp/pa
 # batch route (python_data_analyst, `# imagentj-env: napari-mcp`). Pulls torch +
 # segment-anything + torch_em + elf via conda-forge. mobile_sam (pip, from git) is
 # only needed for the tiny `vit_t*` backbones — the fastest option on CPU; the
-# base default `vit_b_lm` works without it.
+# base default `vit_b_lm` works without it. Checkpoints for vit_t_lm,
+# vit_t_em_organelles and vit_b_lm are baked in further down (see below).
 #
 # GPU: conda-forge's micro_sam pulls a CPU-ONLY torch, so on a GPU build we swap it
 # for the CUDA wheels (same torch/torchvision pin + CUDA_TAG as the cellpose envs) so
@@ -305,11 +313,21 @@ RUN /opt/conda/envs/napari-mcp/bin/python /tmp/patch_qt_helpers.py && rm /tmp/pa
 # build-time check asserts it is a CUDA *build*, not that a GPU is present (the build
 # host may have none). Validated: torch 2.11.0+cu126 + torchvision 0.26.0+cu126 import
 # cleanly and micro_sam still imports afterwards.
-RUN CONDA_SOLVER=libmamba /opt/conda/bin/conda install -n napari-mcp -c conda-forge micro_sam -y \
+# micro_sam is PINNED: 2.0 removed micro_sam.sam_annotator.training_ui (the import check
+# below fails), and the baked checkpoint bundles are verified against 1.8.2's registry.
+RUN export PIP_CONSTRAINT=/tmp/constraints/napari-mcp.txt \
+    # the conda pins are frozen from an x86 image and do not solve on arm64 (conda-forge's aarch64 python 3.11.18
+    # needs libffi>=3.7 against the pinned 3.4.8, and the libtorch/torchvision pins disagree); arm64 keeps micro_sam's own pin
+    && if [ "$TARGETARCH" != "arm64" ]; then export CONDARC=/tmp/constraints/napari-mcp.conda.yml; fi \
+    && CONDA_SOLVER=libmamba /opt/conda/bin/conda install -n napari-mcp -c conda-forge "micro_sam=1.8.2" -y \
     && /opt/conda/envs/napari-mcp/bin/pip install --no-cache-dir \
-        "git+https://github.com/ChaoningZhang/MobileSAM.git" \
+        "git+https://github.com/ChaoningZhang/MobileSAM.git@f706ad9c4eb7f219c00d9050e46328518ffb65d2" \
     && if [ "$USE_GPU" = "true" ] && [ "$TARGETARCH" != "arm64" ]; then \
-           /opt/conda/envs/napari-mcp/bin/pip install --no-cache-dir --force-reinstall \
+           # own pin file: this step reinstalls torch's dependencies from the torch index, whose versions differ from the CPU set.
+           # It is frozen from a cu126 build; any other CUDA_TAG (cu128, cu130) pulls a different dependency set that
+           # neither pin file can satisfy, so those builds rely on the exact torch/torchvision pins alone.
+           GPU_PINS=/tmp/constraints/napari-mcp-gpu.txt; [ "$CUDA_TAG" = "cu126" ] || GPU_PINS=/dev/null; \
+           PIP_CONSTRAINT=$GPU_PINS /opt/conda/envs/napari-mcp/bin/pip install --no-cache-dir --force-reinstall \
                'torch==2.11.0' 'torchvision==0.26.0' \
                --index-url https://download.pytorch.org/whl/${CUDA_TAG} \
            && /opt/conda/envs/napari-mcp/bin/python -c \
@@ -327,14 +345,24 @@ RUN CONDA_SOLVER=libmamba /opt/conda/bin/conda install -n napari-mcp -c conda-fo
 # at RUNTIME, not build (the top-level `import micro_sam` above doesn't exercise it).
 # Delete any Pillow dist-info without a METADATA file, then assert the annotator (the
 # part that crashed for users) actually imports, so a regression fails the build here.
-RUN for d in /opt/conda/envs/napari-mcp/lib/python3.11/site-packages/[Pp]illow-*.dist-info; do \
+RUN export PIP_CONSTRAINT=/tmp/constraints/napari-mcp.txt; \
+    for d in /opt/conda/envs/napari-mcp/lib/python3.11/site-packages/[Pp]illow-*.dist-info; do \
         if [ -e "$d" ] && [ ! -s "$d/METADATA" ]; then echo "removing ghost dist-info: $d"; rm -rf "$d"; fi; \
     done; \
     # micro_sam's conda install lays a pure-Python psygnal over pip's compiled wheel (napari) — mixed versions fail to import
     rm -rf /opt/conda/envs/napari-mcp/lib/python3.11/site-packages/psygnal /opt/conda/envs/napari-mcp/lib/python3.11/site-packages/psygnal-*.dist-info \
-    && /opt/conda/envs/napari-mcp/bin/pip install --no-cache-dir --no-deps psygnal && \
+    && /opt/conda/envs/napari-mcp/bin/pip install --no-cache-dir --no-deps psygnal \
+    # same overlap for numpy: conda's copy lies over pip's. Delete before reinstalling — pip installing over a conda
+    # numpy 1.x leaves its binaries in numpy/core/, which load as a SECOND numpy at runtime (zarr then rejects every
+    # dtype: "No Zarr data type found that matches dtype('float32')" on tiled embeddings)
+    && rm -rf /opt/conda/envs/napari-mcp/lib/python3.11/site-packages/numpy /opt/conda/envs/napari-mcp/lib/python3.11/site-packages/numpy-*.dist-info /opt/conda/envs/napari-mcp/lib/python3.11/site-packages/numpy.libs \
+    && /opt/conda/envs/napari-mcp/bin/pip install --no-cache-dir --no-deps "numpy>=2" \
+    # z5py (optional n5 backend of elf, unused here) is the one conda package built for numpy 1.x only: it is what
+    # loaded the stale binary, and under numpy 2 it prints an _ARRAY_API traceback on every micro_sam import
+    && rm -rf /opt/conda/envs/napari-mcp/lib/python3.11/site-packages/z5py && \
     QT_QPA_PLATFORM=offscreen /opt/conda/envs/napari-mcp/bin/python -c \
-        "import micro_sam.sam_annotator; from micro_sam.sam_annotator.training_ui import TrainingWidget; print('micro_sam.sam_annotator import OK')"
+        "import numpy.core._multiarray_umath as m; assert m.__file__.endswith('.py'), 'stale numpy 1.x binary: ' + m.__file__; \
+         import micro_sam.sam_annotator; from micro_sam.sam_annotator.training_ui import TrainingWidget; print('micro_sam.sam_annotator import OK')"
 
 # napari/vispy fall back to llvmpipe software GL under headless Xvfb (no GPU).
 ENV LIBGL_ALWAYS_SOFTWARE=1
@@ -349,7 +377,8 @@ ENV LIBGL_ALWAYS_SOFTWARE=1
 # wrapper feeds cellpose an ImageJ-written TIFF, so without the bump cellpose
 # crashes on read. Done as a separate pip call so the resolver doesn't fight
 # aicsimageio's stale <2023.3.15 pin (aicsimageio is not on the cellpose read path).
-RUN /opt/conda/bin/conda create -n cellpose python=3.10 -y \
+RUN export PIP_CONSTRAINT=/tmp/constraints/cellpose.txt \
+    && /opt/conda/bin/conda create -n cellpose python=3.10.22 -y \
     && if [ "$TARGETARCH" = "arm64" ]; then \
         /opt/conda/envs/cellpose/bin/pip install --no-cache-dir \
             'torch==2.11.0' 'torchvision==0.26.0'; \
@@ -380,7 +409,8 @@ RUN /opt/conda/bin/conda create -n cellpose python=3.10 -y \
 # selects 'cellpose4' in the Cellpose-SAM detector panel.
 # The micromamba shim routes '-n cellpose4' → /opt/conda/envs/cellpose4.
 # Snapshot (2026-04-30): Python 3.11.15, cellpose 4.1.1, segment-anything 1.0, torch 2.11.0+cpu|cu124
-RUN /opt/conda/bin/conda create -n cellpose4 python=3.11 -y \
+RUN export PIP_CONSTRAINT=/tmp/constraints/cellpose4.txt \
+    && /opt/conda/bin/conda create -n cellpose4 python=3.11.18 -y \
     && if [ "$TARGETARCH" = "arm64" ]; then \
         /opt/conda/envs/cellpose4/bin/pip install --no-cache-dir \
             'torch==2.11.0' 'torchvision==0.26.0'; \
@@ -419,7 +449,8 @@ RUN if [ "$TARGETARCH" = "arm64" ]; then \
     else \
         TF_PACKAGE='tensorflow-cpu==2.15.1'; \
     fi \
-    && /opt/conda/bin/conda create -n stardist python=3.11 -y \
+    && export PIP_CONSTRAINT=/tmp/constraints/stardist.txt \
+    && /opt/conda/bin/conda create -n stardist python=3.11.18 -y \
     && /opt/conda/envs/stardist/bin/pip install --no-cache-dir \
         "$TF_PACKAGE" \
         "csbdeep==0.8.2" \
@@ -446,7 +477,8 @@ ENV SCIJAVA_PYTHON=/opt/conda/envs/stardist/bin/python
 # The python_coder selects this env with a first-line magic comment:
 #     # imagentj-env: brainglobe
 # See _CONDA_ENVS in src/imagentj/tools/analyst_tools.py.
-RUN /opt/conda/bin/conda create -n brainglobe python=3.12 -y \
+RUN export PIP_CONSTRAINT=/tmp/constraints/brainglobe.txt \
+    && /opt/conda/bin/conda create -n brainglobe python=3.12.16 -y \
     && /opt/conda/envs/brainglobe/bin/pip install --no-cache-dir \
         brainglobe-atlasapi \
         brainglobe-space \
@@ -543,11 +575,15 @@ RUN mkdir -p /app/qdrant_data /home/imagentj/.cellpose /home/imagentj/.cache \
 # so models are available on first container start without any host files.
 RUN mkdir -p /home/imagentj/.cellpose/models \
     && echo "[cellpose] Downloading model bundle..." \
-    && curl -fsSL "https://owncloud.ut.ee/owncloud/s/HyXebMNEPd7niMa/download" -o /tmp/models.zip \
+    # 2.6 GB from owncloud: the server drops long transfers (curl 56), so resume (-C -) until complete
+    && for i in 1 2 3 4 5 6 7 8 9 10; do \
+           curl -fsSL -C - "https://owncloud.ut.ee/owncloud/s/HyXebMNEPd7niMa/download" -o /tmp/models.zip && break; \
+           echo "[cellpose] download interrupted (try $i), resuming..."; sleep 5; \
+       done \
     && echo "[cellpose] Extracting models..." \
-    && unzip -q /tmp/models.zip -d /tmp/models_extracted \
-    && cp -a /tmp/models_extracted/models/. /home/imagentj/.cellpose/models/ \
-    && rm -rf /tmp/models.zip /tmp/models_extracted \
+    # 2.6 GB zip: extract in place (no temp copy) so peak disk is zip + models, not 3x
+    && unzip -q /tmp/models.zip 'models/*' -d /home/imagentj/.cellpose \
+    && rm -f /tmp/models.zip \
     && echo "[cellpose] Baked in $(ls /home/imagentj/.cellpose/models | wc -l) model files" \
     && chown -R imagentj:imagentj /home/imagentj/.cellpose
 
@@ -557,20 +593,37 @@ RUN mkdir -p /home/imagentj/.cellpose/models \
 # thread (annotator_2d / execute_code). That blocks the event loop, so the viewer
 # and the whole VNC desktop appear frozen with no progress bar, and an interrupted
 # download leaves a partial temp file that never completes or resumes.
-# Scope: the vit_t (tiny) tier for the two microscopy modalities this tool
-# actually serves — light microscopy and EM organelles — each with its AIS
-# decoder. ~170 MB total.
-#   * tiny is NOT CPU-only; it runs on GPU too, so one baked tier covers both the
-#     CPU and GPU image builds and needs no USE_GPU branching here.
-#   * the decoder is what enables segmentation_mode="ais" (one decoder pass per
-#     image). Without it micro_sam silently falls back to "amg", which runs the
-#     mask decoder over a dense prompt grid — orders of magnitude slower.
+#
+# Checkpoints come from the project's cloud storage (not micro_sam's upstream
+# hosts), as two bundles that each unzip to `models/<name>` — exactly micro_sam's
+# own `$MICROSAM_CACHEDIR/models/` layout:
+#   * micro_sam_models.zip         (~170 MB) vit_t_lm, vit_t_em_organelles + decoders
+#                                  — tiny tier, fastest on CPU, runs on GPU too
+#   * micro_sam_models_vit_b_lm.zip (~410 MB) vit_b_lm + decoder — the GPU default
+# Every encoder ships with its AIS decoder: the decoder is what enables
+# segmentation_mode="ais" (one decoder pass per image). Without it micro_sam
+# silently falls back to "amg", which runs the mask decoder over a dense prompt
+# grid — orders of magnitude slower.
+#
+# The build then checks every file against micro_sam's OWN xxh128 registry. This
+# matters: if a bundled file ever drifts from the installed micro_sam version,
+# pooch would treat it as stale and silently re-download it at first use — the
+# exact frozen-viewer failure above. A mismatch fails the build instead.
 ENV MICROSAM_CACHEDIR=/home/imagentj/.cache/micro_sam
-RUN echo "[micro_sam] Pre-fetching SAM checkpoints into $MICROSAM_CACHEDIR ..." \
-    && /opt/conda/envs/napari-mcp/bin/python -c \
-        "from micro_sam.automatic_segmentation import get_predictor_and_segmenter as g; \
-         [g(model_type=m, device='cpu', segmentation_mode='ais') \
-          for m in ('vit_t_lm', 'vit_t_em_organelles')]" \
+COPY patch_micro_sam/verify_micro_sam_models.py /tmp/verify_micro_sam_models.py
+RUN mkdir -p "$MICROSAM_CACHEDIR/models" \
+    && echo "[micro_sam] Downloading checkpoint bundles..." \
+    && curl -fsSL "https://owncloud.ut.ee/owncloud/s/B9K3iSDfK7gyTLD/download" -o /tmp/micro_sam_models.zip \
+    && curl -fsSL "https://owncloud.ut.ee/owncloud/s/Zrr3HYAx75sbJQY/download" -o /tmp/micro_sam_models_vit_b_lm.zip \
+    && echo "[micro_sam] Extracting checkpoints..." \
+    && mkdir -p /tmp/micro_sam_extracted \
+    && unzip -q -o /tmp/micro_sam_models.zip -d /tmp/micro_sam_extracted \
+    && unzip -q -o /tmp/micro_sam_models_vit_b_lm.zip -d /tmp/micro_sam_extracted \
+    && cp -a /tmp/micro_sam_extracted/models/. "$MICROSAM_CACHEDIR/models/" \
+    && rm -rf /tmp/micro_sam_models.zip /tmp/micro_sam_models_vit_b_lm.zip /tmp/micro_sam_extracted \
+    && /opt/conda/envs/napari-mcp/bin/python /tmp/verify_micro_sam_models.py \
+        vit_t_lm vit_t_em_organelles vit_b_lm \
+    && rm /tmp/verify_micro_sam_models.py \
     && echo "[micro_sam] Baked in: $(ls $MICROSAM_CACHEDIR/models | tr '\n' ' ')" \
     && du -sh $MICROSAM_CACHEDIR \
     && chown -R imagentj:imagentj /home/imagentj/.cache

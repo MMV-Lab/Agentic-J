@@ -1,5 +1,6 @@
 import os
 import imagej
+from pathlib import Path
 from typing import Optional
 from config.imagej_config import FIJI_JAVA_HOME
 import scyjava
@@ -126,6 +127,79 @@ def needs_bioformats(path: str) -> bool:
     """
     name = str(path).lower()
     return name.endswith((".ome.tif", ".ome.tiff", ".ome.zarr")) or name.endswith(_BIOFORMATS_EXTS)
+
+
+# ── 64-bit integer TIFFs: convert before IJ.open ─────────────────────────────
+# ImageJ's TIFF reader has no 64-bit integer type, so IJ.open hands such a file
+# to HandleExtraFileTypes -> Bio-Formats, i.e. the same prompting importer path
+# described above, and the "no ComponentUI class for: javax.swing.JSeparator"
+# errors repeat. The extension check in needs_bioformats cannot catch it: the
+# file is a plain .tif. micro_sam is the usual source — automatic_instance_
+# segmentation(output_path=...) writes its label map as uint64 — but any numpy
+# int64 array saved with tifffile ends up the same. Routing to Bio-Formats is no
+# fix either (it has no 64-bit integer pixel type), so the data is narrowed to
+# the smallest integer type that holds its range and that copy is opened.
+_IJ_OPEN_CACHE = Path(os.environ.get("IMAGENTJ_IJ_OPEN_CACHE", "/tmp/imagentj_ij_open"))
+
+
+def imagej_openable_path(path: str) -> tuple[str, Optional[str]]:
+    """Return (path to hand to IJ.open, note or None).
+
+    For a TIFF holding 64-bit integers, writes a narrowed copy and returns it
+    with a note saying what was converted; every other file comes back as is.
+    Raises ValueError when the values do not fit any type ImageJ can read.
+    """
+    name = str(path).lower()
+    if not name.endswith((".tif", ".tiff")) or needs_bioformats(path):
+        return path, None
+    try:
+        import numpy as np
+        import tifffile
+        with tifffile.TiffFile(path) as tif:
+            series = tif.series[0]
+            if series.dtype is None or series.dtype.kind not in "iu" or series.dtype.itemsize != 8:
+                return path, None
+            axes = series.axes
+            tags = tif.pages[0].tags
+            resolution, unit = None, None
+            if "XResolution" in tags and "YResolution" in tags:
+                resolution = tuple(n / d if d else 0.0 for n, d in
+                                   (tags["XResolution"].value, tags["YResolution"].value))
+                if "ResolutionUnit" in tags:
+                    unit = tags["ResolutionUnit"].value
+            data = series.asarray()
+    except ImportError:
+        return path, None
+    except Exception:
+        return path, None  # unreadable header: let IJ.open report its own error
+
+    lo, hi = (int(data.min()), int(data.max())) if data.size else (0, 0)
+    for dtype in (np.uint8, np.uint16, np.uint32, np.int32):
+        info = np.iinfo(dtype)
+        if info.min <= lo and hi <= info.max:
+            break
+    else:
+        raise ValueError(
+            f"{data.dtype} TIFF with values {lo}..{hi}: ImageJ reads no 64-bit integer "
+            "type and the range does not fit 32 bits. Rescale it or save it as float32.")
+
+    _IJ_OPEN_CACHE.mkdir(parents=True, exist_ok=True)
+    src = Path(path)
+    out = _IJ_OPEN_CACHE / f"{src.stem}_{np.dtype(dtype).name}.tif"
+    # Keep the stack layout: an ImageJ hyperstack takes axes from TZCYXS only,
+    # so tifffile's generic plane axes (I, Q) become Z; anything else is written
+    # as a plain stack rather than guessed at. tifffile writes ImageJ hyperstacks
+    # for 8/16-bit only — a 32-bit copy is a plain multi-page TIFF, which ImageJ
+    # opens as a 32-bit stack.
+    ij_axes = "".join("Z" if a in "IQ" else a for a in axes)
+    imagej = (dtype in (np.uint8, np.uint16) and len(set(ij_axes)) == len(ij_axes)
+              and set(ij_axes) <= set("TZCYXS"))
+    tifffile.imwrite(out, data.astype(dtype), imagej=imagej,
+                     metadata={"axes": ij_axes} if imagej else None,
+                     resolution=resolution, resolutionunit=unit if resolution else None)
+    note = (f"converted {data.dtype} -> {np.dtype(dtype).name} copy at {out} "
+            "(ImageJ cannot read 64-bit integer TIFFs); the original file is unchanged")
+    return str(out), note
 
 
 def open_image_windowless(path: str, show: bool = False):

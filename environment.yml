@@ -76,7 +76,7 @@ dependencies:
       # the PyPI 'cp-measure' exposes the older featurize() API. Builds mahotas
       # from sdist (no cp313 wheel exists) and downgrades pillow to <12 via
       # centrosome; both verified harmless for pyimagej/matplotlib/seaborn.
-      - cp_measure @ git+https://github.com/afermg/cp_measure.git
+      - cp_measure @ git+https://github.com/afermg/cp_measure.git@881cb7085c2240d06e62c84543d12ffb1990c48f
       - dataclasses-json
       - daytona
       - ddgs
@@ -114,7 +114,9 @@ dependencies:
       - langchain-docling
       - langchain-openai
       - langchain-pymupdf4llm
-      - langchain-qdrant
+      # 1.2.0 caps qdrant-client <1.16, which cannot load the bundled qdrant_data
+      # (written by a newer client: CreateCollection rejects its 'metadata' field)
+      - langchain-qdrant==1.1.0
       - langchain-text-splitters
       - langgraph-checkpoint-sqlite
       - lark
@@ -155,7 +157,7 @@ dependencies:
       - python-dotenv
       - python-json-logger
       - python-pptx
-      - qdrant-client
+      - qdrant-client==1.20.0
       - rank-bm25
       - rapidocr
       - readlif

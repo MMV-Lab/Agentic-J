@@ -728,6 +728,22 @@ def _estimate_first_frame_bytes(file_path: str, suffix: str) -> int:
     return _file_size_bytes(file_path)
 
 
+_STATS_SAMPLE_PX = 4_000_000
+
+
+def _stats_sample(arr) -> np.ndarray:
+    """At most ~_STATS_SAMPLE_PX pixels of `arr` as flat float64, true min/max kept.
+
+    A full float64 copy is up to 8x the frame, and median/percentile copy it again:
+    a frame just under the 1 GB gate peaked at >10 GB and got the container OOM-killed.
+    """
+    flat = np.asarray(arr).ravel()
+    step = -(-flat.size // _STATS_SAMPLE_PX)  # ceil
+    if step <= 1:
+        return flat.astype(np.float64)
+    return np.concatenate([flat[::step], [flat.min(), flat.max()]]).astype(np.float64)
+
+
 def _compute_standalone_stats(file_path: str, suffix: str) -> Dict[str, Any]:
     """
     Compute pixel statistics from the **first frame only**.
@@ -758,7 +774,7 @@ def _compute_standalone_stats(file_path: str, suffix: str) -> Dict[str, Any]:
             data = tif.pages[0].asarray()
             if n_pages > 1:
                 first_frame_note = f"Statistics computed from frame 1 of {n_pages}."
-        flat = data.astype(np.float64).ravel()
+        flat = _stats_sample(data)
         del data
 
     elif suffix == '.lif':
@@ -767,12 +783,12 @@ def _compute_standalone_stats(file_path: str, suffix: str) -> Dict[str, Any]:
         frames = []
         for c in range(img.channels):
             try:
-                frames.append(np.array(img.get_frame(z=0, t=0, c=c), dtype=np.float64))
+                frames.append(_stats_sample(img.get_frame(z=0, t=0, c=c)))
             except Exception:
                 pass
         if not frames:
             return {}
-        flat = np.concatenate([f.ravel() for f in frames])
+        flat = np.concatenate(frames)
         if img.info.get('dims', [0, 0, 0, 0])[3] > 1 or img.info.get('dims', [0, 0, 0, 0])[2] > 1:
             first_frame_note = "Statistics computed from first z/t frame only."
 
@@ -784,7 +800,7 @@ def _compute_standalone_stats(file_path: str, suffix: str) -> Dict[str, Any]:
         if arr.ndim > 2:
             arr = arr[0]
             first_frame_note = "Statistics computed from frame 1 of multi-frame DICOM."
-        flat = arr.astype(np.float64).ravel()
+        flat = _stats_sample(arr)
 
     else:
         # PIL fallback: handles JPEG, PNG, BMP, GIF, and other PIL-readable formats.
@@ -794,10 +810,9 @@ def _compute_standalone_stats(file_path: str, suffix: str) -> Dict[str, Any]:
             with Image.open(file_path) as img:
                 n_frames = getattr(img, 'n_frames', 1)
                 img.seek(0)
-                arr = np.array(img, dtype=np.float64)
+                flat = _stats_sample(img)
                 if n_frames > 1:
                     first_frame_note = f"Statistics computed from frame 1 of {n_frames}."
-            flat = arr.ravel()
         except Exception:
             return {}
 

@@ -300,11 +300,11 @@
     "chapter": "1.3",
     "track": "concept",
     "page": "chapters/1-concepts/3-bit_depths/bit_depths",
-    "file": "assets/1.3/gen_\"fig-bits-clipping\".png",
+    "file": "assets/1.3/gen_fig-bits-clipping.png",
     "caption": "Storing an image using a lower bit-depth, either by clipping or by scaling the values. The top row shows all images with the same minimum and maximum values to determine the contrast, while the second row shows shows the same images with the maximum set to the highest pixel value actually present (the images are the same, only the LUTs are different). The bottom rows show both a plot of the pixel values through the center of each image and histograms of all the image pixel values. One may infer that information has been lost in both of the 8-bit images, but more much horrifically when clipping was applied. Scaling squeezes the data into a narrow range, which might result in some rounding errors -- but most of the information remains intact, with the shapes of the profile plot and histogram remaining similar.",
     "type": "generated",
     "rendered": true,
-    "label": "\"fig-bits-clipping\"",
+    "label": "fig-bits-clipping",
     "source_ref": "clipping_fig"
   },
   "1.3#5": {
